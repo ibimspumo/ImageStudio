@@ -79,6 +79,7 @@ The prompt bar gives you full control over your generation:
 - **Resolution** — 1K, 2K, or 4K output
 - **Image count** — generate up to 4 images at once
 - **@** button — open your asset collections
+- **Clear** (⊗) — clear the current prompt, attachments, and collection references
 - **⚙** — settings & about
 
 Everything is non-blocking. You can fire off multiple generations and keep prompting while they render.
@@ -185,7 +186,7 @@ The info panel includes:
 
 ### Actions
 
-- **Reuse Prompt** — paste the prompt back into the prompt bar for quick re-generation
+- **Reuse Prompt** — restore the prompt, @-collection mentions (as inline chips), and individual image references back into the prompt bar for quick re-generation
 - **Start Chat / Continue Chat** — open an editing conversation from this image
 - **Crop as Reference** — select a region of the image to use as reference
 - **Zoom Out** — extend the image outward by 1.5x, 2x, 3x, or 4x using AI

@@ -7,20 +7,25 @@ interface PendingCropRef {
   name: string
 }
 
+interface PendingReuse {
+  prompt: string
+  attachmentFilePaths?: string[]  // file paths to load as references
+}
+
 interface CropStore {
   pendingRef: PendingCropRef | null
-  pendingPrompt: string | null
+  pendingReuse: PendingReuse | null
   addPendingRef: (base64: string, sourceImageId: string) => void
   consumePendingRef: () => PendingCropRef | null
-  setPendingPrompt: (prompt: string) => void
-  consumePendingPrompt: () => string | null
+  setPendingReuse: (prompt: string, attachmentFilePaths?: string[]) => void
+  consumePendingReuse: () => PendingReuse | null
 }
 
 let cropCounter = 1
 
 export const useCropStore = create<CropStore>((set, get) => ({
   pendingRef: null,
-  pendingPrompt: null,
+  pendingReuse: null,
 
   addPendingRef: (base64, sourceImageId) => {
     set({
@@ -39,13 +44,13 @@ export const useCropStore = create<CropStore>((set, get) => ({
     return ref
   },
 
-  setPendingPrompt: (prompt) => {
-    set({ pendingPrompt: prompt })
+  setPendingReuse: (prompt, attachmentFilePaths) => {
+    set({ pendingReuse: { prompt, attachmentFilePaths } })
   },
 
-  consumePendingPrompt: () => {
-    const prompt = get().pendingPrompt
-    if (prompt) set({ pendingPrompt: null })
-    return prompt
+  consumePendingReuse: () => {
+    const reuse = get().pendingReuse
+    if (reuse) set({ pendingReuse: null })
+    return reuse
   },
 }))

@@ -39,7 +39,7 @@ export default function App() {
 
   const startChat = useChatStore((s) => s.startChat)
   const addPendingRef = useCropStore((s) => s.addPendingRef)
-  const setPendingPrompt = useCropStore((s) => s.setPendingPrompt)
+  const setPendingReuse = useCropStore((s) => s.setPendingReuse)
 
   useEffect(() => {
     // Run migration first, then load stores
@@ -97,7 +97,7 @@ export default function App() {
   }
 
   const handleReusePrompt = (image: GalleryImage) => {
-    setPendingPrompt(image.prompt)
+    setPendingReuse(image.prompt, image.attachments)
     setViewerState(null)
   }
 

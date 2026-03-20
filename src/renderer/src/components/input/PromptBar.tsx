@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Send, Plus, X, FolderOpen, Settings } from 'lucide-react'
+import { Send, Plus, X, XCircle, FolderOpen, Settings } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useSettingsStore } from '../../stores/settings-store'
 import { useCollectionsStore, type AssetCollection } from '../../stores/collections-store'
@@ -79,15 +79,83 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     }
   }, [pendingCropRef, consumePendingRef, addImageRef])
 
-  // Consume pending prompt (from "Reuse Prompt" in lightbox)
-  const pendingPrompt = useCropStore((s) => s.pendingPrompt)
-  const consumePendingPrompt = useCropStore((s) => s.consumePendingPrompt)
+  // Consume pending reuse (from "Reuse Prompt" in lightbox)
+  const pendingReuse = useCropStore((s) => s.pendingReuse)
+  const consumePendingReuse = useCropStore((s) => s.consumePendingReuse)
 
   useEffect(() => {
-    if (pendingPrompt) {
-      const prompt = consumePendingPrompt()
-      if (prompt && editorRef.current) {
-        editorRef.current.textContent = prompt
+    if (pendingReuse) {
+      const reuse = consumePendingReuse()
+      if (!reuse) return
+
+      // Clear existing state (prompt, image refs, collection refs)
+      setImageRefs([])
+      setCollectionRefs([])
+      if (editorRef.current) editorRef.current.innerHTML = ''
+
+      // Parse prompt for [@collectionName] mentions and [imageName] refs
+      const collectionMentionRegex = /\[@([^\]]+)\]/g
+      const imageMentionRegex = /\[([^@\]][^\]]*)\]/g
+      const matchedCollections: AssetCollection[] = []
+      let match: RegExpExecArray | null
+
+      while ((match = collectionMentionRegex.exec(reuse.prompt)) !== null) {
+        const col = collections.find((c) => c.name === match![1])
+        if (col) matchedCollections.push(col)
+      }
+
+      // Count individual image mentions to know how many attachments are individual
+      let individualImageCount = 0
+      while ((match = imageMentionRegex.exec(reuse.prompt)) !== null) {
+        individualImageCount++
+      }
+
+      // Build editor HTML with proper chips for collections and plain text for the rest
+      if (editorRef.current) {
+        // Split prompt into parts, replacing [@collection] with chip HTML
+        let html = ''
+        let lastIndex = 0
+        const allMentionRegex = /\[@([^\]]+)\]|\[([^@\]][^\]]*)\]/g
+
+        while ((match = allMentionRegex.exec(reuse.prompt)) !== null) {
+          // Add text before this match
+          const textBefore = reuse.prompt.substring(lastIndex, match.index)
+          if (textBefore) html += textBefore.replace(/\n/g, '<br>')
+
+          if (match[1]) {
+            // Collection mention [@name]
+            const col = collections.find((c) => c.name === match![1])
+            if (col) {
+              const cRef: CollectionRef = {
+                id: crypto.randomUUID(),
+                collectionId: col.id,
+                name: col.name,
+                thumbnail: col.images[0] || '',
+                images: col.images,
+              }
+              setCollectionRefs((prev) => [...prev, cRef])
+              const thumbnailHtml = cRef.thumbnail
+                ? `<img src="${toDisplayUrl(cRef.thumbnail)}" class="w-4 h-4 rounded object-cover inline-block align-middle" />`
+                : '<span class="inline-flex w-4 h-4 items-center justify-center"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>'
+              html += `<span contenteditable="false" data-collection-ref-id="${cRef.id}" class="inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none">${thumbnailHtml}<span class="align-middle">@${col.name}</span></span>\u00A0`
+            } else {
+              // Collection not found, keep as text
+              html += match[0]
+            }
+          } else if (match[2]) {
+            // Image mention [name] — will be resolved when attachments load
+            // For now insert as placeholder text; chips come from image refs
+            html += match[0]
+          }
+          lastIndex = match.index + match[0].length
+        }
+
+        // Add remaining text
+        const remaining = reuse.prompt.substring(lastIndex)
+        if (remaining) html += remaining.replace(/\n/g, '<br>')
+
+        editorRef.current.innerHTML = html
+
         // Place cursor at end
         const range = document.createRange()
         range.selectNodeContents(editorRef.current)
@@ -96,8 +164,24 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
         sel?.removeAllRanges()
         sel?.addRange(range)
       }
+
+      // Only load individual image attachments (first N), skip collection images
+      if (reuse.attachmentFilePaths && reuse.attachmentFilePaths.length > 0) {
+        const individualPaths = reuse.attachmentFilePaths.slice(0, individualImageCount)
+        ;(async () => {
+          for (const fp of individualPaths) {
+            try {
+              const result = await window.api.readImage(fp)
+              if (result.success) {
+                const compressed = await compressImage(result.base64DataUrl)
+                addImageRef(compressed)
+              }
+            } catch { /* silent */ }
+          }
+        })()
+      }
     }
-  }, [pendingPrompt, consumePendingPrompt])
+  }, [pendingReuse, consumePendingReuse, addImageRef, collections])
 
   const removeImageRef = useCallback((id: string) => {
     setImageRefs((prev) => prev.filter((r) => r.id !== id))
@@ -419,7 +503,16 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     }
   }, [])
 
+  const clearPrompt = useCallback(() => {
+    setImageRefs([])
+    setCollectionRefs([])
+    if (editorRef.current) {
+      editorRef.current.innerHTML = ''
+    }
+  }, [])
+
   const promptText = getPromptText()
+  const hasContent = promptText || imageRefs.length > 0 || collectionRefs.length > 0
   const canSend = promptText && apiKey
 
   return (
@@ -593,6 +686,16 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
             )}
 
             <div className="flex-1" />
+
+            {hasContent && (
+              <button
+                onClick={clearPrompt}
+                className="no-drag flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-3 transition-all"
+                title="Clear prompt"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+              </button>
+            )}
 
             <button
               onClick={handleSubmit}

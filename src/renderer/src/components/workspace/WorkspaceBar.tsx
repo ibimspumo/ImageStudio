@@ -87,8 +87,8 @@ export function WorkspaceBar() {
 
   // Count images per workspace
   const getCount = (workspaceId: string | null): number => {
-    if (workspaceId === null) return images.filter((i) => !i.isLoading && !i.error && i.base64DataUrl).length
-    return images.filter((i) => i.workspaceId === workspaceId && !i.isLoading && !i.error && i.base64DataUrl).length
+    if (workspaceId === null) return images.filter((i) => !i.isLoading && !i.error && i.filePath).length
+    return images.filter((i) => i.workspaceId === workspaceId && !i.isLoading && !i.error && i.filePath).length
   }
 
   // Don't render the bar at all if there are no workspaces and we're not creating one
