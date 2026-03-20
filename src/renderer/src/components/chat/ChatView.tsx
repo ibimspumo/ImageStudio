@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useChatStore, type ChatMessage } from '../../stores/chat-store'
 import { useChatGeneration } from '../../hooks/useChatGeneration'
+import { SimpleLightbox } from '../shared/SimpleLightbox'
 import { useSettingsStore } from '../../stores/settings-store'
 import { AspectRatioSelector } from '../input/AspectRatioSelector'
 import { ResolutionSelector } from '../input/ResolutionSelector'
@@ -30,7 +31,7 @@ function formatTime(timestamp: number): string {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, allImages, onImageClick }: { message: ChatMessage; allImages: string[]; onImageClick?: (images: string[], index: number) => void }) {
   const isUser = message.role === 'user'
 
   if (isUser) {
@@ -71,11 +72,19 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       )}
 
       {message.imageBase64 && (
-        <div className="w-full max-w-md">
+        <div
+          className="w-full max-w-md cursor-pointer"
+          onClick={() => {
+            if (onImageClick) {
+              const idx = allImages.indexOf(message.imageBase64!)
+              onImageClick(allImages, idx >= 0 ? idx : 0)
+            }
+          }}
+        >
           <img
             src={message.imageBase64}
             alt="Generated"
-            className="w-full rounded-2xl border border-border-dim"
+            className="w-full rounded-2xl border border-border-dim hover:border-border-base transition-colors"
           />
         </div>
       )}
@@ -107,6 +116,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 export function ChatView({ chatId, onClose }: ChatViewProps) {
+  const [lightboxState, setLightboxState] = useState<{ images: string[]; index: number } | null>(null)
+
+  const onImageClick = useCallback((images: string[], index: number) => {
+    setLightboxState({ images, index })
+  }, [])
   const chat = useChatStore((s) => s.chats.find((c) => c.id === chatId))
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
   const [resolution, setResolution] = useState<Resolution>('2K')
@@ -119,12 +133,20 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
   const { generate } = useChatGeneration()
   const apiKey = useSettingsStore((s) => s.apiKey)
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom when messages change (new message or loading completes)
+  const messageCount = chat?.messages.length ?? 0
+  const lastMessageLoading = chat?.messages[messageCount - 1]?.isLoading
+  const lastMessageImage = chat?.messages[messageCount - 1]?.imageBase64
+
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      setTimeout(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+        }
+      }, 50)
     }
-  }, [chat?.messages])
+  }, [messageCount, lastMessageLoading, lastMessageImage])
 
   // Escape to close
   useEffect(() => {
@@ -196,6 +218,13 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
     setImageRefs((prev) => prev.filter((r) => r.id !== id))
   }, [])
 
+  const [hasText, setHasText] = useState(false)
+
+  const handleEditorInput = useCallback(() => {
+    const text = (editorRef.current?.textContent || '').trim()
+    setHasText(text.length > 0)
+  }, [])
+
   if (!chat) return null
 
   // Get last assistant image for auto-reference display
@@ -203,8 +232,7 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
     .reverse()
     .find((m) => m.role === 'assistant' && m.imageBase64)?.imageBase64
 
-  const promptText = getPromptText()
-  const canSend = promptText && apiKey
+  const canSend = hasText && apiKey
   const isGenerating = chat.messages.some((m) => m.isLoading)
 
   return (
@@ -238,9 +266,19 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
-          {chat.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
-          ))}
+          {chat.messages.map((message) => {
+            const allChatImages = chat.messages
+              .filter((m) => m.imageBase64)
+              .map((m) => m.imageBase64!)
+            return (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                allImages={allChatImages}
+                onImageClick={onImageClick}
+              />
+            )
+          })}
         </div>
       </div>
 
@@ -293,6 +331,7 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
                 contentEditable
                 suppressContentEditableWarning
                 onKeyDown={handleEditorKeyDown}
+                onInput={handleEditorInput}
                 data-placeholder="Describe how to edit this image..."
                 className="prompt-editor min-h-[40px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none"
               />
@@ -350,6 +389,16 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
         </div>
       </div>
       </div>
+
+      {/* Simple lightbox for chat images */}
+      {lightboxState && (
+        <SimpleLightbox
+          images={lightboxState.images}
+          currentIndex={lightboxState.index}
+          onClose={() => setLightboxState(null)}
+          onNavigate={(index) => setLightboxState((prev) => prev ? { ...prev, index } : null)}
+        />
+      )}
     </div>
   )
 }

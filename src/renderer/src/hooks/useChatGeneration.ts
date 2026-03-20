@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { useChatStore } from '../stores/chat-store'
+import { useGalleryStore } from '../stores/gallery-store'
 import { useSettingsStore } from '../stores/settings-store'
 import type { AspectRatio, Resolution } from '../types/api'
 
@@ -74,6 +75,21 @@ export function useChatGeneration() {
 
           if (result?.status === 'complete' && result.result?.imageBase64) {
             completeAssistantMessage(chatId, assistantMsgId, result.result.imageBase64, durationMs)
+
+            // Also add to gallery so it shows in the grid
+            const galleryStore = useGalleryStore.getState()
+            const placeholderId = galleryStore.addPlaceholder(prompt, aspectRatio, resolution, model, attachments.length > 0 ? attachments : undefined)
+            galleryStore.completeImage(placeholderId, result.result.imageBase64, durationMs)
+            // Tag it with the chatId so we can reopen the chat
+            const img = galleryStore.images.find((i) => i.id === placeholderId)
+            if (img) {
+              useGalleryStore.setState((state) => ({
+                images: state.images.map((i) =>
+                  i.id === placeholderId ? { ...i, chatId } : i
+                )
+              }))
+            }
+
             // Save to disk in background
             const filename = `chat-${assistantMsgId}.png`
             window.api.saveImage(result.result.imageBase64, filename)

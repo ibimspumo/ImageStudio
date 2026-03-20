@@ -15,6 +15,7 @@ export interface GalleryImage {
   durationMs?: number
   attachments?: string[]
   parentImageId?: string
+  chatId?: string          // links to an ImageChat for "open chat" button
 }
 
 interface GalleryStore {

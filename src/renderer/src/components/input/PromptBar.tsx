@@ -354,64 +354,68 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   const canSend = promptText && apiKey
 
   return (
-    <div className="shrink-0 flex flex-col items-center px-6 pb-6 pt-4">
+    <div className="shrink-0 flex flex-col items-center px-6 pb-6 pt-3">
       <div className="w-full max-w-[720px] relative">
         <div
           className={cn(
-            'grain relative bg-surface-2 border rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] transition-colors',
-            isDragOver ? 'border-accent-main ring-2 ring-accent-main/20' : 'border-border-base'
+            'prompt-card grain relative border rounded-2xl transition-all',
+            isDragOver ? 'border-accent-main/60 glow-accent-strong' : 'border-border-base'
           )}
           onDragOver={handleDragOver}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          {/* Top luminous edge */}
+          <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
+
           {/* Drag overlay */}
           {isDragOver && (
-            <div className="absolute inset-0 z-10 rounded-2xl bg-accent-dim/50 flex items-center justify-center pointer-events-none">
-              <span className="text-[13px] font-medium text-accent-main">Drop image as reference</span>
+            <div className="absolute inset-0 z-10 rounded-2xl bg-accent-main/8 backdrop-blur-sm flex items-center justify-center pointer-events-none border-2 border-dashed border-accent-main/40">
+              <div className="flex flex-col items-center gap-2">
+                <ImagePlus className="w-6 h-6 text-accent-main" />
+                <span className="text-[13px] font-medium text-accent-main">Drop as reference</span>
+              </div>
             </div>
           )}
 
-          {/* Attached images -- thumbnail strip */}
+          {/* Attached images — thumbnail strip */}
           {imageRefs.length > 0 && (
-            <div className="flex items-center gap-2 px-4 pt-3 overflow-x-auto">
+            <div className="flex items-center gap-2.5 px-5 pt-4 overflow-x-auto">
               {imageRefs.map((ref) => (
                 <div key={ref.id} className="relative shrink-0 group animate-scale-in">
-                  <img
-                    src={ref.base64}
-                    alt={ref.name}
-                    className="w-12 h-12 rounded-lg object-cover border border-border-base"
-                  />
+                  <div className="w-14 h-14 rounded-xl overflow-hidden border border-border-base/80 shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
+                    <img src={ref.base64} alt={ref.name} className="w-full h-full object-cover" />
+                  </div>
                   <button
                     onClick={() => removeImageRef(ref.id)}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-surface-0 border border-border-base flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger hover:border-danger hover:text-white text-text-muted"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-surface-1 border border-border-base flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:border-danger hover:text-white text-text-muted shadow-lg"
                   >
                     <X className="w-2.5 h-2.5" />
                   </button>
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm rounded-b-lg px-1 py-px">
-                    <span className="text-[8px] text-white/80 font-medium">{ref.name}</span>
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-xl px-1.5 py-0.5">
+                    <span className="text-[9px] text-white/90 font-medium">{ref.name}</span>
                   </div>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Attached collection refs -- shown as chips below image strip */}
+          {/* Attached collection refs */}
           {collectionRefs.length > 0 && (
-            <div className="flex items-center gap-2 px-4 pt-2 overflow-x-auto">
+            <div className="flex items-center gap-2 px-5 pt-2.5 overflow-x-auto">
               {collectionRefs.map((cRef) => (
-                <div key={cRef.id} className="relative shrink-0 group animate-scale-in flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-accent-dim border border-accent-main/30">
+                <div key={cRef.id} className="shrink-0 group animate-scale-in flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-accent-main/8 border border-accent-main/20">
                   {cRef.thumbnail ? (
                     <img src={cRef.thumbnail} alt="" className="w-5 h-5 rounded object-cover" />
                   ) : (
                     <FolderOpen className="w-4 h-4 text-accent-main" />
                   )}
-                  <span className="text-[11px] font-medium text-text-primary">@{cRef.name}</span>
-                  <span className="text-[10px] text-text-muted">{cRef.images.length} imgs</span>
+                  <span className="text-[11px] font-medium text-accent-bright">@{cRef.name}</span>
+                  <span className="text-[10px] text-text-muted">{cRef.images.length}</span>
                   <button
                     onClick={() => removeCollectionRef(cRef.id)}
-                    className="ml-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center text-text-muted hover:text-danger transition-colors"
+                    className="w-4 h-4 rounded-full flex items-center justify-center text-text-muted hover:text-danger transition-colors"
                   >
                     <X className="w-2.5 h-2.5" />
                   </button>
@@ -421,7 +425,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
           )}
 
           {/* ContentEditable editor */}
-          <div className="px-5 pt-3 pb-3">
+          <div className="px-5 pt-4 pb-3">
             <div
               ref={editorRef}
               contentEditable
@@ -429,32 +433,35 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
               onInput={handleEditorInput}
               onKeyDown={handleEditorKeyDown}
               data-placeholder="Describe your image..."
-              className="prompt-editor min-h-[40px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none"
+              className="prompt-editor min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none"
             />
           </div>
 
+          {/* Separator */}
+          <div className="mx-4 h-px bg-border-dim/60" />
+
           {/* @-mention popup */}
           {showMentionPopup && mentionItems.length > 0 && (
-            <div className="absolute bottom-full left-4 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1.5 z-30 animate-scale-in min-w-[200px] max-h-[240px] overflow-y-auto">
+            <div className="absolute bottom-full left-4 mb-2 modal-glass border border-border-base rounded-xl p-1.5 z-30 animate-scale-in min-w-[220px] max-h-[240px] overflow-y-auto">
               {mentionItems.map((item) =>
                 item.type === 'image' ? (
                   <button
                     key={`img-${item.ref.id}`}
                     onMouseDown={(e) => { e.preventDefault(); insertChipAtCursor(item.ref) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left hover:bg-surface-4 transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left hover:bg-surface-hover transition-colors"
                   >
-                    <img src={item.ref.base64} className="w-6 h-6 rounded object-cover" alt="" />
+                    <img src={item.ref.base64} className="w-7 h-7 rounded-lg object-cover border border-border-dim" alt="" />
                     <span className="text-[13px] font-medium text-text-primary">{item.ref.name}</span>
                   </button>
                 ) : (
                   <button
                     key={`col-${item.collection.id}`}
                     onMouseDown={(e) => { e.preventDefault(); insertCollectionChipAtCursor(item.collection) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left hover:bg-surface-4 transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left hover:bg-surface-hover transition-colors"
                   >
-                    <div className="w-6 h-6 rounded bg-accent-dim flex items-center justify-center shrink-0">
+                    <div className="w-7 h-7 rounded-lg bg-accent-dim flex items-center justify-center shrink-0 border border-accent-main/15">
                       {item.collection.images[0] ? (
-                        <img src={item.collection.images[0]} className="w-6 h-6 rounded object-cover" alt="" />
+                        <img src={item.collection.images[0]} className="w-7 h-7 rounded-lg object-cover" alt="" />
                       ) : (
                         <FolderOpen className="w-3.5 h-3.5 text-accent-main" />
                       )}
@@ -470,41 +477,41 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
           )}
 
           {/* Controls row */}
-          <div className="flex items-center gap-1.5 px-4 pb-4">
+          <div className="flex items-center gap-1 px-4 py-3">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium"
+              className="no-drag pill-btn flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3/80 hover:bg-surface-4 border border-border-dim hover:border-border-base text-text-muted hover:text-text-secondary transition-all text-[12px] font-medium"
             >
               <ImagePlus className="w-3.5 h-3.5" />
-              <span>Images</span>
+              <span>Attach</span>
             </button>
             <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
 
-            <div className="w-px h-4 bg-border-dim mx-0.5" />
+            <div className="w-px h-4 bg-border-dim/40 mx-1" />
             <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} />
-            <div className="w-px h-4 bg-border-dim mx-0.5" />
+            <div className="w-px h-4 bg-border-dim/40 mx-1" />
             <ResolutionSelector value={resolution} onChange={setResolution} />
-            <div className="w-px h-4 bg-border-dim mx-0.5" />
+            <div className="w-px h-4 bg-border-dim/40 mx-1" />
             <ImageCountSelector value={imageCount} onChange={setImageCount} />
 
-            <div className="w-px h-4 bg-border-dim mx-0.5" />
+            <div className="w-px h-4 bg-border-dim/40 mx-1" />
 
             {onCollectionsClick && (
               <button
                 onClick={onCollectionsClick}
-                className="no-drag flex items-center justify-center w-8 h-8 rounded-lg hover:bg-surface-4 text-text-muted hover:text-text-secondary transition-all"
+                className="no-drag pill-btn flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-4 transition-all"
                 title="Collections"
               >
-                <FolderOpen className="w-3.5 h-3.5" />
+                <FolderOpen className="w-4 h-4" />
               </button>
             )}
             {onSettingsClick && (
               <button
                 onClick={onSettingsClick}
-                className="no-drag flex items-center justify-center w-8 h-8 rounded-lg hover:bg-surface-4 text-text-muted hover:text-text-secondary transition-all"
+                className="no-drag pill-btn flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-4 transition-all"
                 title="Settings"
               >
-                <Settings className="w-3.5 h-3.5" />
+                <Settings className="w-4 h-4" />
               </button>
             )}
 
@@ -514,33 +521,32 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
               onClick={handleSubmit}
               disabled={!canSend}
               className={cn(
-                'no-drag flex items-center justify-center w-9 h-9 rounded-xl transition-all',
+                'no-drag btn-interactive flex items-center justify-center h-9 rounded-xl transition-all',
                 canSend
-                  ? 'bg-text-primary text-surface-0 hover:opacity-90 shadow-[0_2px_12px_rgba(250,250,250,0.15)]'
-                  : 'bg-surface-3 text-text-muted cursor-not-allowed'
+                  ? 'bg-accent-main hover:bg-accent-bright text-white px-4 gap-2 glow-accent shadow-lg'
+                  : 'bg-surface-3 text-text-muted cursor-not-allowed w-9'
               )}
             >
               <Send className="w-4 h-4" />
+              {canSend && <span className="text-[12px] font-semibold tracking-wide">Generate</span>}
             </button>
           </div>
         </div>
 
         {/* Hint */}
         <div className="flex justify-center mt-2.5">
-          <p className="text-[11px] text-text-muted">
+          <p className="text-[11px] text-text-muted/70">
             {!apiKey ? (
-              <span className="text-danger">API key missing -- open Settings</span>
+              <span className="text-danger/80">API key missing — open Settings</span>
             ) : (
               <>
-                <kbd className="inline-flex items-center justify-center px-1 py-0.5 rounded bg-surface-3 text-text-muted border border-border-dim text-[10px] font-medium mr-0.5">&#x2318;</kbd>
-                {' + '}
-                <kbd className="inline-flex items-center justify-center px-1 py-0.5 rounded bg-surface-3 text-text-muted border border-border-dim text-[10px] font-medium mx-0.5">Enter</kbd>
-                {' to generate'}
+                <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mr-0.5">&#x2318;</kbd>
+                <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">&#x23CE;</kbd>
                 {(imageRefs.length > 0 || collections.length > 0) && (
                   <>
-                    {'  \u00B7  type '}
-                    <kbd className="inline-flex items-center justify-center px-1 py-0.5 rounded bg-surface-3 text-text-muted border border-border-dim text-[10px] font-medium mx-0.5">@</kbd>
-                    {' to reference images or collections'}
+                    {'  \u00B7  '}
+                    <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">@</kbd>
+                    {' references'}
                   </>
                 )}
               </>

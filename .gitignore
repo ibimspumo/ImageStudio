@@ -1,7 +1,9 @@
 node_modules/
 out/
 dist/
+screenshots/
 *.dmg
 *.icns
 .DS_Store
 imagestudio-settings.json
+test-screenshot.mjs

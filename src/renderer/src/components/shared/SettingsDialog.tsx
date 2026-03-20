@@ -27,7 +27,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
       onClick={onClose}
     >
       <div
-        className="bg-surface-1 border border-border-base rounded-2xl w-full max-w-md mx-4 shadow-[0_24px_80px_rgba(0,0,0,0.6)] animate-scale-in"
+        className="modal-glass border border-border-base rounded-2xl w-full max-w-md mx-4 animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -89,7 +89,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           <button
             onClick={handleSave}
             disabled={!localKey.trim()}
-            className="px-4 py-2 rounded-xl text-[13px] font-medium bg-text-primary text-surface-0 hover:opacity-90 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
+            className="btn-interactive px-4 py-2 rounded-xl text-[13px] font-medium bg-accent-main text-white hover:bg-accent-bright transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5 glow-accent"
           >
             {saved ? (
               <>

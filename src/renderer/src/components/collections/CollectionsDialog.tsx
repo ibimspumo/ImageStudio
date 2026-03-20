@@ -114,7 +114,7 @@ export function CollectionsDialog({ onClose }: CollectionsDialogProps) {
       onClick={onClose}
     >
       <div
-        className="bg-surface-1 border border-border-base rounded-2xl w-full max-w-lg mx-4 shadow-[0_24px_80px_rgba(0,0,0,0.6)] animate-scale-in max-h-[80vh] flex flex-col"
+        className="modal-glass border border-border-base rounded-2xl w-full max-w-lg mx-4 animate-scale-in max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -278,7 +278,7 @@ export function CollectionsDialog({ onClose }: CollectionsDialogProps) {
           {view === 'list' && (
             <button
               onClick={handleStartCreate}
-              className="px-4 py-2 rounded-xl text-[13px] font-medium bg-text-primary text-surface-0 hover:opacity-90 transition-all flex items-center gap-1.5"
+              className="btn-interactive px-4 py-2 rounded-xl text-[13px] font-medium bg-accent-main text-white hover:bg-accent-bright transition-all flex items-center gap-1.5 glow-accent"
             >
               <Plus className="w-3.5 h-3.5" />
               New Collection

@@ -52,9 +52,20 @@ export function ImageViewer({
 }: ImageViewerProps) {
   const [hovered, setHovered] = useState(false)
   const [promptCopied, setPromptCopied] = useState(false)
+  const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null)
   const removeImage = useGalleryStore((s) => s.removeImage)
   const image = images[currentIndex]
   const src = image?.base64DataUrl
+
+  // Detect actual pixel dimensions of the base64 image
+  useEffect(() => {
+    if (!src) { setImageDims(null); return }
+    const img = new window.Image()
+    img.onload = () => setImageDims({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => setImageDims(null)
+    img.src = src
+    return () => { img.onload = null; img.onerror = null }
+  }, [src])
 
   const canGoLeft = currentIndex > 0
   const canGoRight = currentIndex < images.length - 1
@@ -130,9 +141,9 @@ export function ImageViewer({
       onMouseLeave={() => setHovered(false)}
       onMouseMove={() => setHovered(true)}
     >
-      {/* Counter */}
+      {/* Counter — bottom-center to avoid macOS traffic lights */}
       {images.length > 1 && (
-        <div className="absolute top-5 left-5 z-10 px-3 py-1.5 rounded-lg bg-white/8 border border-white/10 backdrop-blur-md">
+        <div className="absolute bottom-5 left-[35%] -translate-x-1/2 z-[60] px-3 py-1.5 rounded-lg bg-white/8 border border-white/10 backdrop-blur-md pointer-events-none">
           <span className="text-[13px] font-medium text-white/80">
             {currentIndex + 1} / {images.length}
           </span>
@@ -161,31 +172,32 @@ export function ImageViewer({
 
       {/* Image area - 70% */}
       <div
-        className="w-[70%] h-full flex items-center justify-center p-8"
+        className="w-[70%] h-full flex items-center justify-center p-12"
         onClick={onClose}
       >
         <img
           src={src}
           alt="Full size"
-          className="max-w-full max-h-full object-contain rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.4)]"
+          className="max-w-[75vw] max-h-[75vh] object-contain rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.4)]"
           onClick={(e) => e.stopPropagation()}
         />
       </div>
 
       {/* Info panel - 30% */}
       <div
-        className="w-[30%] h-full bg-surface-2 border-l border-border-dim overflow-y-auto"
+        className="no-drag w-[30%] h-full bg-surface-2 border-l border-border-dim overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-5 flex flex-col gap-5">
-          {/* Close button */}
+          {/* Close button — no-drag to override Electron drag region */}
           <div className="flex justify-end">
             <button
-              onClick={onClose}
-              className="p-2 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-3 transition-colors"
+              onClick={(e) => { e.stopPropagation(); onClose() }}
+              className="no-drag p-2.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-3 transition-colors cursor-pointer"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               title="Close"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
 
@@ -237,16 +249,21 @@ export function ImageViewer({
               <span className="text-[12px] text-text-secondary truncate">{image.model}</span>
             </div>
 
-            {/* Aspect ratio + Resolution badges */}
+            {/* Aspect ratio + Resolution + Pixel dimensions badges */}
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-text-muted w-20 shrink-0">Size</span>
-              <div className="flex gap-1.5">
+              <div className="flex flex-wrap gap-1.5">
                 <span className="px-2 py-0.5 rounded-md bg-surface-3 text-[11px] font-medium text-text-secondary">
                   {image.aspectRatio}
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-surface-3 text-[11px] font-medium text-text-secondary">
                   {image.resolution}
                 </span>
+                {imageDims && (
+                  <span className="px-2 py-0.5 rounded-md bg-surface-3 text-[11px] font-medium text-text-secondary">
+                    {imageDims.w} × {imageDims.h}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -271,7 +288,7 @@ export function ImageViewer({
             </div>
           </div>
 
-          {/* Reference images */}
+          {/* Reference images — clickable to preview */}
           {image.attachments && image.attachments.length > 0 && (
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
@@ -279,16 +296,19 @@ export function ImageViewer({
               </span>
               <div className="flex flex-wrap gap-2">
                 {image.attachments.map((att, i) => (
-                  <div
+                  <button
                     key={i}
-                    className="w-16 h-16 rounded-lg overflow-hidden border border-border-dim bg-surface-3"
+                    type="button"
+                    onClick={() => window.open(att, '_blank')}
+                    className="w-16 h-16 rounded-lg overflow-hidden border border-border-dim bg-surface-3 hover:border-accent-main transition-colors cursor-pointer"
+                    title={`View reference ${i + 1}`}
                   >
                     <img
                       src={att}
                       alt={`Reference ${i + 1}`}
                       className="w-full h-full object-cover"
                     />
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

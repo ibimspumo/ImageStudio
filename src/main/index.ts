@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, nativeImage } from 'electron'
 import { join } from 'path'
 import { registerAllHandlers } from './ipc'
 import { ensureDirectories } from './services/image-store'
@@ -42,6 +42,16 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   await ensureDirectories()
   registerAllHandlers()
+
+  // Set dock icon on macOS
+  if (process.platform === 'darwin') {
+    const iconPath = join(__dirname, '../../resources/icon.png')
+    try {
+      const icon = nativeImage.createFromPath(iconPath)
+      if (!icon.isEmpty()) app.dock.setIcon(icon)
+    } catch { /* icon file may not exist in dev */ }
+  }
+
   createWindow()
 
   app.on('activate', () => {

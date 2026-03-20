@@ -45,13 +45,26 @@ export default function App() {
   }
 
   const handleStartChat = (imageId: string) => {
-    // Find the image in gallery
     const images = useGalleryStore.getState().images
     const image = images.find((img) => img.id === imageId)
     if (!image || !image.base64DataUrl) return
 
-    // Create a new chat from this image
+    // Reopen existing chat if this image has one
+    if (image.chatId) {
+      const existingChat = useChatStore.getState().chats.find((c) => c.id === image.chatId)
+      if (existingChat) {
+        setActiveChatId(image.chatId)
+        setViewerState(null)
+        return
+      }
+    }
+
+    // Otherwise create a new chat
     const chatId = startChat(image.id, image.base64DataUrl, image.prompt)
+    // Tag the gallery image with this chatId
+    useGalleryStore.setState((state) => ({
+      images: state.images.map((i) => i.id === imageId ? { ...i, chatId } : i)
+    }))
     setActiveChatId(chatId)
     setViewerState(null)
   }

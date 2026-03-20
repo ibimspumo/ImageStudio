@@ -23,7 +23,7 @@ export function ImageGallery({ images, onImageClick, onStartChat }: ImageGallery
   )
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-4">
-      <div className="max-w-6xl mx-auto columns-2 md:columns-3 lg:columns-4 gap-3 space-y-3">
+      <div className="max-w-6xl mx-auto columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-2">
         {images.map((image) => (
           <GalleryCard
             key={image.id}
