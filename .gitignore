@@ -1,0 +1,7 @@
+node_modules/
+out/
+dist/
+*.dmg
+*.icns
+.DS_Store
+imagestudio-settings.json

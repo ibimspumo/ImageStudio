@@ -1,0 +1,39 @@
+{
+  "name": "imagestudio",
+  "version": "1.0.0",
+  "description": "AI Image Generation Studio",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "postinstall": "electron-vite build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^41.0.3",
+    "electron-vite": "^5.0.0",
+    "playwright": "^1.58.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.577.0",
+    "nanoid": "^5.1.7",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-dropzone": "^15.0.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.2",
+    "zustand": "^5.0.12"
+  }
+}
