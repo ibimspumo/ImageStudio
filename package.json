@@ -26,8 +26,8 @@
     ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["universal"] },
-        { "target": "zip", "arch": ["universal"] }
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["arm64"] }
       ],
       "icon": "resources/icon.icns",
       "category": "public.app-category.graphics-design",
