@@ -75,12 +75,20 @@ export async function generateImage(
   }
 
   const data = await response.json()
+
+  // Debug logging
+  console.log('[OpenRouter] Response keys:', Object.keys(data))
+  console.log('[OpenRouter] Usage:', JSON.stringify(data.usage))
+
   const choice = data.choices?.[0]
   if (!choice) {
+    console.log('[OpenRouter] No choices in response:', JSON.stringify(data).substring(0, 500))
     throw new Error('No response from model')
   }
 
   const message = choice.message
+  console.log('[OpenRouter] Message keys:', Object.keys(message || {}))
+  console.log('[OpenRouter] Has images:', Array.isArray(message?.images), 'count:', message?.images?.length)
   let text: string | undefined
   let imageBase64: string | undefined
 

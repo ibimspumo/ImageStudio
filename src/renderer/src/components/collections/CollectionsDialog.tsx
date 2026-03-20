@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { X, Plus, Trash2, Pencil, ImagePlus, FolderOpen, Check } from 'lucide-react'
 import { useCollectionsStore, type AssetCollection } from '../../stores/collections-store'
 import { cn } from '../../lib/utils'
+import { compressImage } from '../../lib/image-utils'
 
 interface CollectionsDialogProps {
   onClose: () => void
@@ -21,12 +22,13 @@ export function CollectionsDialog({ onClose }: CollectionsDialogProps) {
 
   const editingCollection = editingId ? collections.find((c) => c.id === editingId) : null
 
-  const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
+  const readFileAsBase64 = async (file: File): Promise<string> => {
+    const raw = await new Promise<string>((resolve) => {
       const reader = new FileReader()
       reader.onload = () => resolve(reader.result as string)
       reader.readAsDataURL(file)
     })
+    return compressImage(raw)
   }
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
