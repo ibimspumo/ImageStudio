@@ -1,6 +1,9 @@
+import { useMemo } from 'react'
 import { ImageGallery } from '../gallery/ImageGallery'
 import { PromptBar } from '../input/PromptBar'
+import { WorkspaceBar } from '../workspace/WorkspaceBar'
 import { useGalleryStore, type GalleryImage } from '../../stores/gallery-store'
+import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Sparkles } from 'lucide-react'
 
 interface MainContentProps {
@@ -11,20 +14,36 @@ interface MainContentProps {
 }
 
 export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat }: MainContentProps) {
-  const images = useGalleryStore((s) => s.images)
+  const allImages = useGalleryStore((s) => s.images)
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
+
+  // Filter images by active workspace
+  const images = useMemo(() => {
+    if (activeWorkspaceId === null) return allImages
+    return allImages.filter((img) => img.workspaceId === activeWorkspaceId)
+  }, [allImages, activeWorkspaceId])
 
   return (
-    <main className="flex-1 flex flex-col min-w-0 h-full">
+    <main className="flex-1 flex flex-col min-w-0 h-full relative">
+      {/* Ambient background orbs */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div className="ambient-orb absolute w-[500px] h-[500px] rounded-full blur-[120px] opacity-[0.035] bg-purple-500 -top-40 -right-40" />
+        <div className="ambient-orb-2 absolute w-[400px] h-[400px] rounded-full blur-[100px] opacity-[0.025] bg-blue-500 bottom-20 -left-40" />
+      </div>
+
       {/* Top bar */}
-      <div className="h-12 shrink-0 flex items-center justify-center px-5 drag-region">
+      <div className="h-12 shrink-0 flex items-center justify-center px-5 drag-region relative z-10">
         <div className="flex items-center gap-2 opacity-60 hover:opacity-80 transition-opacity">
           <Sparkles className="w-3.5 h-3.5 text-accent-main" />
           <span className="text-[12px] font-medium text-text-secondary tracking-[0.08em] uppercase">ImageStudio</span>
         </div>
       </div>
 
-      {images.length === 0 ? (
-        /* Empty state with aurora atmosphere */
+      {/* Workspace bar */}
+      <WorkspaceBar />
+
+      {images.length === 0 && allImages.length === 0 ? (
+        /* Empty state with aurora atmosphere — only when truly empty */
         <div className="aurora-bg flex-1 flex flex-col items-center justify-center px-8">
           {/* Floating orb */}
           <div className="relative mb-8">
@@ -50,6 +69,15 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
               </button>
             ))}
           </div>
+        </div>
+      ) : images.length === 0 && activeWorkspaceId !== null ? (
+        /* Empty workspace state */
+        <div className="flex-1 flex flex-col items-center justify-center px-8">
+          <div className="w-12 h-12 rounded-xl bg-surface-3 border border-border-dim flex items-center justify-center mb-4">
+            <Sparkles className="w-5 h-5 text-text-muted" />
+          </div>
+          <p className="text-[14px] text-text-muted mb-1">This workspace is empty</p>
+          <p className="text-[12px] text-text-muted/60">Generate images or move existing ones here</p>
         </div>
       ) : (
         <ImageGallery images={images} onImageClick={onImageClick} onStartChat={onStartChat} />

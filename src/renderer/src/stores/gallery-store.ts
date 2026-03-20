@@ -16,14 +16,16 @@ export interface GalleryImage {
   attachments?: string[]
   parentImageId?: string
   chatId?: string          // links to an ImageChat for "open chat" button
+  workspaceId?: string     // workspace this image belongs to (undefined = no workspace)
 }
 
 interface GalleryStore {
   images: GalleryImage[]
-  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[]) => string
+  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string) => string
   completeImage: (id: string, base64DataUrl: string, durationMs?: number) => void
   failImage: (id: string, error: string) => void
   removeImage: (id: string) => void
+  moveToWorkspace: (imageId: string, workspaceId: string | undefined) => void
   clearAll: () => void
   loadFromDisk: () => Promise<void>
   persistToDisk: () => Promise<void>
@@ -32,7 +34,7 @@ interface GalleryStore {
 export const useGalleryStore = create<GalleryStore>((set, get) => ({
   images: [],
 
-  addPlaceholder: (prompt, aspectRatio, resolution, model, attachments) => {
+  addPlaceholder: (prompt, aspectRatio, resolution, model, attachments, workspaceId) => {
     const id = nanoid()
     set((state) => ({
       images: [
@@ -46,6 +48,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           isLoading: true,
           model,
           attachments,
+          workspaceId,
         },
         ...state.images,
       ],
@@ -74,6 +77,15 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
   removeImage: (id) => {
     set((state) => ({
       images: state.images.filter((img) => img.id !== id),
+    }))
+    setTimeout(() => get().persistToDisk(), 100)
+  },
+
+  moveToWorkspace: (imageId, workspaceId) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === imageId ? { ...img, workspaceId } : img
+      ),
     }))
     setTimeout(() => get().persistToDisk(), 100)
   },

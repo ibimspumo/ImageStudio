@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Send, ImagePlus, X, FolderOpen, Settings } from 'lucide-react'
+import { Send, Plus, X, FolderOpen, Settings } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useSettingsStore } from '../../stores/settings-store'
 import { useCollectionsStore, type AssetCollection } from '../../stores/collections-store'
 import { AspectRatioSelector } from './AspectRatioSelector'
 import { ResolutionSelector } from './ResolutionSelector'
 import { ImageCountSelector } from './ImageCountSelector'
+import { ModelSelector } from './ModelSelector'
 import type { AspectRatio, Resolution } from '../../types/api'
 import { cn } from '../../lib/utils'
 import { prepareCollectionImages, compressImage } from '../../lib/image-utils'
@@ -20,7 +21,7 @@ interface CollectionRef {
   id: string
   collectionId: string
   name: string
-  thumbnail: string // first image as preview
+  thumbnail: string
   images: string[]
 }
 
@@ -35,8 +36,10 @@ interface PromptBarProps {
 
 export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProps = {}) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
+  const [customRatio, setCustomRatio] = useState<string>('4:3')
   const [resolution, setResolution] = useState<Resolution>('2K')
   const [imageCount, setImageCount] = useState(1)
+  const [selectedModels, setSelectedModels] = useState<string[]>(['google/gemini-3-pro-image-preview'])
   const [imageRefs, setImageRefs] = useState<ImageRef[]>([])
   const [collectionRefs, setCollectionRefs] = useState<CollectionRef[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
@@ -52,11 +55,9 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   const apiKey = useSettingsStore((s) => s.apiKey)
   const collections = useCollectionsStore((s) => s.collections)
 
-  // Add image as attachment (thumbnail strip)
   const addImageRef = useCallback((base64: string): ImageRef => {
     const existing = imageRefs.find((r) => r.base64 === base64)
     if (existing) return existing
-
     const name = `Image ${nextImageNum.current++}`
     const ref: ImageRef = { id: crypto.randomUUID(), name, base64 }
     setImageRefs((prev) => [...prev, ref])
@@ -65,7 +66,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
 
   const removeImageRef = useCallback((id: string) => {
     setImageRefs((prev) => prev.filter((r) => r.id !== id))
-    // Also remove any inline chips referencing this image
     const editor = editorRef.current
     if (editor) {
       const chips = editor.querySelectorAll(`[data-image-ref-id="${id}"]`)
@@ -82,17 +82,13 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     }
   }, [])
 
-  // Insert inline chip at cursor (for @-mentions of images)
   const insertChipAtCursor = useCallback((ref: ImageRef) => {
     const editor = editorRef.current
     if (!editor) return
     editor.focus()
-
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0) return
     const range = sel.getRangeAt(0)
-
-    // Remove @filter text
     const textNode = range.startContainer
     if (textNode.nodeType === Node.TEXT_NODE) {
       const text = textNode.textContent || ''
@@ -106,38 +102,30 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
         range.setEnd(textNode, atIdx)
       }
     }
-
     const chip = document.createElement('span')
     chip.contentEditable = 'false'
     chip.dataset.imageRefId = ref.id
     chip.className = 'inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-surface-3 border border-border-base text-[12px] font-medium text-text-primary cursor-default select-none'
     chip.innerHTML = `<img src="${ref.base64}" class="w-4 h-4 rounded object-cover inline-block align-middle" /><span class="align-middle">${ref.name}</span>`
-
     range.deleteContents()
     range.insertNode(chip)
-
     const space = document.createTextNode('\u00A0')
     chip.after(space)
     range.setStartAfter(space)
     range.setEndAfter(space)
     sel.removeAllRanges()
     sel.addRange(range)
-
     setShowMentionPopup(false)
     setMentionFilter('')
   }, [])
 
-  // Insert inline chip for collection @-mention
   const insertCollectionChipAtCursor = useCallback((collection: AssetCollection) => {
     const editor = editorRef.current
     if (!editor) return
     editor.focus()
-
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0) return
     const range = sel.getRangeAt(0)
-
-    // Remove @filter text
     const textNode = range.startContainer
     if (textNode.nodeType === Node.TEXT_NODE) {
       const text = textNode.textContent || ''
@@ -151,8 +139,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
         range.setEnd(textNode, atIdx)
       }
     }
-
-    // Track collection ref
     const cRef: CollectionRef = {
       id: crypto.randomUUID(),
       collectionId: collection.id,
@@ -161,33 +147,26 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       images: collection.images,
     }
     setCollectionRefs((prev) => [...prev, cRef])
-
     const chip = document.createElement('span')
     chip.contentEditable = 'false'
     chip.dataset.collectionRefId = cRef.id
     chip.className = 'inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none'
-
     const thumbnailHtml = cRef.thumbnail
       ? `<img src="${cRef.thumbnail}" class="w-4 h-4 rounded object-cover inline-block align-middle" />`
       : '<span class="inline-flex w-4 h-4 items-center justify-center"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>'
-
     chip.innerHTML = `${thumbnailHtml}<span class="align-middle">@${collection.name}</span>`
-
     range.deleteContents()
     range.insertNode(chip)
-
     const space = document.createTextNode('\u00A0')
     chip.after(space)
     range.setStartAfter(space)
     range.setEndAfter(space)
     sel.removeAllRanges()
     sel.addRange(range)
-
     setShowMentionPopup(false)
     setMentionFilter('')
   }, [])
 
-  // Parse editor -> text + all attached image base64s
   const getPromptText = useCallback((): string => {
     const editor = editorRef.current
     if (!editor) return ''
@@ -216,26 +195,22 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   const handleSubmit = useCallback(async () => {
     const text = getPromptText()
     if (!text || !apiKey) return
-
-    // All attached individual images
     const attachments = imageRefs.map((r) => r.base64)
-
-    // Process collection images
     for (const cRef of collectionRefs) {
       const processed = await prepareCollectionImages(cRef.images)
       attachments.push(...processed)
     }
-
+    const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
     generate({
       prompt: text,
-      aspectRatio,
+      aspectRatio: resolvedAspectRatio,
       resolution,
       imageCount,
       attachments: attachments.length > 0 ? attachments : undefined,
+      models: selectedModels,
     })
-  }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, resolution, imageCount])
+  }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels])
 
-  // Build combined mention items
   const mentionItems: MentionItem[] = [
     ...imageRefs
       .filter((r) => r.name.toLowerCase().includes(mentionFilter.toLowerCase()))
@@ -295,7 +270,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     if (showMentionPopup) setShowMentionPopup(false)
   }, [imageRefs, collections, showMentionPopup])
 
-  // File upload
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files) return
@@ -312,7 +286,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     e.target.value = ''
   }, [addImageRef])
 
-  // Drop on prompt card only
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy' }, [])
   const handleDragEnter = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); dragCountRef.current++; setIsDragOver(true) }, [])
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); dragCountRef.current--; if (dragCountRef.current === 0) setIsDragOver(false) }, [])
@@ -321,7 +294,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     e.stopPropagation()
     setIsDragOver(false)
     dragCountRef.current = 0
-
     const internalData = e.dataTransfer.getData('application/x-imagestudio')
     if (internalData) {
       addImageRef(internalData)
@@ -339,7 +311,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     }
   }, [addImageRef])
 
-  // Prevent browser default drop behavior
   useEffect(() => {
     const prevent = (e: DragEvent) => { e.preventDefault() }
     document.addEventListener('dragover', prevent)
@@ -355,7 +326,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
 
   return (
     <div className="shrink-0 flex flex-col items-center px-6 pb-6 pt-3">
-      <div className="w-full max-w-[720px] relative">
+      <div className="w-full max-w-[800px] relative">
         <div
           className={cn(
             'prompt-card grain relative border rounded-2xl transition-all',
@@ -373,7 +344,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
           {isDragOver && (
             <div className="absolute inset-0 z-10 rounded-2xl bg-accent-main/8 backdrop-blur-sm flex items-center justify-center pointer-events-none border-2 border-dashed border-accent-main/40">
               <div className="flex flex-col items-center gap-2">
-                <ImagePlus className="w-6 h-6 text-accent-main" />
+                <Plus className="w-6 h-6 text-accent-main" />
                 <span className="text-[13px] font-medium text-accent-main">Drop as reference</span>
               </div>
             </div>
@@ -424,8 +395,17 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
             </div>
           )}
 
-          {/* ContentEditable editor */}
-          <div className="px-5 pt-4 pb-3">
+          {/* ContentEditable editor with inline + button */}
+          <div className="flex items-start gap-2 px-4 pt-4 pb-3">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="no-drag shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center border border-border-base text-text-secondary hover:text-text-primary hover:bg-surface-4 hover:border-border-bright transition-all"
+              title="Attach images"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
+
             <div
               ref={editorRef}
               contentEditable
@@ -433,7 +413,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
               onInput={handleEditorInput}
               onKeyDown={handleEditorKeyDown}
               data-placeholder="Describe your image..."
-              className="prompt-editor min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none"
+              className="prompt-editor flex-1 min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none pt-1"
             />
           </div>
 
@@ -478,40 +458,31 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
 
           {/* Controls row */}
           <div className="flex items-center gap-1 px-4 py-3">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="no-drag pill-btn flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3/80 hover:bg-surface-4 border border-border-dim hover:border-border-base text-text-muted hover:text-text-secondary transition-all text-[12px] font-medium"
-            >
-              <ImagePlus className="w-3.5 h-3.5" />
-              <span>Attach</span>
-            </button>
-            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
-
-            <div className="w-px h-4 bg-border-dim/40 mx-1" />
-            <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} />
-            <div className="w-px h-4 bg-border-dim/40 mx-1" />
+            <ModelSelector selectedModels={selectedModels} onChange={setSelectedModels} />
+            <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+            <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} customRatio={customRatio} onCustomRatioChange={setCustomRatio} />
+            <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
             <ResolutionSelector value={resolution} onChange={setResolution} />
-            <div className="w-px h-4 bg-border-dim/40 mx-1" />
+            <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
             <ImageCountSelector value={imageCount} onChange={setImageCount} />
-
-            <div className="w-px h-4 bg-border-dim/40 mx-1" />
+            <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
 
             {onCollectionsClick && (
               <button
                 onClick={onCollectionsClick}
-                className="no-drag pill-btn flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-4 transition-all"
-                title="Collections"
+                className="no-drag flex items-center justify-center h-8 w-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[14px] font-semibold"
+                title="Collections (@)"
               >
-                <FolderOpen className="w-4 h-4" />
+                @
               </button>
             )}
             {onSettingsClick && (
               <button
                 onClick={onSettingsClick}
-                className="no-drag pill-btn flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-4 transition-all"
+                className="no-drag flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
                 title="Settings"
               >
-                <Settings className="w-4 h-4" />
+                <Settings className="w-3.5 h-3.5" />
               </button>
             )}
 

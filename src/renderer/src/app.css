@@ -185,3 +185,22 @@ body {
   transition: opacity 0.15s;
 }
 .pill-btn:hover::after { opacity: 1; }
+
+/* === Ambient background orbs === */
+.ambient-orb {
+  animation: ambientDrift1 25s ease-in-out infinite;
+}
+.ambient-orb-2 {
+  animation: ambientDrift2 30s ease-in-out infinite;
+}
+
+@keyframes ambientDrift1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-40px, 30px) scale(1.1); }
+  66% { transform: translate(20px, -20px) scale(0.95); }
+}
+@keyframes ambientDrift2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40% { transform: translate(30px, -25px) scale(1.08); }
+  70% { transform: translate(-15px, 35px) scale(0.97); }
+}

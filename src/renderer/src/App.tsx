@@ -3,6 +3,7 @@ import { useSettingsStore } from './stores/settings-store'
 import { useGalleryStore, type GalleryImage } from './stores/gallery-store'
 import { useCollectionsStore } from './stores/collections-store'
 import { useChatStore } from './stores/chat-store'
+import { useWorkspaceStore } from './stores/workspace-store'
 import { MainContent } from './components/layout/MainContent'
 import { SettingsDialog } from './components/shared/SettingsDialog'
 import { ImageViewer } from './components/shared/ImageViewer'
@@ -19,11 +20,13 @@ export default function App() {
   const loadGallery = useGalleryStore((s) => s.loadFromDisk)
   const loadCollections = useCollectionsStore((s) => s.loadFromDisk)
   const loadChats = useChatStore((s) => s.loadFromDisk)
+  const loadWorkspaces = useWorkspaceStore((s) => s.loadFromDisk)
   const apiKey = useSettingsStore((s) => s.apiKey)
   const [showSettings, setShowSettings] = useState(false)
   const [showCollections, setShowCollections] = useState(false)
   const [viewerState, setViewerState] = useState<ViewerState | null>(null)
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
+  const [chatInitialModel, setChatInitialModel] = useState<string | undefined>(undefined)
 
   const startChat = useChatStore((s) => s.startChat)
 
@@ -32,7 +35,8 @@ export default function App() {
     loadGallery()
     loadCollections()
     loadChats()
-  }, [hydrate, loadGallery, loadCollections, loadChats])
+    loadWorkspaces()
+  }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces])
 
   useEffect(() => {
     if (useSettingsStore.getState().hydrated && !apiKey) {
@@ -53,6 +57,7 @@ export default function App() {
     if (image.chatId) {
       const existingChat = useChatStore.getState().chats.find((c) => c.id === image.chatId)
       if (existingChat) {
+        setChatInitialModel(image.model)
         setActiveChatId(image.chatId)
         setViewerState(null)
         return
@@ -65,6 +70,18 @@ export default function App() {
     useGalleryStore.setState((state) => ({
       images: state.images.map((i) => i.id === imageId ? { ...i, chatId } : i)
     }))
+    setChatInitialModel(image.model)
+    setActiveChatId(chatId)
+    setViewerState(null)
+  }
+
+  const handleOpenChat = (chatId: string) => {
+    // Find the model used for the source image of this chat
+    const chat = useChatStore.getState().chats.find((c) => c.id === chatId)
+    if (chat) {
+      const sourceImage = useGalleryStore.getState().images.find((i) => i.id === chat.sourceImageId)
+      setChatInitialModel(sourceImage?.model)
+    }
     setActiveChatId(chatId)
     setViewerState(null)
   }
@@ -95,12 +112,14 @@ export default function App() {
           onNavigate={(index) => setViewerState((prev) => prev ? { ...prev, index } : null)}
           onStartChat={handleStartChat}
           onReusePrompt={handleReusePrompt}
+          onOpenChat={handleOpenChat}
         />
       )}
       {activeChatId && (
         <ChatView
           chatId={activeChatId}
           onClose={() => setActiveChatId(null)}
+          initialModel={chatInitialModel}
         />
       )}
     </>

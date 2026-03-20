@@ -2,13 +2,13 @@ import { useCallback } from 'react'
 import { useChatStore } from '../stores/chat-store'
 import { useGalleryStore } from '../stores/gallery-store'
 import { useSettingsStore } from '../stores/settings-store'
-import type { AspectRatio, Resolution } from '../types/api'
 
 interface ChatGenerateOptions {
   chatId: string
   prompt: string
-  aspectRatio: AspectRatio
-  resolution: Resolution
+  aspectRatio: string
+  resolution: string
+  model: string
   extraAttachments?: string[]
 }
 
@@ -23,7 +23,7 @@ export function useChatGeneration() {
     (options: ChatGenerateOptions) => {
       if (!apiKey) return
 
-      const { chatId, prompt, aspectRatio, resolution, extraAttachments } = options
+      const { chatId, prompt, aspectRatio, resolution, model, extraAttachments } = options
 
       // Get the last assistant image from the chat to use as auto-reference
       const chat = useChatStore.getState().chats.find((c) => c.id === chatId)
@@ -48,7 +48,6 @@ export function useChatGeneration() {
       // Add assistant placeholder
       const assistantMsgId = addAssistantPlaceholder(chatId)
 
-      const model = 'google/gemini-3-pro-image-preview'
       const requestId = crypto.randomUUID()
       const startTime = Date.now()
 
@@ -74,7 +73,7 @@ export function useChatGeneration() {
           const result = results[0]
 
           if (result?.status === 'complete' && result.result?.imageBase64) {
-            completeAssistantMessage(chatId, assistantMsgId, result.result.imageBase64, durationMs)
+            completeAssistantMessage(chatId, assistantMsgId, result.result.imageBase64, durationMs, model)
 
             // Also add to gallery so it shows in the grid
             const galleryStore = useGalleryStore.getState()

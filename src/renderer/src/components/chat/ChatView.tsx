@@ -6,7 +6,8 @@ import {
   ImagePlus,
   AlertCircle,
   Clock,
-  Link2
+  Link2,
+  Cpu
 } from 'lucide-react'
 import { useChatStore, type ChatMessage } from '../../stores/chat-store'
 import { useChatGeneration } from '../../hooks/useChatGeneration'
@@ -14,12 +15,15 @@ import { SimpleLightbox } from '../shared/SimpleLightbox'
 import { useSettingsStore } from '../../stores/settings-store'
 import { AspectRatioSelector } from '../input/AspectRatioSelector'
 import { ResolutionSelector } from '../input/ResolutionSelector'
+import { ModelSelector } from '../input/ModelSelector'
 import type { AspectRatio, Resolution } from '../../types/api'
+import { getModelName } from '../../types/api'
 import { cn } from '../../lib/utils'
 
 interface ChatViewProps {
   chatId: string
   onClose: () => void
+  initialModel?: string
 }
 
 function formatDuration(ms: number): string {
@@ -110,12 +114,18 @@ function MessageBubble({ message, allImages, onImageClick }: { message: ChatMess
             {formatDuration(message.durationMs)}
           </span>
         )}
+        {message.model && (
+          <span className="flex items-center gap-1 text-[10px] text-text-muted">
+            <Cpu className="w-2.5 h-2.5" />
+            {getModelName(message.model)}
+          </span>
+        )}
       </div>
     </div>
   )
 }
 
-export function ChatView({ chatId, onClose }: ChatViewProps) {
+export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
   const [lightboxState, setLightboxState] = useState<{ images: string[]; index: number } | null>(null)
 
   const onImageClick = useCallback((images: string[], index: number) => {
@@ -123,7 +133,9 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
   }, [])
   const chat = useChatStore((s) => s.chats.find((c) => c.id === chatId))
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
+  const [customRatio, setCustomRatio] = useState<string>('4:3')
   const [resolution, setResolution] = useState<Resolution>('2K')
+  const [selectedModels, setSelectedModels] = useState<string[]>([initialModel || 'google/gemini-3-pro-image-preview'])
   const [imageRefs, setImageRefs] = useState<Array<{ id: string; base64: string }>>([])
 
   const editorRef = useRef<HTMLDivElement>(null)
@@ -168,12 +180,14 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
     if (!text || !apiKey || !chat) return
 
     const extraAttachments = imageRefs.map((r) => r.base64)
+    const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
 
     generate({
       chatId: chat.id,
       prompt: text,
-      aspectRatio,
+      aspectRatio: resolvedAspectRatio,
       resolution,
+      model: selectedModels[0],
       extraAttachments: extraAttachments.length > 0 ? extraAttachments : undefined
     })
 
@@ -182,7 +196,7 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
       editorRef.current.textContent = ''
     }
     setImageRefs([])
-  }, [getPromptText, apiKey, chat, imageRefs, generate, aspectRatio, resolution])
+  }, [getPromptText, apiKey, chat, imageRefs, generate, aspectRatio, customRatio, resolution, selectedModels])
 
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -356,7 +370,9 @@ export function ChatView({ chatId, onClose }: ChatViewProps) {
               />
 
               <div className="w-px h-4 bg-border-dim mx-0.5" />
-              <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} />
+              <ModelSelector selectedModels={selectedModels} onChange={setSelectedModels} compact />
+              <div className="w-px h-4 bg-border-dim mx-0.5" />
+              <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} customRatio={customRatio} onCustomRatioChange={setCustomRatio} />
               <div className="w-px h-4 bg-border-dim mx-0.5" />
               <ResolutionSelector value={resolution} onChange={setResolution} />
 

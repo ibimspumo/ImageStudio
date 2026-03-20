@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   X,
-  Download,
   Copy,
   ChevronLeft,
   ChevronRight,
@@ -11,10 +10,14 @@ import {
   Clock,
   Calendar,
   Clipboard,
+  ExternalLink,
   Image as ImageIcon
 } from 'lucide-react'
 import type { GalleryImage } from '../../stores/gallery-store'
 import { useGalleryStore } from '../../stores/gallery-store'
+import { useChatStore } from '../../stores/chat-store'
+import { getModelName } from '../../types/api'
+import { ExportPopover } from './ExportPopover'
 import { cn } from '../../lib/utils'
 
 interface ImageViewerProps {
@@ -24,6 +27,7 @@ interface ImageViewerProps {
   onNavigate: (index: number) => void
   onStartChat: (imageId: string) => void
   onReusePrompt: (image: GalleryImage) => void
+  onOpenChat?: (chatId: string) => void
 }
 
 function formatDuration(ms: number): string {
@@ -48,14 +52,19 @@ export function ImageViewer({
   onClose,
   onNavigate,
   onStartChat,
-  onReusePrompt
+  onReusePrompt,
+  onOpenChat
 }: ImageViewerProps) {
   const [hovered, setHovered] = useState(false)
   const [promptCopied, setPromptCopied] = useState(false)
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null)
   const removeImage = useGalleryStore((s) => s.removeImage)
+  const chats = useChatStore((s) => s.chats)
   const image = images[currentIndex]
   const src = image?.base64DataUrl
+
+  // Find the chat this image belongs to
+  const linkedChat = image?.chatId ? chats.find((c) => c.id === image.chatId) : null
 
   // Detect actual pixel dimensions of the base64 image
   useEffect(() => {
@@ -91,11 +100,6 @@ export function ImageViewer({
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
-
-  const handleSave = async () => {
-    if (!src) return
-    await window.api.exportImage(src, `imagestudio-${Date.now()}.png`)
-  }
 
   const handleCopy = async () => {
     if (!src) return
@@ -235,9 +239,33 @@ export function ImageViewer({
               className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium"
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              Start Chat
+              {linkedChat ? 'Continue Chat' : 'Start Chat'}
             </button>
           </div>
+
+          {/* Chat origin info */}
+          {linkedChat && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Chat Origin</span>
+              <button
+                onClick={() => {
+                  if (onOpenChat) {
+                    onOpenChat(linkedChat.id)
+                  } else {
+                    onStartChat(image.id)
+                  }
+                }}
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-surface-3 hover:bg-surface-4 transition-colors group"
+              >
+                <MessageSquare className="w-4 h-4 text-accent-main shrink-0" />
+                <div className="flex flex-col min-w-0 flex-1 text-left">
+                  <span className="text-[12px] font-medium text-text-primary truncate">{linkedChat.title}</span>
+                  <span className="text-[10px] text-text-muted">{linkedChat.messages.length} messages</span>
+                </div>
+                <ExternalLink className="w-3.5 h-3.5 text-text-muted group-hover:text-accent-main transition-colors shrink-0" />
+              </button>
+            </div>
+          )}
 
           {/* Metadata */}
           <div className="flex flex-col gap-3">
@@ -246,7 +274,9 @@ export function ImageViewer({
             {/* Model */}
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-text-muted w-20 shrink-0">Model</span>
-              <span className="text-[12px] text-text-secondary truncate">{image.model}</span>
+              <span className="text-[12px] text-text-secondary truncate" title={image.model}>
+                {getModelName(image.model)}
+              </span>
             </div>
 
             {/* Aspect ratio + Resolution + Pixel dimensions badges */}
@@ -327,16 +357,11 @@ export function ImageViewer({
                 <Copy className="w-3.5 h-3.5" />
                 Copy
               </button>
-              <button
-                onClick={handleSave}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg',
-                  'bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium'
-                )}
-              >
-                <Download className="w-3.5 h-3.5" />
-                Save
-              </button>
+              <ExportPopover
+                base64DataUrl={src!}
+                defaultName={`imagestudio-${Date.now()}.png`}
+                className="flex-1"
+              />
             </div>
             <button
               onClick={handleDelete}

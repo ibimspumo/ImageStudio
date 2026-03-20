@@ -33,7 +33,7 @@ interface ChatStore {
   startChat: (sourceImageId: string, sourceImageBase64: string, sourcePrompt: string) => string
   addUserMessage: (chatId: string, content: string, attachments?: string[]) => string
   addAssistantPlaceholder: (chatId: string) => string
-  completeAssistantMessage: (chatId: string, messageId: string, imageBase64: string, durationMs?: number) => void
+  completeAssistantMessage: (chatId: string, messageId: string, imageBase64: string, durationMs?: number, model?: string) => void
   failAssistantMessage: (chatId: string, messageId: string, error: string) => void
   setActiveChat: (chatId: string | null) => void
   deleteChat: (chatId: string) => void
@@ -109,7 +109,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return msgId
   },
 
-  completeAssistantMessage: (chatId, messageId, imageBase64, durationMs) => {
+  completeAssistantMessage: (chatId, messageId, imageBase64, durationMs, model) => {
     set((state) => ({
       chats: state.chats.map((c) =>
         c.id === chatId
@@ -117,7 +117,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               ...c,
               messages: c.messages.map((m) =>
                 m.id === messageId
-                  ? { ...m, imageBase64, isLoading: false, durationMs }
+                  ? { ...m, imageBase64, isLoading: false, durationMs, model }
                   : m
               ),
               updatedAt: Date.now()
