@@ -364,31 +364,9 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
             </div>
           )}
 
-          {/* Attached images — thumbnail strip */}
-          {imageRefs.length > 0 && (
-            <div className="flex items-center gap-2.5 px-5 pt-4 overflow-x-auto">
-              {imageRefs.map((ref) => (
-                <div key={ref.id} className="relative shrink-0 group animate-scale-in">
-                  <div className="w-14 h-14 rounded-xl overflow-hidden border border-border-base/80 shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
-                    <img src={ref.base64} alt={ref.name} className="w-full h-full object-cover" />
-                  </div>
-                  <button
-                    onClick={() => removeImageRef(ref.id)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-surface-1 border border-border-base flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:border-danger hover:text-white text-text-muted shadow-lg"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent rounded-b-xl px-1.5 py-0.5">
-                    <span className="text-[9px] text-white/90 font-medium">{ref.name}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* Attached collection refs */}
           {collectionRefs.length > 0 && (
-            <div className="flex items-center gap-2 px-5 pt-2.5 overflow-x-auto">
+            <div className="flex items-center gap-2 px-5 pt-3 overflow-x-auto">
               {collectionRefs.map((cRef) => (
                 <div key={cRef.id} className="shrink-0 group animate-scale-in flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-accent-main/8 border border-accent-main/20">
                   {cRef.thumbnail ? (
@@ -409,16 +387,46 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
             </div>
           )}
 
-          {/* ContentEditable editor with inline + button */}
-          <div className="flex items-start gap-2 px-4 pt-4 pb-3">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="no-drag shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center border border-border-base text-text-secondary hover:text-text-primary hover:bg-surface-4 hover:border-border-bright transition-all"
-              title="Attach images"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
+          {/* Attached image thumbnails — above the text when present */}
+          {imageRefs.length > 0 && (
+            <div className="flex items-center gap-2 px-5 pt-4 overflow-x-auto">
+              {imageRefs.map((ref) => (
+                <div key={ref.id} className="relative shrink-0 group/thumb animate-scale-in">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-border-base/80 shadow-[0_2px_6px_rgba(0,0,0,0.3)]">
+                    <img src={ref.base64} alt={ref.name} className="w-full h-full object-cover" />
+                  </div>
+                  <button
+                    onClick={() => removeImageRef(ref.id)}
+                    className="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 rounded-full bg-surface-1 border border-border-base flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-all hover:bg-danger hover:border-danger hover:text-white text-text-muted shadow-md"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+              {/* Add more */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="no-drag shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border border-dashed border-border-base text-text-muted hover:text-text-secondary hover:border-border-bright transition-all"
+                title="Add more images"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
+
+          {/* ContentEditable editor — with + button only when no images */}
+          <div className={cn('flex items-start gap-2 pb-3', imageRefs.length > 0 ? 'px-5 pt-3' : 'px-4 pt-4')}>
+            {imageRefs.length === 0 && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="no-drag shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center border border-border-base text-text-secondary hover:text-text-primary hover:bg-surface-4 hover:border-border-bright transition-all"
+                title="Attach images"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            )}
 
             <div
               ref={editorRef}

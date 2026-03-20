@@ -54,9 +54,12 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
     }
   }, [open, value, customRatio])
 
+  const customValid = !!(parseInt(customW) >= 1 && parseInt(customH) >= 1)
+
   const handleCustomApply = () => {
-    const w = parseInt(customW) || 1
-    const h = parseInt(customH) || 1
+    if (!customValid) return
+    const w = parseInt(customW)
+    const h = parseInt(customH)
     onChange('custom')
     onCustomRatioChange?.(`${w}:${h}`)
     setOpen(false)
@@ -130,7 +133,13 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
                   <RatioBox w={parseInt(customW) || 1} h={parseInt(customH) || 1} size={18} active={value === 'custom'} />
                   <button
                     onClick={handleCustomApply}
-                    className="ml-auto px-2.5 h-7 rounded-md bg-accent-dim text-accent-main hover:bg-accent-main/20 text-[11px] font-medium transition-colors"
+                    disabled={!customValid}
+                    className={cn(
+                      'ml-auto px-2.5 h-7 rounded-md text-[11px] font-medium transition-colors',
+                      customValid
+                        ? 'bg-accent-dim text-accent-main hover:bg-accent-main/20'
+                        : 'bg-surface-4 text-text-muted cursor-not-allowed'
+                    )}
                   >
                     Apply
                   </button>

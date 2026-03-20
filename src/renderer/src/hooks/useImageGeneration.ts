@@ -59,7 +59,7 @@ export function useImageGeneration() {
             for (let i = 0; i < placeholderIds.length; i++) {
               const result = results[i]
               if (result?.status === 'complete' && result.result?.imageBase64) {
-                completeImage(placeholderIds[i], result.result.imageBase64, durationMs)
+                completeImage(placeholderIds[i], result.result.imageBase64, durationMs, result.result.cost)
                 const filename = `${placeholderIds[i]}.png`
                 window.api.saveImage(result.result.imageBase64, filename)
               } else {

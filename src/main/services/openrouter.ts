@@ -14,6 +14,33 @@ export interface GenerateResult {
   text?: string
   imageBase64?: string // base64 data URL
   error?: string
+  cost?: number // USD cost from OpenRouter
+}
+
+/**
+ * Fetch generation cost from OpenRouter's generation details endpoint.
+ * Retries a few times since cost data may not be immediately available.
+ */
+async function fetchGenerationCost(generationId: string, apiKey: string): Promise<number | undefined> {
+  // Wait a moment for OpenRouter to process the cost
+  await new Promise((r) => setTimeout(r, 2000))
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`https://openrouter.ai/api/v1/generation?id=${generationId}`, {
+        headers: { Authorization: `Bearer ${apiKey}` }
+      })
+      if (!res.ok) break
+      const data = await res.json()
+      const cost = data.data?.total_cost ?? data.data?.usage?.total_cost
+      if (typeof cost === 'number' && cost > 0) return cost
+      // Cost not yet available, wait and retry
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 2000))
+    } catch {
+      break
+    }
+  }
+  return undefined
 }
 
 export async function generateImage(
@@ -76,19 +103,12 @@ export async function generateImage(
 
   const data = await response.json()
 
-  // Debug logging
-  console.log('[OpenRouter] Response keys:', Object.keys(data))
-  console.log('[OpenRouter] Usage:', JSON.stringify(data.usage))
-
   const choice = data.choices?.[0]
   if (!choice) {
-    console.log('[OpenRouter] No choices in response:', JSON.stringify(data).substring(0, 500))
     throw new Error('No response from model')
   }
 
   const message = choice.message
-  console.log('[OpenRouter] Message keys:', Object.keys(message || {}))
-  console.log('[OpenRouter] Has images:', Array.isArray(message?.images), 'count:', message?.images?.length)
   let text: string | undefined
   let imageBase64: string | undefined
 
@@ -117,9 +137,26 @@ export async function generateImage(
     }
   }
 
+  // Try to get cost from inline usage first
+  let cost = data.usage?.total_cost ?? data.usage?.cost
+  if (typeof cost !== 'number' || cost <= 0) {
+    cost = undefined
+  }
+
+  const generationId = data.id
+
+  // If no inline cost and we have a generation ID, fetch from generation endpoint (async, non-blocking)
+  if (!cost && generationId) {
+    // Don't await — fetch cost in background and it won't block the image return
+    // Instead, we'll return the result immediately and let the cost be fetched
+    // Actually, we need to return cost with the result, so we do await
+    cost = await fetchGenerationCost(generationId, request.apiKey)
+  }
+
   return {
-    id: data.id || crypto.randomUUID(),
+    id: generationId || crypto.randomUUID(),
     text,
-    imageBase64
+    imageBase64,
+    cost
   }
 }

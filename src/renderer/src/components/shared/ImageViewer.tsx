@@ -12,14 +12,19 @@ import {
   Clipboard,
   ExternalLink,
   Crop,
+  DollarSign,
+  ZoomOut,
+  Loader2,
   Image as ImageIcon
 } from 'lucide-react'
 import type { GalleryImage } from '../../stores/gallery-store'
 import { useGalleryStore } from '../../stores/gallery-store'
 import { useChatStore } from '../../stores/chat-store'
+import { useSettingsStore } from '../../stores/settings-store'
 import { getModelName } from '../../types/api'
 import { ExportPopover } from './ExportPopover'
 import { cn } from '../../lib/utils'
+import { compressImage } from '../../lib/image-utils'
 
 interface ImageViewerProps {
   images: GalleryImage[]
@@ -48,6 +53,35 @@ function formatDate(timestamp: number): string {
   })
 }
 
+const ZOOM_LEVELS = [1.5, 2, 3, 4] as const
+
+/** Tiny SVG showing nested rectangles to illustrate zoom factor */
+function ZoomIcon({ factor, active }: { factor: number; active?: boolean }) {
+  const inner = Math.round(100 / factor)
+  const offset = Math.round((100 - inner) / 2)
+  return (
+    <svg viewBox="0 0 20 20" className="w-4 h-4" fill="none">
+      <rect
+        x="1" y="1" width="18" height="18" rx="2"
+        stroke={active ? '#a78bfa' : '#505060'}
+        strokeWidth="1.5"
+        strokeDasharray={active ? undefined : '2 2'}
+      />
+      <rect
+        x={1 + (offset * 18) / 100}
+        y={1 + (offset * 18) / 100}
+        width={(inner * 18) / 100}
+        height={(inner * 18) / 100}
+        rx="1"
+        fill={active ? '#a78bfa' : '#9898a4'}
+        opacity={active ? 0.3 : 0.15}
+        stroke={active ? '#a78bfa' : '#9898a4'}
+        strokeWidth="1"
+      />
+    </svg>
+  )
+}
+
 export function ImageViewer({
   images,
   currentIndex,
@@ -61,15 +95,18 @@ export function ImageViewer({
   const [hovered, setHovered] = useState(false)
   const [promptCopied, setPromptCopied] = useState(false)
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null)
+  const [zoomGenerating, setZoomGenerating] = useState<number | null>(null)
   const removeImage = useGalleryStore((s) => s.removeImage)
+  const addPlaceholder = useGalleryStore((s) => s.addPlaceholder)
+  const completeImage = useGalleryStore((s) => s.completeImage)
+  const failImage = useGalleryStore((s) => s.failImage)
   const chats = useChatStore((s) => s.chats)
+  const apiKey = useSettingsStore((s) => s.apiKey)
   const image = images[currentIndex]
   const src = image?.base64DataUrl
 
-  // Find the chat this image belongs to
   const linkedChat = image?.chatId ? chats.find((c) => c.id === image.chatId) : null
 
-  // Detect actual pixel dimensions of the base64 image
   useEffect(() => {
     if (!src) { setImageDims(null); return }
     const img = new window.Image()
@@ -129,7 +166,6 @@ export function ImageViewer({
   const handleDelete = () => {
     if (!image) return
     const id = image.id
-    // Navigate away before deleting
     if (images.length <= 1) {
       onClose()
     } else if (currentIndex >= images.length - 1) {
@@ -137,6 +173,56 @@ export function ImageViewer({
     }
     removeImage(id)
   }
+
+  // Zoom out / outpaint
+  const handleZoomOut = useCallback(async (factor: number) => {
+    if (!image || !src || !apiKey || zoomGenerating) return
+
+    setZoomGenerating(factor)
+
+    try {
+      // Compress the reference image the same way PromptBar does (JPEG 75%, max 1000px)
+      const compressedRef = await compressImage(src)
+
+      const prompt = `Take this image and zoom out by ${factor}x, extending the scene naturally beyond all edges. Keep the original image content exactly as-is in the center, and seamlessly continue the environment, lighting, colors, and composition outward. Original description: "${image.prompt}"`
+
+      const placeholderId = addPlaceholder(
+        `Zoom ${factor}x: ${image.prompt}`,
+        image.aspectRatio,
+        image.resolution,
+        image.model,
+        [src],  // Store original for display/matching in lightbox
+        image.workspaceId
+      )
+
+      // Close lightbox so user sees the placeholder in the gallery
+      onClose()
+
+      const startTime = Date.now()
+      const response = await window.api.generateImage({
+        prompt,
+        model: image.model,
+        apiKey,
+        aspectRatio: image.aspectRatio,
+        resolution: image.resolution,
+        count: 1,
+        requestId: crypto.randomUUID(),
+        attachments: [compressedRef],
+      })
+
+      const durationMs = Date.now() - startTime
+      if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
+        completeImage(placeholderId, response.results[0].result.imageBase64, durationMs, response.results[0].result.cost)
+        window.api.saveImage(response.results[0].result.imageBase64, `${placeholderId}.png`)
+      } else {
+        failImage(placeholderId, response.error || response.results?.[0]?.error || 'Zoom out failed')
+      }
+    } catch (err) {
+      // Error already handled via failImage
+    } finally {
+      setZoomGenerating(null)
+    }
+  }, [image, src, apiKey, zoomGenerating, addPlaceholder, completeImage, failImage, onClose])
 
   if (!image) return null
 
@@ -148,7 +234,7 @@ export function ImageViewer({
       onMouseLeave={() => setHovered(false)}
       onMouseMove={() => setHovered(true)}
     >
-      {/* Counter — bottom-center to avoid macOS traffic lights */}
+      {/* Counter */}
       {images.length > 1 && (
         <div className="absolute bottom-5 left-[35%] -translate-x-1/2 z-[60] px-3 py-1.5 rounded-lg bg-white/8 border border-white/10 backdrop-blur-md pointer-events-none">
           <span className="text-[13px] font-medium text-white/80">
@@ -167,7 +253,7 @@ export function ImageViewer({
         </button>
       )}
 
-      {/* Right arrow - offset from info panel */}
+      {/* Right arrow */}
       {canGoRight && hovered && (
         <button
           onClick={(e) => { e.stopPropagation(); goRight() }}
@@ -177,7 +263,7 @@ export function ImageViewer({
         </button>
       )}
 
-      {/* Image area - 70% */}
+      {/* Image area */}
       <div
         className="w-[70%] h-full flex items-center justify-center p-12"
         onClick={onClose}
@@ -190,13 +276,13 @@ export function ImageViewer({
         />
       </div>
 
-      {/* Info panel - 30% */}
+      {/* Info panel */}
       <div
         className="no-drag w-[30%] h-full bg-surface-2 border-l border-border-dim overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-5 flex flex-col gap-5">
-          {/* Close button — no-drag to override Electron drag region */}
+          {/* Close button */}
           <div className="flex justify-end">
             <button
               onClick={(e) => { e.stopPropagation(); onClose() }}
@@ -255,6 +341,43 @@ export function ImageViewer({
             )}
           </div>
 
+          {/* Zoom Out / Outpaint */}
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Zoom Out</span>
+            <div className="flex gap-1.5">
+              {ZOOM_LEVELS.map((level) => {
+                const isGenerating = zoomGenerating === level
+                return (
+                  <button
+                    key={level}
+                    onClick={() => handleZoomOut(level)}
+                    disabled={!!zoomGenerating || !apiKey}
+                    className={cn(
+                      'flex-1 flex flex-col items-center gap-1 py-2 rounded-lg border text-[11px] font-medium transition-all',
+                      isGenerating
+                        ? 'bg-accent-dim border-accent-main/30 text-accent-main'
+                        : zoomGenerating
+                          ? 'bg-surface-3/50 border-border-dim text-text-muted cursor-not-allowed opacity-50'
+                          : 'bg-surface-3 border-border-dim text-text-secondary hover:bg-surface-4 hover:border-border-base hover:text-text-primary'
+                    )}
+                  >
+                    {isGenerating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ZoomIcon factor={level} active={false} />
+                    )}
+                    <span>{level}x</span>
+                  </button>
+                )
+              })}
+            </div>
+            {zoomGenerating && (
+              <p className="text-[10px] text-accent-main/70 text-center animate-pulse">
+                Extending image {zoomGenerating}x...
+              </p>
+            )}
+          </div>
+
           {/* Chat origin info */}
           {linkedChat && (
             <div className="flex flex-col gap-2">
@@ -283,7 +406,6 @@ export function ImageViewer({
           <div className="flex flex-col gap-3">
             <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Details</span>
 
-            {/* Model */}
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-text-muted w-20 shrink-0">Model</span>
               <span className="text-[12px] text-text-secondary truncate" title={image.model}>
@@ -291,7 +413,6 @@ export function ImageViewer({
               </span>
             </div>
 
-            {/* Aspect ratio + Resolution + Pixel dimensions badges */}
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-text-muted w-20 shrink-0">Size</span>
               <div className="flex flex-wrap gap-1.5">
@@ -309,7 +430,6 @@ export function ImageViewer({
               </div>
             </div>
 
-            {/* Duration */}
             {image.durationMs != null && (
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-text-muted w-20 shrink-0">Duration</span>
@@ -320,7 +440,16 @@ export function ImageViewer({
               </div>
             )}
 
-            {/* Date */}
+            {image.cost != null && image.cost > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-text-muted w-20 shrink-0">Cost</span>
+                <div className="flex items-center gap-1.5 text-[12px] text-text-secondary">
+                  <DollarSign className="w-3 h-3 text-text-muted" />
+                  {image.cost < 0.01 ? `$${image.cost.toFixed(4)}` : `$${image.cost.toFixed(3)}`}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-text-muted w-20 shrink-0">Created</span>
               <div className="flex items-center gap-1.5 text-[12px] text-text-secondary">
@@ -330,28 +459,44 @@ export function ImageViewer({
             </div>
           </div>
 
-          {/* Reference images — clickable to preview */}
+          {/* Reference images */}
           {image.attachments && image.attachments.length > 0 && (
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
                 Reference Images
               </span>
               <div className="flex flex-wrap gap-2">
-                {image.attachments.map((att, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => window.open(att, '_blank')}
-                    className="w-16 h-16 rounded-lg overflow-hidden border border-border-dim bg-surface-3 hover:border-accent-main transition-colors cursor-pointer"
-                    title={`View reference ${i + 1}`}
-                  >
-                    <img
-                      src={att}
-                      alt={`Reference ${i + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </button>
-                ))}
+                {image.attachments.map((att, i) => {
+                  // Check if this attachment matches a gallery image so we can navigate to it
+                  const allImages = useGalleryStore.getState().images
+                  const matchIdx = images.findIndex((img) => img.base64DataUrl === att)
+                  const galleryMatch = matchIdx >= 0 ? matchIdx : null
+
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        if (galleryMatch !== null) {
+                          onNavigate(galleryMatch)
+                        }
+                      }}
+                      className={cn(
+                        'w-16 h-16 rounded-lg overflow-hidden border bg-surface-3 transition-colors',
+                        galleryMatch !== null
+                          ? 'border-border-dim hover:border-accent-main cursor-pointer'
+                          : 'border-border-dim opacity-60 cursor-default'
+                      )}
+                      title={galleryMatch !== null ? 'View in lightbox' : `Reference ${i + 1}`}
+                    >
+                      <img
+                        src={att}
+                        alt={`Reference ${i + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}

@@ -78,7 +78,7 @@ export function useChatGeneration() {
             // Also add to gallery so it shows in the grid
             const galleryStore = useGalleryStore.getState()
             const placeholderId = galleryStore.addPlaceholder(prompt, aspectRatio, resolution, model, attachments.length > 0 ? attachments : undefined)
-            galleryStore.completeImage(placeholderId, result.result.imageBase64, durationMs)
+            galleryStore.completeImage(placeholderId, result.result.imageBase64, durationMs, result.result.cost)
             // Tag it with the chatId so we can reopen the chat
             const img = galleryStore.images.find((i) => i.id === placeholderId)
             if (img) {

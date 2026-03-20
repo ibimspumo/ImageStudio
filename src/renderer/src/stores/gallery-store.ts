@@ -17,12 +17,13 @@ export interface GalleryImage {
   parentImageId?: string
   chatId?: string          // links to an ImageChat for "open chat" button
   workspaceId?: string     // workspace this image belongs to (undefined = no workspace)
+  cost?: number            // USD cost from OpenRouter
 }
 
 interface GalleryStore {
   images: GalleryImage[]
   addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string) => string
-  completeImage: (id: string, base64DataUrl: string, durationMs?: number) => void
+  completeImage: (id: string, base64DataUrl: string, durationMs?: number, cost?: number) => void
   failImage: (id: string, error: string) => void
   removeImage: (id: string) => void
   moveToWorkspace: (imageId: string, workspaceId: string | undefined) => void
@@ -56,10 +57,10 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     return id
   },
 
-  completeImage: (id, base64DataUrl, durationMs) => {
+  completeImage: (id, base64DataUrl, durationMs, cost) => {
     set((state) => ({
       images: state.images.map((img) =>
-        img.id === id ? { ...img, base64DataUrl, isLoading: false, durationMs } : img
+        img.id === id ? { ...img, base64DataUrl, isLoading: false, durationMs, cost } : img
       ),
     }))
     // Persist after completion

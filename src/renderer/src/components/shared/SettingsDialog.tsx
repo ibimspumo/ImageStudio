@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Eye, EyeOff, Check } from 'lucide-react'
+import { X, Eye, EyeOff, Check, Sparkles } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settings-store'
 
 interface SettingsDialogProps {
@@ -67,13 +67,18 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             </p>
           </div>
 
+          {/* About */}
           <div className="p-3.5 rounded-xl bg-surface-2 border border-border-dim">
-            <p className="text-[13px] text-text-secondary">
-              <span className="font-medium text-text-primary">Model:</span>{' '}
-              Gemini 3.0 Pro Image Preview
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-3.5 h-3.5 text-accent-main" />
+              <span className="text-[13px] font-medium text-text-primary">ImageStudio</span>
+              <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-surface-3">v1.0</span>
+            </div>
+            <p className="text-[11px] text-text-muted leading-relaxed">
+              Open-source AI image generation for macOS. Supports 7 models via OpenRouter — generate, iterate with chat, organize with workspaces, and export in any format.
             </p>
-            <p className="text-[11px] text-text-muted mt-1.5 leading-relaxed">
-              Professional image generation with text rendering, multi-image blending, up to 4K output.
+            <p className="text-[10px] text-text-muted/60 mt-2">
+              MIT License — github.com/ibimspumo/ImageStudio
             </p>
           </div>
         </div>
