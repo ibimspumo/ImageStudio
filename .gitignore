@@ -7,3 +7,4 @@ screenshots/
 .DS_Store
 imagestudio-settings.json
 test-screenshot.mjs
+test-readme-screenshots.mjs

@@ -1,35 +1,38 @@
 # CLAUDE.md
 
-## Project
-Electron + React + TypeScript image generation app using OpenRouter API (Gemini 3.0 Pro).
+## IMPORTANT: Keep README.md and CLAUDE.md up to date with ANY changes.
+When features are added/changed, update README.md (features list, usage table, architecture).
+When screenshots change visually, regenerate them: `node test-readme-screenshots.mjs` (needs dev server running).
+When architecture changes, update the tree below.
 
 ## Build & Run
 ```bash
-npm run dev          # Development with hot reload
-npm run build        # Production build
-npx electron-vite build  # Build check (no Electron launch)
+npm run dev                # Dev with hot reload
+npm run build              # Production build
+npx electron-vite build    # Build check only (no Electron)
 ```
 
 ## Architecture
-- `src/main/` — Electron main process (IPC handlers, API calls, file ops)
-- `src/preload/` — Context bridge (typed `window.api`)
+- `src/main/` — Electron main process (IPC, API, files)
+- `src/preload/` — Typed context bridge (`window.api`)
 - `src/renderer/src/` — React UI
-  - `stores/` — Zustand: gallery-store, collections-store, chat-store, settings-store
-  - `hooks/` — useImageGeneration (gallery), useChatGeneration (chat mode)
-  - `components/input/` — PromptBar (contentEditable + @-mentions + inline chips)
-  - `components/gallery/` — Image grid with masonry layout
-  - `components/chat/` — Image chat modal for iterative editing
-  - `components/shared/` — ImageViewer (lightbox), SettingsDialog, DropZone
-  - `components/collections/` — Asset collection management
-  - `lib/image-utils.ts` — Grid composite creation for large collections
+  - `stores/` — Zustand: gallery, collections, chat, settings
+  - `hooks/` — useImageGeneration, useChatGeneration
+  - `components/input/` — PromptBar (contentEditable, @-mentions, chips)
+  - `components/gallery/` — Masonry grid, image cards with hover actions
+  - `components/chat/` — Image chat modal (iterative editing)
+  - `components/shared/` — ImageViewer, SimpleLightbox, SettingsDialog
+  - `components/collections/` — Asset collection CRUD
+  - `lib/image-utils.ts` — compressImage, createGridComposite, prepareCollectionImages
 
-## Key Patterns
-- Tailwind CSS v4 with `@theme {}` in app.css — DO NOT add global `* {}` resets outside @layer
-- Custom colors: surface-0..4, border-dim/base, text-primary/secondary/muted, accent-main/dim
-- IPC: `ipcRenderer.invoke()` / `ipcMain.handle()` — all exposed via preload
+## Critical Rules
+- Tailwind CSS v4: `@theme {}` in app.css — NEVER add `* {}` resets outside @layer
+- Colors: surface-0..4, border-dim/base/bright, text-primary/secondary/muted, accent-main/dim/bright
+- IPC: `ipcRenderer.invoke()` / `ipcMain.handle()` via preload
 - Persistence: `window.api.saveHistory(key, json)` / `listHistory()`
-- API key stored in user data dir, never in source code
-- Non-blocking generation: fire-and-forget with placeholder → complete pattern
-
-## API
-OpenRouter endpoint. Response images in `message.images[]`, not `message.content`.
+- API key: stored in ~/Library/Application Support/Electron/, NEVER in source
+- Generation: fire-and-forget, placeholder → complete pattern, non-blocking
+- API response: images in `message.images[]`, NOT `message.content`
+- Electron drag: use `no-drag` class on all interactive elements in top 48px
+- Image uploads: always compress via `compressImage()` (JPEG 75%, max 1000px)
+- License: MIT, fully open source
