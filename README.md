@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resources/icon.png" width="80" />
+  <img src="resources/icon.jpg" width="80" />
 </p>
 
 <h1 align="center">ImageStudio</h1>
@@ -20,16 +20,16 @@
 ---
 
 <p align="center">
-  <img src="docs/screenshot-empty.png" width="800" alt="ImageStudio — Empty State" />
+  <img src="docs/screenshot-empty.jpg" width="800" alt="ImageStudio — Empty State" />
 </p>
 
 <p align="center">
-  <img src="docs/screenshot-prompt.png" width="800" alt="ImageStudio — Prompt" />
+  <img src="docs/screenshot-prompt.jpg" width="800" alt="ImageStudio — Prompt" />
 </p>
 
 <p align="center">
-  <img src="docs/screenshot-settings.png" width="400" alt="Settings" />
-  <img src="docs/screenshot-collections.png" width="400" alt="Collections" />
+  <img src="docs/screenshot-settings.jpg" width="400" alt="Settings" />
+  <img src="docs/screenshot-collections.jpg" width="400" alt="Collections" />
 </p>
 
 ## Features
