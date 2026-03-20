@@ -11,6 +11,7 @@ import type { AspectRatio, Resolution } from '../../types/api'
 import { cn } from '../../lib/utils'
 import { prepareCollectionImages, compressImage } from '../../lib/image-utils'
 import { useCropStore } from '../../stores/crop-store'
+import { toDisplayUrl } from '../../stores/gallery-store'
 
 interface ImageRef {
   id: string
@@ -77,6 +78,26 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       }
     }
   }, [pendingCropRef, consumePendingRef, addImageRef])
+
+  // Consume pending prompt (from "Reuse Prompt" in lightbox)
+  const pendingPrompt = useCropStore((s) => s.pendingPrompt)
+  const consumePendingPrompt = useCropStore((s) => s.consumePendingPrompt)
+
+  useEffect(() => {
+    if (pendingPrompt) {
+      const prompt = consumePendingPrompt()
+      if (prompt && editorRef.current) {
+        editorRef.current.textContent = prompt
+        // Place cursor at end
+        const range = document.createRange()
+        range.selectNodeContents(editorRef.current)
+        range.collapse(false)
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        sel?.addRange(range)
+      }
+    }
+  }, [pendingPrompt, consumePendingPrompt])
 
   const removeImageRef = useCallback((id: string) => {
     setImageRefs((prev) => prev.filter((r) => r.id !== id))
@@ -166,7 +187,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     chip.dataset.collectionRefId = cRef.id
     chip.className = 'inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none'
     const thumbnailHtml = cRef.thumbnail
-      ? `<img src="${cRef.thumbnail}" class="w-4 h-4 rounded object-cover inline-block align-middle" />`
+      ? `<img src="${toDisplayUrl(cRef.thumbnail)}" class="w-4 h-4 rounded object-cover inline-block align-middle" />`
       : '<span class="inline-flex w-4 h-4 items-center justify-center"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>'
     chip.innerHTML = `${thumbnailHtml}<span class="align-middle">@${collection.name}</span>`
     range.deleteContents()
@@ -209,11 +230,42 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   const handleSubmit = useCallback(async () => {
     const text = getPromptText()
     if (!text || !apiKey) return
-    const attachments = imageRefs.map((r) => r.base64)
+
+    // Build flat attachments (for gallery display) and labeled attachments (for AI context)
+    const attachments: string[] = []
+    const labeledAttachments: { label: string; images: string[] }[] = []
+
+    // Individual image references — each gets its own label
+    for (const ref of imageRefs) {
+      attachments.push(ref.base64)
+      labeledAttachments.push({ label: ref.name, images: [ref.base64] })
+    }
+
+    // Collection references — label each group (including composites)
     for (const cRef of collectionRefs) {
       const processed = await prepareCollectionImages(cRef.images)
       attachments.push(...processed)
+
+      if (cRef.images.length <= 5) {
+        // Individual images — one labeled group for the whole collection
+        labeledAttachments.push({
+          label: `Collection "${cRef.name}" (${cRef.images.length} images)`,
+          images: processed,
+        })
+      } else {
+        // Composites — label each grid so the AI knows they're part of the same collection
+        const imagesPerGrid = 4
+        for (let i = 0; i < processed.length; i++) {
+          const startIdx = i * imagesPerGrid + 1
+          const endIdx = Math.min(startIdx + imagesPerGrid - 1, cRef.images.length)
+          labeledAttachments.push({
+            label: `Collection "${cRef.name}" — grid composite ${i + 1}/${processed.length} (images ${startIdx}–${endIdx} of ${cRef.images.length})`,
+            images: [processed[i]],
+          })
+        }
+      }
     }
+
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
     generate({
       prompt: text,
@@ -221,6 +273,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       resolution,
       imageCount,
       attachments: attachments.length > 0 ? attachments : undefined,
+      labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
       models: selectedModels,
     })
   }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels])
@@ -260,6 +313,30 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   }, [handleSubmit, showMentionPopup, mentionItems, insertChipAtCursor, insertCollectionChipAtCursor])
 
   const handleEditorInput = useCallback(() => {
+    // Sync: remove collection/image refs whose chips were deleted from the editor
+    const editor = editorRef.current
+    if (editor) {
+      const existingCollectionChipIds = new Set(
+        Array.from(editor.querySelectorAll('[data-collection-ref-id]'))
+          .map((el) => (el as HTMLElement).dataset.collectionRefId)
+      )
+      setCollectionRefs((prev) => {
+        const filtered = prev.filter((r) => existingCollectionChipIds.has(r.id))
+        return filtered.length !== prev.length ? filtered : prev
+      })
+
+      const existingImageChipIds = new Set(
+        Array.from(editor.querySelectorAll('[data-image-ref-id]'))
+          .map((el) => (el as HTMLElement).dataset.imageRefId)
+      )
+      setImageRefs((prev) => {
+        // Only remove refs that were inserted as chips (not all refs — some are from file upload/crop)
+        // A ref is chip-based if it has a corresponding chip in the editor
+        // For now, keep all refs that aren't chip-based or whose chip still exists
+        return prev
+      })
+    }
+
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0) return
     const range = sel.getRangeAt(0)
@@ -310,7 +387,14 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     dragCountRef.current = 0
     const internalData = e.dataTransfer.getData('application/x-imagestudio')
     if (internalData) {
-      addImageRef(internalData)
+      // Internal drag from gallery — internalData is a file path, load and compress
+      try {
+        const result = await window.api.readImage(internalData)
+        if (result.success) {
+          const compressed = await compressImage(result.base64DataUrl)
+          addImageRef(compressed)
+        }
+      } catch { /* silent */ }
       return
     }
     const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'))
@@ -370,7 +454,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
               {collectionRefs.map((cRef) => (
                 <div key={cRef.id} className="shrink-0 group animate-scale-in flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-accent-main/8 border border-accent-main/20">
                   {cRef.thumbnail ? (
-                    <img src={cRef.thumbnail} alt="" className="w-5 h-5 rounded object-cover" />
+                    <img src={toDisplayUrl(cRef.thumbnail)} alt="" className="w-5 h-5 rounded object-cover" />
                   ) : (
                     <FolderOpen className="w-4 h-4 text-accent-main" />
                   )}
@@ -463,7 +547,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
                   >
                     <div className="w-7 h-7 rounded-lg bg-accent-dim flex items-center justify-center shrink-0 border border-accent-main/15">
                       {item.collection.images[0] ? (
-                        <img src={item.collection.images[0]} className="w-7 h-7 rounded-lg object-cover" alt="" />
+                        <img src={toDisplayUrl(item.collection.images[0])} className="w-7 h-7 rounded-lg object-cover" alt="" />
                       ) : (
                         <FolderOpen className="w-3.5 h-3.5 text-accent-main" />
                       )}

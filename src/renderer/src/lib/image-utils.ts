@@ -96,8 +96,17 @@ export async function createGridComposite(
  * - >5 images: create 2x2 grid composites (max 5 composites = 20 images)
  */
 export async function prepareCollectionImages(images: string[]): Promise<string[]> {
-  if (images.length <= 5) {
-    return images
+  // Convert file paths to base64 for API submission
+  const asBase64 = await Promise.all(images.map(async (img) => {
+    if (img.startsWith('data:')) return img // already base64
+    try {
+      const result = await window.api.readImage(img)
+      return result.success ? result.base64DataUrl : img
+    } catch { return img }
+  }))
+
+  if (asBase64.length <= 5) {
+    return asBase64
   }
 
   // Create 2x2 grid composites
@@ -106,7 +115,7 @@ export async function prepareCollectionImages(images: string[]): Promise<string[
   const maxComposites = 5
   const maxImages = maxComposites * imagesPerGrid
 
-  const toProcess = images.slice(0, maxImages)
+  const toProcess = asBase64.slice(0, maxImages)
   const composites: string[] = []
 
   for (let i = 0; i < toProcess.length; i += imagesPerGrid) {

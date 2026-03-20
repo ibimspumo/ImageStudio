@@ -1,12 +1,18 @@
 import { OPENROUTER_API_URL } from '../lib/constants'
 
+export interface LabeledAttachment {
+  label: string
+  images: string[]
+}
+
 export interface GenerateRequest {
   prompt: string
   model: string
   apiKey: string
   aspectRatio: string
   resolution: string
-  attachments?: string[] // base64 data URLs
+  attachments?: string[] // base64 data URLs (flat, for backward compat)
+  labeledAttachments?: LabeledAttachment[] // labeled groups for contextual API requests
 }
 
 export interface GenerateResult {
@@ -49,8 +55,16 @@ export async function generateImage(
 ): Promise<GenerateResult> {
   const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = []
 
-  // Add attached images first
-  if (request.attachments && request.attachments.length > 0) {
+  // Add attached images with labels for context (so the AI knows which image is which)
+  if (request.labeledAttachments && request.labeledAttachments.length > 0) {
+    for (const group of request.labeledAttachments) {
+      content.push({ type: 'text', text: `[${group.label}]:` })
+      for (const img of group.images) {
+        content.push({ type: 'image_url', image_url: { url: img } })
+      }
+    }
+  } else if (request.attachments && request.attachments.length > 0) {
+    // Fallback: flat attachments without labels
     for (const attachment of request.attachments) {
       content.push({
         type: 'image_url',
@@ -62,7 +76,12 @@ export async function generateImage(
   // Add text prompt
   content.push({ type: 'text', text: request.prompt })
 
-  const body = {
+  // Some models don't support modalities parameter — they use different image generation APIs
+  const needsModalities = !request.model.includes('flux') &&
+    !request.model.includes('seedream') &&
+    !request.model.includes('riverflow')
+
+  const body: Record<string, unknown> = {
     model: request.model,
     messages: [
       {
@@ -70,11 +89,14 @@ export async function generateImage(
         content
       }
     ],
-    modalities: ['image', 'text'],
     image_config: {
       aspect_ratio: request.aspectRatio,
       image_size: request.resolution
     }
+  }
+
+  if (needsModalities) {
+    body.modalities = ['image', 'text']
   }
 
   const response = await fetch(OPENROUTER_API_URL, {

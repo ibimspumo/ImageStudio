@@ -12,7 +12,7 @@ interface MainContentProps {
   onSettingsClick: () => void
   onCollectionsClick: () => void
   onStartChat?: (imageId: string) => void
-  onCropImage?: (imageId: string, base64: string) => void
+  onCropImage?: (imageId: string, filePath: string) => void
 }
 
 export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage }: MainContentProps) {

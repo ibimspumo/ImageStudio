@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop } from 'lucide-react'
-import { useGalleryStore, type GalleryImage } from '../../stores/gallery-store'
+import { useGalleryStore, type GalleryImage, toDisplayUrl } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { cn } from '../../lib/utils'
 
@@ -8,7 +8,7 @@ interface GalleryCardProps {
   image: GalleryImage
   onClick: () => void
   onStartChat?: (imageId: string) => void
-  onCropImage?: (imageId: string, base64: string) => void
+  onCropImage?: (imageId: string, filePath: string) => void
 }
 
 export function GalleryCard({ image, onClick, onStartChat, onCropImage }: GalleryCardProps) {
@@ -19,39 +19,51 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
 
   if (image.isLoading) {
     return (
-      <div className="skeleton aspect-square rounded-2xl mb-2" />
+      <div className="skeleton aspect-square rounded-2xl" />
     )
   }
 
   if (image.error) {
     return (
-      <div className="aspect-square rounded-2xl bg-surface-2 border border-border-base flex flex-col items-center justify-center gap-2 px-4 mb-2 relative">
-        <AlertCircle className="w-5 h-5 text-danger" />
-        <p className="text-[11px] text-danger text-center">{image.error}</p>
-        <button onClick={() => removeImage(image.id)} className="absolute top-2 right-2 p-1 text-text-muted hover:text-danger transition-colors">
+      <div className="rounded-xl bg-surface-2 border border-border-base flex items-center gap-2.5 px-3 py-3 relative group">
+        <AlertCircle className="w-4 h-4 text-danger shrink-0" />
+        <p className="text-[11px] text-danger leading-tight flex-1 line-clamp-2">{image.error}</p>
+        <button onClick={() => removeImage(image.id)} className="p-1 text-text-muted hover:text-danger transition-colors shrink-0 opacity-0 group-hover:opacity-100">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
     )
   }
 
+  const displayUrl = toDisplayUrl(image.filePath)
+
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    await window.api.exportImage(image.base64DataUrl, `imagestudio-${image.id}.png`)
+    // Read base64 from disk for export dialog
+    try {
+      const result = await window.api.readImage(image.filePath)
+      if (result.success) {
+        await window.api.exportImage(result.base64DataUrl, `imagestudio-${image.id}.png`)
+      }
+    } catch { /* silent */ }
   }
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation()
     try {
-      const response = await fetch(image.base64DataUrl)
-      const blob = await response.blob()
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+      const result = await window.api.readImage(image.filePath)
+      if (result.success) {
+        const response = await fetch(result.base64DataUrl)
+        const blob = await response.blob()
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+      }
     } catch { /* silent */ }
   }
 
   const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData('text/plain', image.base64DataUrl)
-    e.dataTransfer.setData('application/x-imagestudio', image.base64DataUrl)
+    // For internal drag-drop, pass file path
+    e.dataTransfer.setData('text/plain', image.filePath)
+    e.dataTransfer.setData('application/x-imagestudio', image.filePath)
     e.dataTransfer.effectAllowed = 'copy'
   }
 
@@ -73,28 +85,26 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
     setShowMoveMenu(false)
   }
 
-  // Find current workspace for indicator
   const currentWorkspace = image.workspaceId
     ? workspaces.find((w) => w.id === image.workspaceId)
     : null
 
   return (
     <div
-      className="img-card relative group rounded-2xl overflow-hidden cursor-pointer border border-border-dim/60 animate-fade-up mb-2"
+      className="img-card relative group rounded-2xl overflow-hidden cursor-pointer border border-border-dim/60 animate-fade-up"
       onClick={onClick}
       draggable
       onDragStart={handleDragStart}
       onMouseLeave={() => setShowMoveMenu(false)}
     >
       <img
-        src={image.base64DataUrl}
+        src={displayUrl}
         alt={image.prompt}
         className="w-full block"
         loading="lazy"
         draggable={false}
       />
 
-      {/* Workspace color indicator — thin bottom bar */}
       {currentWorkspace && (
         <div
           className="absolute bottom-0 left-0 right-0 h-[3px] opacity-60"
@@ -102,7 +112,6 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
         />
       )}
 
-      {/* Delete button — top-right corner */}
       <button
         onClick={handleDelete}
         className="btn-interactive absolute top-2 right-2 z-10 p-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/5 hover:bg-danger/80 transition-colors opacity-0 group-hover:opacity-100"
@@ -111,7 +120,6 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
         <Trash2 className="w-3.5 h-3.5 text-white" />
       </button>
 
-      {/* Hover overlay */}
       <div className="img-overlay absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 transition-opacity duration-200 flex items-end p-3">
         <div className="flex items-center gap-1.5 w-full">
           <button onClick={handleSave} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Save">
@@ -131,7 +139,7 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
           )}
           {onCropImage && (
             <button
-              onClick={(e) => { e.stopPropagation(); onCropImage(image.id, image.base64DataUrl) }}
+              onClick={(e) => { e.stopPropagation(); onCropImage(image.id, image.filePath) }}
               className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors"
               title="Crop as reference"
             >
@@ -152,11 +160,8 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
               >
                 <FolderInput className="w-3.5 h-3.5 text-white" />
               </button>
-
-              {/* Move-to-workspace dropdown */}
               {showMoveMenu && (
                 <div className="absolute bottom-full left-0 mb-2 min-w-[140px] bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 animate-scale-in z-20">
-                  {/* "No workspace" option */}
                   <button
                     onClick={(e) => handleMove(e, undefined)}
                     className={cn(

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSettingsStore } from './stores/settings-store'
-import { useGalleryStore, type GalleryImage } from './stores/gallery-store'
+import { useGalleryStore, type GalleryImage, toDisplayUrl } from './stores/gallery-store'
 import { useCollectionsStore } from './stores/collections-store'
 import { useChatStore } from './stores/chat-store'
 import { useWorkspaceStore } from './stores/workspace-store'
@@ -20,7 +20,7 @@ interface ViewerState {
 
 interface CropState {
   imageId: string
-  base64: string
+  filePath: string
 }
 
 export default function App() {
@@ -39,13 +39,17 @@ export default function App() {
 
   const startChat = useChatStore((s) => s.startChat)
   const addPendingRef = useCropStore((s) => s.addPendingRef)
+  const setPendingPrompt = useCropStore((s) => s.setPendingPrompt)
 
   useEffect(() => {
-    hydrate()
-    loadGallery()
-    loadCollections()
-    loadChats()
-    loadWorkspaces()
+    // Run migration first, then load stores
+    window.api.migrate().catch(() => {}).finally(() => {
+      hydrate()
+      loadGallery()
+      loadCollections()
+      loadChats()
+      loadWorkspaces()
+    })
   }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces])
 
   useEffect(() => {
@@ -61,7 +65,7 @@ export default function App() {
   const handleStartChat = (imageId: string) => {
     const images = useGalleryStore.getState().images
     const image = images.find((img) => img.id === imageId)
-    if (!image || !image.base64DataUrl) return
+    if (!image || !image.filePath) return
 
     if (image.chatId) {
       const existingChat = useChatStore.getState().chats.find((c) => c.id === image.chatId)
@@ -73,7 +77,7 @@ export default function App() {
       }
     }
 
-    const chatId = startChat(image.id, image.base64DataUrl, image.prompt)
+    const chatId = startChat(image.id, image.filePath, image.prompt)
     useGalleryStore.setState((state) => ({
       images: state.images.map((i) => i.id === imageId ? { ...i, chatId } : i)
     }))
@@ -92,12 +96,13 @@ export default function App() {
     setViewerState(null)
   }
 
-  const handleReusePrompt = (_image: GalleryImage) => {
+  const handleReusePrompt = (image: GalleryImage) => {
+    setPendingPrompt(image.prompt)
     setViewerState(null)
   }
 
-  const handleCropImage = (imageId: string, base64: string) => {
-    setCropState({ imageId, base64 })
+  const handleCropImage = (imageId: string, filePath: string) => {
+    setCropState({ imageId, filePath })
     setViewerState(null)
   }
 
@@ -108,10 +113,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-surface-0 overflow-hidden">
-      {/* Global title bar — always visible, handles drag region & traffic lights */}
       <TitleBar />
-
-      {/* Content area — fills remaining space below title bar */}
       <div className="flex-1 flex flex-col min-h-0 relative">
         <MainContent
           onImageClick={handleImageClick}
@@ -120,8 +122,6 @@ export default function App() {
           onStartChat={handleStartChat}
           onCropImage={handleCropImage}
         />
-
-        {/* All modals/overlays render inside the content area, below the title bar */}
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
         {showCollections && <CollectionsDialog onClose={() => setShowCollections(false)} />}
         {viewerState && (
@@ -145,7 +145,7 @@ export default function App() {
         )}
         {cropState && (
           <CropModal
-            imageSrc={cropState.base64}
+            imageSrc={toDisplayUrl(cropState.filePath)}
             sourceImageId={cropState.imageId}
             onCrop={handleCropConfirm}
             onClose={() => setCropState(null)}

@@ -10,6 +10,7 @@ import {
   Cpu
 } from 'lucide-react'
 import { useChatStore, type ChatMessage } from '../../stores/chat-store'
+import { toDisplayUrl } from '../../stores/gallery-store'
 import { useChatGeneration } from '../../hooks/useChatGeneration'
 import { SimpleLightbox } from '../shared/SimpleLightbox'
 import { useSettingsStore } from '../../stores/settings-store'
@@ -47,7 +48,7 @@ function MessageBubble({ message, allImages, onImageClick }: { message: ChatMess
             {message.attachments.map((att, i) => (
               <img
                 key={i}
-                src={att}
+                src={toDisplayUrl(att)}
                 alt="Reference"
                 className="w-12 h-12 rounded-lg object-cover border border-border-dim"
               />
@@ -75,18 +76,18 @@ function MessageBubble({ message, allImages, onImageClick }: { message: ChatMess
         </div>
       )}
 
-      {message.imageBase64 && (
+      {message.imageFilePath && (
         <div
           className="w-full max-w-md cursor-pointer"
           onClick={() => {
             if (onImageClick) {
-              const idx = allImages.indexOf(message.imageBase64!)
+              const idx = allImages.indexOf(toDisplayUrl(message.imageFilePath!))
               onImageClick(allImages, idx >= 0 ? idx : 0)
             }
           }}
         >
           <img
-            src={message.imageBase64}
+            src={toDisplayUrl(message.imageFilePath)}
             alt="Generated"
             className="w-full rounded-2xl border border-border-dim hover:border-border-base transition-colors"
           />
@@ -180,6 +181,7 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
     if (!text || !apiKey || !chat) return
 
     const extraAttachments = imageRefs.map((r) => r.base64)
+    const extraLabeledAttachments = imageRefs.map((r) => ({ label: r.name, images: [r.base64] }))
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
 
     generate({
@@ -188,7 +190,8 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
       aspectRatio: resolvedAspectRatio,
       resolution,
       model: selectedModels[0],
-      extraAttachments: extraAttachments.length > 0 ? extraAttachments : undefined
+      extraAttachments: extraAttachments.length > 0 ? extraAttachments : undefined,
+      extraLabeledAttachments: extraLabeledAttachments.length > 0 ? extraLabeledAttachments : undefined
     })
 
     // Clear editor and refs
@@ -242,9 +245,10 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
   if (!chat) return null
 
   // Get last assistant image for auto-reference display
-  const lastAssistantImage = [...chat.messages]
+  const lastAssistantFilePath = [...chat.messages]
     .reverse()
-    .find((m) => m.role === 'assistant' && m.imageBase64)?.imageBase64
+    .find((m) => m.role === 'assistant' && m.imageFilePath)?.imageFilePath
+  const lastAssistantDisplayUrl = lastAssistantFilePath ? toDisplayUrl(lastAssistantFilePath) : undefined
 
   const canSend = hasText && apiKey
   const isGenerating = chat.messages.some((m) => m.isLoading)
@@ -282,8 +286,8 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
           {chat.messages.map((message) => {
             const allChatImages = chat.messages
-              .filter((m) => m.imageBase64)
-              .map((m) => m.imageBase64!)
+              .filter((m) => m.imageFilePath)
+              .map((m) => toDisplayUrl(m.imageFilePath!))
             return (
               <MessageBubble
                 key={message.id}
@@ -300,11 +304,11 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
       <div className="shrink-0 flex flex-col items-center px-6 pb-6 pt-3">
         <div className="w-full max-w-2xl">
           {/* Auto-reference indicator */}
-          {lastAssistantImage && (
+          {lastAssistantDisplayUrl && (
             <div className="flex items-center gap-2 mb-2 px-1">
               <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-surface-2 border border-border-dim">
                 <img
-                  src={lastAssistantImage}
+                  src={lastAssistantDisplayUrl}
                   alt="Auto-reference"
                   className="w-8 h-8 rounded-md object-cover border border-border-dim"
                 />

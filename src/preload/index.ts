@@ -10,6 +10,7 @@ const api = {
     count: number
     requestId: string
     attachments?: string[]
+    labeledAttachments?: { label: string; images: string[] }[]
   }) => ipcRenderer.invoke('image:generate', request),
 
   onGenerateProgress: (callback: (data: unknown) => void) => {
@@ -38,7 +39,11 @@ const api = {
   listHistory: () => ipcRenderer.invoke('history:list'),
   saveHistory: (id: string, data: string) =>
     ipcRenderer.invoke('history:save', { id, data }),
-  deleteHistory: (id: string) => ipcRenderer.invoke('history:delete', { id })
+  deleteHistory: (id: string) => ipcRenderer.invoke('history:delete', { id }),
+
+  readImage: (filePath: string) => ipcRenderer.invoke('image:read', { filePath }),
+  deleteImage: (filePath: string) => ipcRenderer.invoke('image:delete', { filePath }),
+  migrate: () => ipcRenderer.invoke('migrate:run')
 }
 
 contextBridge.exposeInMainWorld('api', api)

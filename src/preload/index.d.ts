@@ -8,6 +8,7 @@ export interface ElectronAPI {
     count: number
     requestId: string
     attachments?: string[]
+    labeledAttachments?: { label: string; images: string[] }[]
   }): Promise<{
     success: boolean
     results?: Array<{
@@ -37,6 +38,10 @@ export interface ElectronAPI {
   listHistory(): Promise<{ success: boolean; sessions?: Array<{ id: string; data: string }>; error?: string }>
   saveHistory(id: string, data: string): Promise<{ success: boolean; error?: string }>
   deleteHistory(id: string): Promise<{ success: boolean; error?: string }>
+
+  readImage(filePath: string): Promise<{ success: boolean; base64DataUrl?: string; error?: string }>
+  deleteImage(filePath: string): Promise<{ success: boolean; error?: string }>
+  migrate(): Promise<{ success: boolean; error?: string }>
 }
 
 declare global {

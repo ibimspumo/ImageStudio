@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Pencil, ImagePlus, FolderOpen, Check } from 'lucide-re
 import { useCollectionsStore, type AssetCollection } from '../../stores/collections-store'
 import { cn } from '../../lib/utils'
 import { compressImage } from '../../lib/image-utils'
+import { toDisplayUrl } from '../../stores/gallery-store'
 
 interface CollectionsDialogProps {
   onClose: () => void
@@ -160,7 +161,7 @@ export function CollectionsDialog({ onClose }: CollectionsDialogProps) {
                     {/* Thumbnail grid */}
                     <div className="shrink-0 w-14 h-14 rounded-lg bg-surface-3 border border-border-dim overflow-hidden grid grid-cols-2 gap-px">
                       {collection.images.slice(0, 4).map((img, i) => (
-                        <img key={i} src={img} alt="" className="w-full h-full object-cover" />
+                        <img key={i} src={toDisplayUrl(img)} alt="" className="w-full h-full object-cover" />
                       ))}
                       {collection.images.length === 0 && (
                         <div className="col-span-2 row-span-2 flex items-center justify-center">
@@ -242,7 +243,7 @@ export function CollectionsDialog({ onClose }: CollectionsDialogProps) {
                     <div className="grid grid-cols-5 gap-2">
                       {displayImages.map((img, i) => (
                         <div key={i} className="relative group/img aspect-square">
-                          <img src={img} alt="" className="w-full h-full object-cover rounded-lg border border-border-dim" />
+                          <img src={toDisplayUrl(img)} alt="" className="w-full h-full object-cover rounded-lg border border-border-dim" />
                           <button
                             onClick={() => {
                               if (view === 'edit' && editingId) {

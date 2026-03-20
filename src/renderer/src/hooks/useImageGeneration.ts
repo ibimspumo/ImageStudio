@@ -9,6 +9,7 @@ interface GenerateOptions {
   resolution: string
   imageCount: number
   attachments?: string[]
+  labeledAttachments?: { label: string; images: string[] }[]
   models: string[]
 }
 
@@ -21,11 +22,8 @@ export function useImageGeneration() {
       if (!apiKey) return
 
       const models = options.models.length > 0 ? options.models : ['google/gemini-3-pro-image-preview']
-
-      // Tag new images with the active workspace (if any)
       const activeWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId ?? undefined
 
-      // For each model × imageCount, create a placeholder and fire a request
       for (const model of models) {
         const placeholderIds: string[] = []
         for (let i = 0; i < options.imageCount; i++) {
@@ -45,8 +43,9 @@ export function useImageGeneration() {
             count: options.imageCount,
             requestId,
             attachments: options.attachments,
+            labeledAttachments: options.labeledAttachments,
           })
-          .then((response) => {
+          .then(async (response) => {
             if (!response.success) {
               for (const id of placeholderIds) {
                 failImage(id, response.error || 'Generation failed')
@@ -59,9 +58,18 @@ export function useImageGeneration() {
             for (let i = 0; i < placeholderIds.length; i++) {
               const result = results[i]
               if (result?.status === 'complete' && result.result?.imageBase64) {
-                completeImage(placeholderIds[i], result.result.imageBase64, durationMs, result.result.cost)
+                // Save to disk FIRST, get file path
                 const filename = `${placeholderIds[i]}.png`
-                window.api.saveImage(result.result.imageBase64, filename)
+                try {
+                  const saveResult = await window.api.saveImage(result.result.imageBase64, filename)
+                  if (saveResult.success && saveResult.filePath) {
+                    completeImage(placeholderIds[i], saveResult.filePath, durationMs, result.result.cost)
+                  } else {
+                    failImage(placeholderIds[i], 'Failed to save image to disk')
+                  }
+                } catch {
+                  failImage(placeholderIds[i], 'Failed to save image to disk')
+                }
               } else {
                 failImage(
                   placeholderIds[i],

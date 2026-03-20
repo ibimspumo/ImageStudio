@@ -5,8 +5,8 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  imageBase64?: string
-  attachments?: string[]
+  imageFilePath?: string       // file path on disk (was imageBase64)
+  attachments?: string[]       // file paths
   timestamp: number
   isLoading?: boolean
   error?: string
@@ -20,7 +20,7 @@ export interface ImageChat {
   id: string
   title: string
   sourceImageId: string
-  sourceImageBase64: string
+  sourceImageFilePath: string  // file path on disk (was sourceImageBase64)
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
@@ -30,10 +30,10 @@ interface ChatStore {
   chats: ImageChat[]
   activeChatId: string | null
 
-  startChat: (sourceImageId: string, sourceImageBase64: string, sourcePrompt: string) => string
+  startChat: (sourceImageId: string, sourceImageFilePath: string, sourcePrompt: string) => string
   addUserMessage: (chatId: string, content: string, attachments?: string[]) => string
   addAssistantPlaceholder: (chatId: string) => string
-  completeAssistantMessage: (chatId: string, messageId: string, imageBase64: string, durationMs?: number, model?: string) => void
+  completeAssistantMessage: (chatId: string, messageId: string, imageFilePath: string, durationMs?: number, model?: string) => void
   failAssistantMessage: (chatId: string, messageId: string, error: string) => void
   setActiveChat: (chatId: string | null) => void
   deleteChat: (chatId: string) => void
@@ -45,20 +45,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   chats: [],
   activeChatId: null,
 
-  startChat: (sourceImageId, sourceImageBase64, sourcePrompt) => {
+  startChat: (sourceImageId, sourceImageFilePath, sourcePrompt) => {
     const chatId = nanoid()
     const firstMessage: ChatMessage = {
       id: nanoid(),
       role: 'assistant',
       content: sourcePrompt,
-      imageBase64: sourceImageBase64,
+      imageFilePath: sourceImageFilePath,
       timestamp: Date.now()
     }
     const chat: ImageChat = {
       id: chatId,
       title: sourcePrompt.slice(0, 60) || 'Image Chat',
       sourceImageId,
-      sourceImageBase64,
+      sourceImageFilePath,
       messages: [firstMessage],
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -109,7 +109,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return msgId
   },
 
-  completeAssistantMessage: (chatId, messageId, imageBase64, durationMs, model) => {
+  completeAssistantMessage: (chatId, messageId, imageFilePath, durationMs, model) => {
     set((state) => ({
       chats: state.chats.map((c) =>
         c.id === chatId
@@ -117,7 +117,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               ...c,
               messages: c.messages.map((m) =>
                 m.id === messageId
-                  ? { ...m, imageBase64, isLoading: false, durationMs, model }
+                  ? { ...m, imageFilePath, isLoading: false, durationMs, model }
                   : m
               ),
               updatedAt: Date.now()

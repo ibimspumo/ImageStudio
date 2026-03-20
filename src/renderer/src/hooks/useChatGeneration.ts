@@ -10,6 +10,7 @@ interface ChatGenerateOptions {
   resolution: string
   model: string
   extraAttachments?: string[]
+  extraLabeledAttachments?: { label: string; images: string[] }[]
 }
 
 export function useChatGeneration() {
@@ -20,39 +21,55 @@ export function useChatGeneration() {
   const failAssistantMessage = useChatStore((s) => s.failAssistantMessage)
 
   const generate = useCallback(
-    (options: ChatGenerateOptions) => {
+    async (options: ChatGenerateOptions) => {
       if (!apiKey) return
 
-      const { chatId, prompt, aspectRatio, resolution, model, extraAttachments } = options
+      const { chatId, prompt, aspectRatio, resolution, model, extraAttachments, extraLabeledAttachments } = options
 
-      // Get the last assistant image from the chat to use as auto-reference
       const chat = useChatStore.getState().chats.find((c) => c.id === chatId)
       if (!chat) return
 
-      const lastAssistantImage = [...chat.messages]
+      // Load last assistant image from disk as base64 for API auto-reference
+      const lastAssistantMsg = [...chat.messages]
         .reverse()
-        .find((m) => m.role === 'assistant' && m.imageBase64)?.imageBase64
+        .find((m) => m.role === 'assistant' && m.imageFilePath)
 
-      // Build attachments: auto-reference first, then any extras
+      let lastAssistantBase64: string | undefined
+      if (lastAssistantMsg?.imageFilePath) {
+        try {
+          const readResult = await window.api.readImage(lastAssistantMsg.imageFilePath)
+          if (readResult.success) {
+            lastAssistantBase64 = readResult.base64DataUrl
+          }
+        } catch {
+          // silent
+        }
+      }
+
+      // Build attachments for API (base64 strings)
       const attachments: string[] = []
-      if (lastAssistantImage) {
-        attachments.push(lastAssistantImage)
+      const labeledAttachments: { label: string; images: string[] }[] = []
+      if (lastAssistantBase64) {
+        attachments.push(lastAssistantBase64)
+        labeledAttachments.push({ label: 'Previous image (current version)', images: [lastAssistantBase64] })
       }
       if (extraAttachments) {
         attachments.push(...extraAttachments)
       }
+      if (extraLabeledAttachments) {
+        labeledAttachments.push(...extraLabeledAttachments)
+      }
 
-      // Add user message to chat
-      addUserMessage(chatId, prompt, attachments.length > 0 ? attachments : undefined)
+      // Add user message (store file paths for attachments if needed)
+      addUserMessage(chatId, prompt, undefined)
 
-      // Add assistant placeholder
       const assistantMsgId = addAssistantPlaceholder(chatId)
 
       const requestId = crypto.randomUUID()
       const startTime = Date.now()
 
-      window.api
-        .generateImage({
+      try {
+        const response = await window.api.generateImage({
           prompt,
           model,
           apiKey,
@@ -60,49 +77,45 @@ export function useChatGeneration() {
           resolution,
           count: 1,
           requestId,
-          attachments: attachments.length > 0 ? attachments : undefined
+          attachments: attachments.length > 0 ? attachments : undefined,
+          labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined
         })
-        .then((response) => {
-          if (!response.success) {
-            failAssistantMessage(chatId, assistantMsgId, response.error || 'Generation failed')
-            return
-          }
 
-          const durationMs = Date.now() - startTime
-          const results = response.results || []
-          const result = results[0]
+        if (!response.success) {
+          failAssistantMessage(chatId, assistantMsgId, response.error || 'Generation failed')
+          return
+        }
 
-          if (result?.status === 'complete' && result.result?.imageBase64) {
-            completeAssistantMessage(chatId, assistantMsgId, result.result.imageBase64, durationMs, model)
+        const durationMs = Date.now() - startTime
+        const results = response.results || []
+        const result = results[0]
 
-            // Also add to gallery so it shows in the grid
+        if (result?.status === 'complete' && result.result?.imageBase64) {
+          // Save to disk first
+          const filename = `chat-${assistantMsgId}.png`
+          const saveResult = await window.api.saveImage(result.result.imageBase64, filename)
+
+          if (saveResult.success && saveResult.filePath) {
+            completeAssistantMessage(chatId, assistantMsgId, saveResult.filePath, durationMs, model)
+
+            // Also add to gallery
             const galleryStore = useGalleryStore.getState()
-            const placeholderId = galleryStore.addPlaceholder(prompt, aspectRatio, resolution, model, attachments.length > 0 ? attachments : undefined)
-            galleryStore.completeImage(placeholderId, result.result.imageBase64, durationMs, result.result.cost)
-            // Tag it with the chatId so we can reopen the chat
-            const img = galleryStore.images.find((i) => i.id === placeholderId)
-            if (img) {
-              useGalleryStore.setState((state) => ({
-                images: state.images.map((i) =>
-                  i.id === placeholderId ? { ...i, chatId } : i
-                )
-              }))
-            }
-
-            // Save to disk in background
-            const filename = `chat-${assistantMsgId}.png`
-            window.api.saveImage(result.result.imageBase64, filename)
+            const placeholderId = galleryStore.addPlaceholder(prompt, aspectRatio, resolution, model)
+            galleryStore.completeImage(placeholderId, saveResult.filePath, durationMs, result.result.cost)
+            useGalleryStore.setState((state) => ({
+              images: state.images.map((i) =>
+                i.id === placeholderId ? { ...i, chatId } : i
+              )
+            }))
           } else {
-            failAssistantMessage(
-              chatId,
-              assistantMsgId,
-              result?.error || 'No image returned'
-            )
+            failAssistantMessage(chatId, assistantMsgId, 'Failed to save image to disk')
           }
-        })
-        .catch((err: Error) => {
-          failAssistantMessage(chatId, assistantMsgId, err.message)
-        })
+        } else {
+          failAssistantMessage(chatId, assistantMsgId, result?.error || 'No image returned')
+        }
+      } catch (err: unknown) {
+        failAssistantMessage(chatId, assistantMsgId, err instanceof Error ? err.message : 'Unknown error')
+      }
     },
     [apiKey, addUserMessage, addAssistantPlaceholder, completeAssistantMessage, failAssistantMessage]
   )

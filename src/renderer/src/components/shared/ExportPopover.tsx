@@ -5,7 +5,7 @@ import { cn } from '../../lib/utils'
 type ExportFormat = 'png' | 'jpeg' | 'webp'
 
 interface ExportPopoverProps {
-  base64DataUrl: string
+  imageSrc: string  // file:// URL or base64 data URL
   defaultName: string
   className?: string
 }
@@ -74,7 +74,7 @@ function convertImage(
   })
 }
 
-export function ExportPopover({ base64DataUrl, defaultName, className }: ExportPopoverProps) {
+export function ExportPopover({ imageSrc, defaultName, className }: ExportPopoverProps) {
   const [open, setOpen] = useState(false)
   const [format, setFormat] = useState<ExportFormat>('png')
   const [quality, setQuality] = useState(92)
@@ -85,22 +85,21 @@ export function ExportPopover({ base64DataUrl, defaultName, className }: ExportP
 
   // Calculate original file size on mount
   useEffect(() => {
-    if (!base64DataUrl) return
-    const match = base64DataUrl.match(/^data:image\/\w+;base64,(.+)$/)
-    if (match) {
-      // base64 encoded size → actual bytes (roughly base64Length * 3/4)
-      setOriginalSize(Math.round(match[1].length * 0.75))
-    }
-  }, [base64DataUrl])
+    if (!imageSrc) return
+    // For file:// URLs, estimate size from a PNG conversion
+    convertImage(imageSrc, 'png', 100)
+      .then(({ sizeBytes }) => setOriginalSize(sizeBytes))
+      .catch(() => setOriginalSize(null))
+  }, [imageSrc])
 
   // Recalculate file size when format or quality changes
   const recalculate = useCallback(() => {
-    if (!base64DataUrl || !open) return
+    if (!imageSrc || !open) return
     setIsCalculating(true)
 
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      convertImage(base64DataUrl, format, quality)
+      convertImage(imageSrc, format, quality)
         .then(({ sizeBytes }) => {
           setFileSize(sizeBytes)
           setIsCalculating(false)
@@ -110,19 +109,23 @@ export function ExportPopover({ base64DataUrl, defaultName, className }: ExportP
           setIsCalculating(false)
         })
     }, 150)
-  }, [base64DataUrl, format, quality, open])
+  }, [imageSrc, format, quality, open])
 
   useEffect(() => {
     recalculate()
   }, [recalculate])
 
   const handleQuickSave = async () => {
-    await window.api.exportImage(base64DataUrl, defaultName)
+    // Convert to PNG base64 for the export dialog
+    try {
+      const { dataUrl } = await convertImage(imageSrc, 'png', 100)
+      await window.api.exportImage(dataUrl, defaultName)
+    } catch { /* silent */ }
   }
 
   const handleExportWithOptions = async () => {
     try {
-      const { dataUrl } = await convertImage(base64DataUrl, format, quality)
+      const { dataUrl } = await convertImage(imageSrc, format, quality)
       const ext = format === 'jpeg' ? 'jpg' : format
       const name = defaultName.replace(/\.\w+$/, '') + '.' + ext
       await window.api.exportImage(dataUrl, name)

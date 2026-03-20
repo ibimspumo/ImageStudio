@@ -135,7 +135,7 @@ Hover over any gallery image and click the crop icon, or use "Crop as Reference"
 
 ### Asset Collections
 
-Create named groups of reference images (e.g. `@brand-photos`, `@product-shots`). Type **@** in the prompt to mention a collection inline. The images are automatically prepared and attached.
+Create named groups of reference images (e.g. `@brand-photos`, `@product-shots`). Type **@** in the prompt to mention a collection inline. The images are automatically prepared and attached. Removing the @-mention chip from the text also removes the collection reference — nothing gets sent that you don't see.
 
 Collections with more than 5 images are intelligently composited into grid layouts to stay within API limits.
 
@@ -185,7 +185,7 @@ The info panel includes:
 
 ### Actions
 
-- **Reuse Prompt** — paste the prompt back into the prompt bar
+- **Reuse Prompt** — paste the prompt back into the prompt bar for quick re-generation
 - **Start Chat / Continue Chat** — open an editing conversation from this image
 - **Crop as Reference** — select a region of the image to use as reference
 - **Zoom Out** — extend the image outward by 1.5x, 2x, 3x, or 4x using AI
@@ -254,7 +254,7 @@ src/
 └── renderer/src/         # React UI
     ├── components/
     │   ├── input/        # PromptBar, ModelSelector, AspectRatio, Resolution
-    │   ├── gallery/      # Masonry grid, image cards
+    │   ├── gallery/      # Grid layout, image cards
     │   ├── chat/         # Image chat modal
     │   ├── workspace/    # Workspace tabs and management
     │   ├── collections/  # Asset collection manager
@@ -282,9 +282,10 @@ This triggers a build on macOS, packages the app as `.dmg` and `.zip`, and creat
 
 ## Data & Privacy
 
-- Your API key is stored locally in `~/Library/Application Support/Electron/`
-- All images and settings are stored locally on your machine
+- Your API key is stored locally on your machine
+- All generated images are saved as files on disk — metadata is stored in lightweight JSON files (no base64 in memory)
 - ImageStudio never sends data anywhere except to OpenRouter for image generation
+- Existing data from older versions is automatically migrated on first launch
 - No analytics, no tracking, no accounts
 
 ---
