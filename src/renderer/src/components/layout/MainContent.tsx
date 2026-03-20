@@ -6,14 +6,16 @@ import { useGalleryStore, type GalleryImage } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Sparkles } from 'lucide-react'
 
+
 interface MainContentProps {
   onImageClick: (images: GalleryImage[], index: number) => void
   onSettingsClick: () => void
   onCollectionsClick: () => void
   onStartChat?: (imageId: string) => void
+  onCropImage?: (imageId: string, base64: string) => void
 }
 
-export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat }: MainContentProps) {
+export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage }: MainContentProps) {
   const allImages = useGalleryStore((s) => s.images)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
 
@@ -26,17 +28,9 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   return (
     <main className="flex-1 flex flex-col min-w-0 h-full relative">
       {/* Ambient background orbs */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
         <div className="ambient-orb absolute w-[500px] h-[500px] rounded-full blur-[120px] opacity-[0.035] bg-purple-500 -top-40 -right-40" />
         <div className="ambient-orb-2 absolute w-[400px] h-[400px] rounded-full blur-[100px] opacity-[0.025] bg-blue-500 bottom-20 -left-40" />
-      </div>
-
-      {/* Top bar */}
-      <div className="h-12 shrink-0 flex items-center justify-center px-5 drag-region relative z-10">
-        <div className="flex items-center gap-2 opacity-60 hover:opacity-80 transition-opacity">
-          <Sparkles className="w-3.5 h-3.5 text-accent-main" />
-          <span className="text-[12px] font-medium text-text-secondary tracking-[0.08em] uppercase">ImageStudio</span>
-        </div>
       </div>
 
       {/* Workspace bar */}
@@ -80,7 +74,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
           <p className="text-[12px] text-text-muted/60">Generate images or move existing ones here</p>
         </div>
       ) : (
-        <ImageGallery images={images} onImageClick={onImageClick} onStartChat={onStartChat} />
+        <ImageGallery images={images} onImageClick={onImageClick} onStartChat={onStartChat} onCropImage={onCropImage} />
       )}
 
       <PromptBar

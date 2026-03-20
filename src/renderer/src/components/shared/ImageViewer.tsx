@@ -11,6 +11,7 @@ import {
   Calendar,
   Clipboard,
   ExternalLink,
+  Crop,
   Image as ImageIcon
 } from 'lucide-react'
 import type { GalleryImage } from '../../stores/gallery-store'
@@ -28,6 +29,7 @@ interface ImageViewerProps {
   onStartChat: (imageId: string) => void
   onReusePrompt: (image: GalleryImage) => void
   onOpenChat?: (chatId: string) => void
+  onCropImage?: (imageId: string, base64: string) => void
 }
 
 function formatDuration(ms: number): string {
@@ -53,7 +55,8 @@ export function ImageViewer({
   onNavigate,
   onStartChat,
   onReusePrompt,
-  onOpenChat
+  onOpenChat,
+  onCropImage
 }: ImageViewerProps) {
   const [hovered, setHovered] = useState(false)
   const [promptCopied, setPromptCopied] = useState(false)
@@ -139,7 +142,7 @@ export function ImageViewer({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex animate-overlay-in"
+      className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex animate-overlay-in"
       onClick={onClose}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -241,6 +244,15 @@ export function ImageViewer({
               <MessageSquare className="w-3.5 h-3.5" />
               {linkedChat ? 'Continue Chat' : 'Start Chat'}
             </button>
+            {onCropImage && (
+              <button
+                onClick={() => onCropImage(image.id, src!)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium"
+              >
+                <Crop className="w-3.5 h-3.5" />
+                Crop as Reference
+              </button>
+            )}
           </div>
 
           {/* Chat origin info */}

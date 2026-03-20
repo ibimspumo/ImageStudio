@@ -47,7 +47,7 @@ export function SimpleLightbox({ images, currentIndex, onClose, onNavigate }: Si
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center animate-overlay-in"
+      className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center animate-overlay-in"
       onClick={onClose}
       onMouseMove={() => setHovered(true)}
     >

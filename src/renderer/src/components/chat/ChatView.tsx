@@ -250,7 +250,7 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
   const isGenerating = chat.messages.some((m) => m.isLoading)
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center animate-overlay-in" onClick={onClose}>
+    <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center animate-overlay-in" onClick={onClose}>
       <div className="bg-surface-1 border border-border-base rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.6)] w-full max-w-2xl h-[80vh] flex flex-col animate-scale-in" onClick={(e) => e.stopPropagation()}>
       {/* Top bar */}
       <div className="h-11 shrink-0 flex items-center px-4 border-b border-border-dim rounded-t-2xl">

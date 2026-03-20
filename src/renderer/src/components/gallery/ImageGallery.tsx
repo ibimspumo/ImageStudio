@@ -6,9 +6,10 @@ interface ImageGalleryProps {
   images: GalleryImage[]
   onImageClick: (images: GalleryImage[], index: number) => void
   onStartChat?: (imageId: string) => void
+  onCropImage?: (imageId: string, base64: string) => void
 }
 
-export function ImageGallery({ images, onImageClick, onStartChat }: ImageGalleryProps) {
+export function ImageGallery({ images, onImageClick, onStartChat, onCropImage }: ImageGalleryProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Scroll to top when new images are added (they prepend)
@@ -35,6 +36,7 @@ export function ImageGallery({ images, onImageClick, onStartChat }: ImageGallery
               }
             }}
             onStartChat={onStartChat}
+            onCropImage={onCropImage}
           />
         ))}
       </div>

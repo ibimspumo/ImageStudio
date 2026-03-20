@@ -10,6 +10,7 @@ import { ModelSelector } from './ModelSelector'
 import type { AspectRatio, Resolution } from '../../types/api'
 import { cn } from '../../lib/utils'
 import { prepareCollectionImages, compressImage } from '../../lib/image-utils'
+import { useCropStore } from '../../stores/crop-store'
 
 interface ImageRef {
   id: string
@@ -55,14 +56,27 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   const apiKey = useSettingsStore((s) => s.apiKey)
   const collections = useCollectionsStore((s) => s.collections)
 
-  const addImageRef = useCallback((base64: string): ImageRef => {
+  const addImageRef = useCallback((base64: string, customName?: string): ImageRef => {
     const existing = imageRefs.find((r) => r.base64 === base64)
     if (existing) return existing
-    const name = `Image ${nextImageNum.current++}`
+    const name = customName || `Image ${nextImageNum.current++}`
     const ref: ImageRef = { id: crypto.randomUUID(), name, base64 }
     setImageRefs((prev) => [...prev, ref])
     return ref
   }, [imageRefs])
+
+  // Consume pending crop references from the crop store
+  const pendingCropRef = useCropStore((s) => s.pendingRef)
+  const consumePendingRef = useCropStore((s) => s.consumePendingRef)
+
+  useEffect(() => {
+    if (pendingCropRef) {
+      const ref = consumePendingRef()
+      if (ref) {
+        addImageRef(ref.base64, ref.name)
+      }
+    }
+  }, [pendingCropRef, consumePendingRef, addImageRef])
 
   const removeImageRef = useCallback((id: string) => {
     setImageRefs((prev) => prev.filter((r) => r.id !== id))

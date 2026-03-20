@@ -4,15 +4,23 @@ import { useGalleryStore, type GalleryImage } from './stores/gallery-store'
 import { useCollectionsStore } from './stores/collections-store'
 import { useChatStore } from './stores/chat-store'
 import { useWorkspaceStore } from './stores/workspace-store'
+import { useCropStore } from './stores/crop-store'
+import { TitleBar } from './components/layout/TitleBar'
 import { MainContent } from './components/layout/MainContent'
 import { SettingsDialog } from './components/shared/SettingsDialog'
 import { ImageViewer } from './components/shared/ImageViewer'
+import { CropModal } from './components/shared/CropModal'
 import { CollectionsDialog } from './components/collections/CollectionsDialog'
 import { ChatView } from './components/chat/ChatView'
 
 interface ViewerState {
   images: GalleryImage[]
   index: number
+}
+
+interface CropState {
+  imageId: string
+  base64: string
 }
 
 export default function App() {
@@ -27,8 +35,10 @@ export default function App() {
   const [viewerState, setViewerState] = useState<ViewerState | null>(null)
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [chatInitialModel, setChatInitialModel] = useState<string | undefined>(undefined)
+  const [cropState, setCropState] = useState<CropState | null>(null)
 
   const startChat = useChatStore((s) => s.startChat)
+  const addPendingRef = useCropStore((s) => s.addPendingRef)
 
   useEffect(() => {
     hydrate()
@@ -53,7 +63,6 @@ export default function App() {
     const image = images.find((img) => img.id === imageId)
     if (!image || !image.base64DataUrl) return
 
-    // Reopen existing chat if this image has one
     if (image.chatId) {
       const existingChat = useChatStore.getState().chats.find((c) => c.id === image.chatId)
       if (existingChat) {
@@ -64,9 +73,7 @@ export default function App() {
       }
     }
 
-    // Otherwise create a new chat
     const chatId = startChat(image.id, image.base64DataUrl, image.prompt)
-    // Tag the gallery image with this chatId
     useGalleryStore.setState((state) => ({
       images: state.images.map((i) => i.id === imageId ? { ...i, chatId } : i)
     }))
@@ -76,7 +83,6 @@ export default function App() {
   }
 
   const handleOpenChat = (chatId: string) => {
-    // Find the model used for the source image of this chat
     const chat = useChatStore.getState().chats.find((c) => c.id === chatId)
     if (chat) {
       const sourceImage = useGalleryStore.getState().images.find((i) => i.id === chat.sourceImageId)
@@ -90,38 +96,62 @@ export default function App() {
     setViewerState(null)
   }
 
+  const handleCropImage = (imageId: string, base64: string) => {
+    setCropState({ imageId, base64 })
+    setViewerState(null)
+  }
+
+  const handleCropConfirm = (croppedBase64: string, sourceImageId: string) => {
+    addPendingRef(croppedBase64, sourceImageId)
+    setCropState(null)
+  }
+
   return (
-    <>
-      <div className="flex flex-col h-screen bg-surface-0 overflow-hidden">
-        <div className="drag-region fixed top-0 left-0 right-0 h-12 z-30" />
+    <div className="flex flex-col h-screen bg-surface-0 overflow-hidden">
+      {/* Global title bar — always visible, handles drag region & traffic lights */}
+      <TitleBar />
+
+      {/* Content area — fills remaining space below title bar */}
+      <div className="flex-1 flex flex-col min-h-0 relative">
         <MainContent
           onImageClick={handleImageClick}
           onSettingsClick={() => setShowSettings(true)}
           onCollectionsClick={() => setShowCollections(true)}
           onStartChat={handleStartChat}
+          onCropImage={handleCropImage}
         />
-      </div>
 
-      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
-      {showCollections && <CollectionsDialog onClose={() => setShowCollections(false)} />}
-      {viewerState && (
-        <ImageViewer
-          images={viewerState.images}
-          currentIndex={viewerState.index}
-          onClose={() => setViewerState(null)}
-          onNavigate={(index) => setViewerState((prev) => prev ? { ...prev, index } : null)}
-          onStartChat={handleStartChat}
-          onReusePrompt={handleReusePrompt}
-          onOpenChat={handleOpenChat}
-        />
-      )}
-      {activeChatId && (
-        <ChatView
-          chatId={activeChatId}
-          onClose={() => setActiveChatId(null)}
-          initialModel={chatInitialModel}
-        />
-      )}
-    </>
+        {/* All modals/overlays render inside the content area, below the title bar */}
+        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
+        {showCollections && <CollectionsDialog onClose={() => setShowCollections(false)} />}
+        {viewerState && (
+          <ImageViewer
+            images={viewerState.images}
+            currentIndex={viewerState.index}
+            onClose={() => setViewerState(null)}
+            onNavigate={(index) => setViewerState((prev) => prev ? { ...prev, index } : null)}
+            onStartChat={handleStartChat}
+            onReusePrompt={handleReusePrompt}
+            onOpenChat={handleOpenChat}
+            onCropImage={handleCropImage}
+          />
+        )}
+        {activeChatId && (
+          <ChatView
+            chatId={activeChatId}
+            onClose={() => setActiveChatId(null)}
+            initialModel={chatInitialModel}
+          />
+        )}
+        {cropState && (
+          <CropModal
+            imageSrc={cropState.base64}
+            sourceImageId={cropState.imageId}
+            onCrop={handleCropConfirm}
+            onClose={() => setCropState(null)}
+          />
+        )}
+      </div>
+    </div>
   )
 }

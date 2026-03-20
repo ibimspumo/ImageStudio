@@ -18,7 +18,7 @@
 ---
 
 <p align="center">
-  <img src="docs/screenshot-empty.jpg" width="800" alt="ImageStudio" />
+  <img src="docs/screenshot-gallery.jpg" width="800" alt="ImageStudio — Gallery with generated images" />
 </p>
 
 ## What is ImageStudio?
@@ -57,7 +57,7 @@ When you first open ImageStudio, a settings dialog appears. Paste your [OpenRout
 
 ## Generating Images
 
-Type your prompt into the prompt bar at the bottom. Press **⌘ Enter** to generate. That's it.
+Type your prompt into the prompt bar at the bottom. Press **⌘ Enter** to generate.
 
 <p align="center">
   <img src="docs/screenshot-prompt.jpg" width="800" alt="Type a prompt and generate" />
@@ -121,6 +121,10 @@ Click the aspect ratio button to choose from 10 presets — each shown as a visu
 
 Click the **+** button in the prompt bar or drag & drop images directly onto it. These are sent alongside your prompt for image-to-image editing — style transfer, face swaps, composition matching, etc.
 
+### Crop to Reference
+
+Hover over any gallery image and click the crop icon, or use "Crop as Reference" in the lightbox. This opens a full-screen crop tool where you can draw a selection on the image. The cropped area is added as a reference to your prompt bar — perfect for isolating a face, texture, or detail from an existing generation.
+
 ### Asset Collections
 
 Create named groups of reference images (e.g. `@brand-photos`, `@product-shots`). Type **@** in the prompt to mention a collection inline. The images are automatically prepared and attached.
@@ -133,12 +137,54 @@ Collections with more than 5 images are intelligently composited into grid layou
 
 Want to iteratively refine an image? Hover over any image in the gallery and click the chat icon. This opens a conversation where each message builds on the previous result.
 
+<p align="center">
+  <img src="docs/screenshot-chat.jpg" width="800" alt="Chat mode — iteratively edit images in conversation" />
+</p>
+
 - The last generated image is automatically attached as a reference
 - You can switch models between messages
 - You can attach additional reference images
 - All chat-generated images also appear in your gallery
 
 When you open a chat from an image, the model that originally created that image is pre-selected — so you continue with the same model by default.
+
+---
+
+## Lightbox & Image Details
+
+Click any image to open it in the lightbox. The info panel on the right shows everything about the image at a glance.
+
+<p align="center">
+  <img src="docs/screenshot-lightbox.jpg" width="800" alt="Lightbox with image details, prompt, model info, and actions" />
+</p>
+
+The info panel includes:
+
+- **Prompt** — with a copy button
+- **Model** — which AI model was used (shown as a readable name)
+- **Size** — aspect ratio, resolution, and pixel dimensions
+- **Duration** — how long the generation took
+- **Date** — when the image was created
+- **Chat origin** — if the image came from a chat, click to reopen it
+- **Reference images** — any images that were attached during generation
+
+### Actions
+
+- **Reuse Prompt** — paste the prompt back into the prompt bar
+- **Start Chat / Continue Chat** — open an editing conversation from this image
+- **Crop as Reference** — select a region of the image to use as reference
+- **Copy** — copy the image to your clipboard
+- **Save** — quick export as PNG, or click the dropdown arrow to choose format and quality
+- **Delete** — remove from your gallery
+
+### Export with format & quality
+
+Click the dropdown arrow next to "Save" to open export options:
+
+- **Format** — PNG, JPEG, or WebP
+- **Quality slider** — for JPEG and WebP, adjust from 10% to 100%
+- **Live file size** — see the estimated file size update in real time
+- **Savings indicator** — shows how much smaller the file is compared to the original
 
 ---
 
@@ -156,37 +202,6 @@ Each workspace gets its own color. Images in a workspace show a subtle colored b
 
 ---
 
-## Lightbox & Image Details
-
-Click any image to open it in the lightbox. The info panel on the right shows:
-
-- **Prompt** — with a copy button
-- **Model** — which AI model was used (shown as a readable name)
-- **Size** — aspect ratio, resolution, and pixel dimensions
-- **Duration** — how long the generation took
-- **Date** — when the image was created
-- **Chat origin** — if the image came from a chat, you can click to reopen it
-- **Reference images** — any images that were attached during generation
-
-### Actions
-
-- **Reuse Prompt** — paste the prompt back into the prompt bar
-- **Start Chat / Continue Chat** — open an editing conversation from this image
-- **Copy** — copy the image to your clipboard
-- **Save** — quick export as PNG, or click the dropdown arrow to choose format and quality
-- **Delete** — remove from your gallery
-
-### Export with format & quality
-
-Click the dropdown arrow next to "Save" to open the export options:
-
-- **Format** — PNG, JPEG, or WebP
-- **Quality slider** — for JPEG and WebP, adjust from 10% to 100%
-- **Live file size** — see the estimated file size update in real time as you change settings
-- **Savings indicator** — shows how much smaller the file is compared to the original
-
----
-
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
@@ -195,6 +210,7 @@ Click the dropdown arrow next to "Save" to open the export options:
 | `@` | Reference images/collections in prompt |
 | `←` `→` | Navigate images in lightbox |
 | `Escape` | Close lightbox, chat, or dialogs |
+| `Enter` | Confirm crop selection |
 
 ---
 
@@ -236,8 +252,8 @@ src/
     │   ├── chat/         # Image chat modal
     │   ├── workspace/    # Workspace tabs and management
     │   ├── collections/  # Asset collection manager
-    │   └── shared/       # Lightbox, export, settings, dialogs
-    ├── stores/           # Zustand (gallery, collections, chat, settings, workspace)
+    │   └── shared/       # Lightbox, CropModal, ExportPopover, Settings
+    ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop)
     ├── hooks/            # useImageGeneration, useChatGeneration
     ├── types/            # API types, model definitions
     └── lib/              # Utils, image compression

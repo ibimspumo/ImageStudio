@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput } from 'lucide-react'
+import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop } from 'lucide-react'
 import { useGalleryStore, type GalleryImage } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { cn } from '../../lib/utils'
@@ -8,9 +8,10 @@ interface GalleryCardProps {
   image: GalleryImage
   onClick: () => void
   onStartChat?: (imageId: string) => void
+  onCropImage?: (imageId: string, base64: string) => void
 }
 
-export function GalleryCard({ image, onClick, onStartChat }: GalleryCardProps) {
+export function GalleryCard({ image, onClick, onStartChat, onCropImage }: GalleryCardProps) {
   const removeImage = useGalleryStore((s) => s.removeImage)
   const moveToWorkspace = useGalleryStore((s) => s.moveToWorkspace)
   const workspaces = useWorkspaceStore((s) => s.workspaces)
@@ -126,6 +127,15 @@ export function GalleryCard({ image, onClick, onStartChat }: GalleryCardProps) {
               title="Edit in chat"
             >
               <MessageSquare className="w-3.5 h-3.5 text-accent-bright" />
+            </button>
+          )}
+          {onCropImage && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onCropImage(image.id, image.base64DataUrl) }}
+              className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors"
+              title="Crop as reference"
+            >
+              <Crop className="w-3.5 h-3.5 text-white" />
             </button>
           )}
           {workspaces.length > 0 && (
