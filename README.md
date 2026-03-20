@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resources/icon.jpg" width="80" />
+  <img src="resources/icon.png" width="80" />
 </p>
 
 <h1 align="center">ImageStudio</h1>
