@@ -20,20 +20,13 @@ import { ModelSelector } from '../input/ModelSelector'
 import type { AspectRatio, Resolution } from '../../types/api'
 import { getModelName } from '../../types/api'
 import { cn } from '../../lib/utils'
+import { formatDuration, formatTime } from '../../lib/date-utils'
+import { logger } from '../../lib/logger'
 
 interface ChatViewProps {
   chatId: string
   onClose: () => void
   initialModel?: string
-}
-
-function formatDuration(ms: number): string {
-  return (ms / 1000).toFixed(1) + 's'
-}
-
-function formatTime(timestamp: number): string {
-  const d = new Date(timestamp)
-  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
 function MessageBubble({ message, allImages, onImageClick }: { message: ChatMessage; allImages: string[]; onImageClick?: (images: string[], index: number) => void }) {

@@ -21,19 +21,18 @@ interface CropStore {
   consumePendingReuse: () => PendingReuse | null
 }
 
-let cropCounter = 1
-
 export const useCropStore = create<CropStore>((set, get) => ({
   pendingRef: null,
   pendingReuse: null,
 
   addPendingRef: (base64, sourceImageId) => {
+    const ts = Date.now().toString(36).slice(-4)
     set({
       pendingRef: {
         id: crypto.randomUUID(),
         base64,
         sourceImageId,
-        name: `Crop ${cropCounter++}`,
+        name: `Crop ${ts}`,
       },
     })
   },

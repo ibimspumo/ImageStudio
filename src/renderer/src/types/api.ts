@@ -27,3 +27,16 @@ export interface GenerationConfig {
   resolution: Resolution
   imageCount: number
 }
+
+/** A reference image attached by the user (crop, file upload, drag-drop) */
+export interface ImageRef {
+  id: string
+  name: string
+  base64: string
+}
+
+/** A group of labeled images sent to the AI for context */
+export interface LabeledAttachment {
+  label: string
+  images: string[]
+}

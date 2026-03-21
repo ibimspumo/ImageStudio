@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useChatStore } from '../stores/chat-store'
 import { useGalleryStore } from '../stores/gallery-store'
 import { useSettingsStore } from '../stores/settings-store'
+import { logger } from '../lib/logger'
 
 interface ChatGenerateOptions {
   chatId: string
@@ -13,8 +14,49 @@ interface ChatGenerateOptions {
   extraLabeledAttachments?: { label: string; images: string[] }[]
 }
 
+/**
+ * Upload all base64 images to temp URLs. Returns updated attachments/labeled arrays.
+ */
+async function uploadChatImages(
+  attachments: string[],
+  labeledAttachments: { label: string; images: string[] }[]
+): Promise<{ attachments: string[]; labeledAttachments: { label: string; images: string[] }[] }> {
+  // Collect all unique base64 images
+  const allBase64 = new Set<string>()
+  for (const a of attachments) {
+    if (a.startsWith('data:')) allBase64.add(a)
+  }
+  for (const group of labeledAttachments) {
+    for (const img of group.images) {
+      if (img.startsWith('data:')) allBase64.add(img)
+    }
+  }
+
+  if (allBase64.size === 0) return { attachments, labeledAttachments }
+
+  const uniqueList = Array.from(allBase64)
+  const result = await window.api.uploadToUrls(uniqueList)
+  if (!result.success) return { attachments, labeledAttachments }
+
+  const urlMap = new Map<string, string>()
+  for (let i = 0; i < uniqueList.length; i++) {
+    urlMap.set(uniqueList[i], result.urls[i])
+  }
+
+  const resolve = (img: string) => urlMap.get(img) ?? img
+
+  return {
+    attachments: attachments.map(resolve),
+    labeledAttachments: labeledAttachments.map((g) => ({
+      label: g.label,
+      images: g.images.map(resolve),
+    })),
+  }
+}
+
 export function useChatGeneration() {
   const apiKey = useSettingsStore((s) => s.apiKey)
+  const useImageUrls = useSettingsStore((s) => s.useImageUrls)
   const addUserMessage = useChatStore((s) => s.addUserMessage)
   const addAssistantPlaceholder = useChatStore((s) => s.addAssistantPlaceholder)
   const completeAssistantMessage = useChatStore((s) => s.completeAssistantMessage)
@@ -41,14 +83,14 @@ export function useChatGeneration() {
           if (readResult.success) {
             lastAssistantBase64 = readResult.base64DataUrl
           }
-        } catch {
-          // silent
+        } catch (err) {
+          logger.warn('useChatGeneration', 'Failed to read last assistant image for auto-reference', err)
         }
       }
 
       // Build attachments for API (base64 strings)
-      const attachments: string[] = []
-      const labeledAttachments: { label: string; images: string[] }[] = []
+      let attachments: string[] = []
+      let labeledAttachments: { label: string; images: string[] }[] = []
       if (lastAssistantBase64) {
         attachments.push(lastAssistantBase64)
         labeledAttachments.push({ label: 'Previous image (current version)', images: [lastAssistantBase64] })
@@ -60,10 +102,22 @@ export function useChatGeneration() {
         labeledAttachments.push(...extraLabeledAttachments)
       }
 
-      // Add user message (store file paths for attachments if needed)
+      // Add user message
       addUserMessage(chatId, prompt, undefined)
 
       const assistantMsgId = addAssistantPlaceholder(chatId)
+
+      // Upload images to temp URLs if enabled
+      if (useImageUrls && attachments.length > 0) {
+        try {
+          // Update chat message status (reuse loading message)
+          const uploaded = await uploadChatImages(attachments, labeledAttachments)
+          attachments = uploaded.attachments
+          labeledAttachments = uploaded.labeledAttachments
+        } catch (err) {
+          logger.warn('useChatGeneration', 'Upload failed, falling back to base64', err)
+        }
+      }
 
       const requestId = crypto.randomUUID()
       const startTime = Date.now()
@@ -78,7 +132,7 @@ export function useChatGeneration() {
           count: 1,
           requestId,
           attachments: attachments.length > 0 ? attachments : undefined,
-          labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined
+          labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
         })
 
         if (!response.success) {
@@ -91,7 +145,6 @@ export function useChatGeneration() {
         const result = results[0]
 
         if (result?.status === 'complete' && result.result?.imageBase64) {
-          // Save to disk first
           const filename = `chat-${assistantMsgId}.png`
           const saveResult = await window.api.saveImage(result.result.imageBase64, filename)
 
@@ -117,7 +170,7 @@ export function useChatGeneration() {
         failAssistantMessage(chatId, assistantMsgId, err instanceof Error ? err.message : 'Unknown error')
       }
     },
-    [apiKey, addUserMessage, addAssistantPlaceholder, completeAssistantMessage, failAssistantMessage]
+    [apiKey, useImageUrls, addUserMessage, addAssistantPlaceholder, completeAssistantMessage, failAssistantMessage]
   )
 
   return { generate }

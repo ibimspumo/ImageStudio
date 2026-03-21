@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Download, Copy, ChevronLeft, ChevronRight } from 'lucide-react'
+import { logger } from '../../lib/logger'
 
 interface SimpleLightboxProps {
   images: string[]
@@ -42,7 +43,7 @@ export function SimpleLightbox({ images, currentIndex, onClose, onNavigate }: Si
       const response = await fetch(src)
       const blob = await response.blob()
       await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
-    } catch { /* silent */ }
+    } catch (err) { logger.error('SimpleLightbox', 'Failed to copy image', err) }
   }
 
   return (

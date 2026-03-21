@@ -5,6 +5,7 @@ import { useCollectionsStore } from './stores/collections-store'
 import { useChatStore } from './stores/chat-store'
 import { useWorkspaceStore } from './stores/workspace-store'
 import { useCropStore } from './stores/crop-store'
+import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { TitleBar } from './components/layout/TitleBar'
 import { MainContent } from './components/layout/MainContent'
 import { SettingsDialog } from './components/shared/SettingsDialog'
@@ -112,6 +113,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="flex flex-col h-screen bg-surface-0 overflow-hidden">
       <TitleBar />
       <div className="flex-1 flex flex-col min-h-0 relative">
@@ -153,5 +155,6 @@ export default function App() {
         )}
       </div>
     </div>
+    </ErrorBoundary>
   )
 }

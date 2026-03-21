@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import { debounce } from '../lib/debounce'
+import { logger } from '../lib/logger'
 
 export interface AssetCollection {
   id: string
@@ -19,6 +21,10 @@ interface CollectionsStore {
   removeImageFromCollection: (id: string, imageIndex: number) => void
 }
 
+const debouncedPersist = debounce((persist: () => Promise<void>) => {
+  persist().catch((err) => logger.error('CollectionsStore', 'Persist failed', err))
+}, 500)
+
 export const useCollectionsStore = create<CollectionsStore>((set, get) => ({
   collections: [],
 
@@ -32,8 +38,8 @@ export const useCollectionsStore = create<CollectionsStore>((set, get) => ({
           set({ collections: data })
         }
       }
-    } catch {
-      // silent -- first launch
+    } catch (err) {
+      logger.warn('CollectionsStore', 'Failed to load from disk (may be first launch)', err)
     }
   },
 
@@ -50,7 +56,7 @@ export const useCollectionsStore = create<CollectionsStore>((set, get) => ({
         { id, name, images, createdAt: Date.now() },
       ],
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
     return id
   },
 
@@ -60,14 +66,14 @@ export const useCollectionsStore = create<CollectionsStore>((set, get) => ({
         c.id === id ? { ...c, ...updates } : c
       ),
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   removeCollection: (id) => {
     set((state) => ({
       collections: state.collections.filter((c) => c.id !== id),
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   addImagesToCollection: (id, images) => {
@@ -76,7 +82,7 @@ export const useCollectionsStore = create<CollectionsStore>((set, get) => ({
         c.id === id ? { ...c, images: [...c.images, ...images] } : c
       ),
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   removeImageFromCollection: (id, imageIndex) => {
@@ -87,6 +93,6 @@ export const useCollectionsStore = create<CollectionsStore>((set, get) => ({
           : c
       ),
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 }))

@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { X, Eye, EyeOff, Check, Sparkles } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settings-store'
+import { cn } from '../../lib/utils'
 
 interface SettingsDialogProps {
   onClose: () => void
 }
 
 export function SettingsDialog({ onClose }: SettingsDialogProps) {
-  const { apiKey, setApiKey } = useSettingsStore()
+  const { apiKey, setApiKey, useImageUrls, setSetting } = useSettingsStore()
   const [localKey, setLocalKey] = useState(apiKey)
   const [showKey, setShowKey] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -67,12 +68,38 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             </p>
           </div>
 
+          {/* Image URL toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[13px] font-medium text-text-secondary">
+                Send images as URL
+              </label>
+              <p className="text-[11px] text-text-muted leading-snug max-w-[280px]">
+                Upload reference images to a temp host and send as links instead of base64. Can improve prompt quality.
+              </p>
+            </div>
+            <button
+              onClick={() => setSetting('useImageUrls', !useImageUrls)}
+              className={cn(
+                'relative w-10 h-[22px] rounded-full transition-colors shrink-0 ml-4',
+                useImageUrls ? 'bg-accent-main' : 'bg-surface-4 border border-border-base'
+              )}
+            >
+              <div
+                className={cn(
+                  'absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-all',
+                  useImageUrls ? 'left-[22px]' : 'left-[3px]'
+                )}
+              />
+            </button>
+          </div>
+
           {/* About */}
           <div className="p-3.5 rounded-xl bg-surface-2 border border-border-dim">
             <div className="flex items-center gap-2 mb-2">
               <Sparkles className="w-3.5 h-3.5 text-accent-main" />
               <span className="text-[13px] font-medium text-text-primary">ImageStudio</span>
-              <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-surface-3">v1.0</span>
+              <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-surface-3">v0.2</span>
             </div>
             <p className="text-[11px] text-text-muted leading-relaxed">
               Open-source AI image generation for macOS. Supports 7 models via OpenRouter — generate, iterate with chat, organize with workspaces, and export in any format.

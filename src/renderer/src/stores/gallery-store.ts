@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import { debounce } from '../lib/debounce'
+import { logger } from '../lib/logger'
 
 export interface GalleryImage {
   id: string
@@ -17,6 +19,7 @@ export interface GalleryImage {
   chatId?: string
   workspaceId?: string
   cost?: number
+  statusText?: string           // shown on loading skeleton (e.g. "Uploading images...")
 }
 
 /** Convert a file path to a displayable URL (handles spaces and special chars) */
@@ -33,6 +36,7 @@ interface GalleryStore {
   images: GalleryImage[]
   addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string) => string
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
+  updateStatus: (id: string, statusText: string | undefined) => void
   failImage: (id: string, error: string) => void
   removeImage: (id: string) => void
   moveToWorkspace: (imageId: string, workspaceId: string | undefined) => void
@@ -40,6 +44,10 @@ interface GalleryStore {
   loadFromDisk: () => Promise<void>
   persistToDisk: () => Promise<void>
 }
+
+const debouncedPersist = debounce((persist: () => Promise<void>) => {
+  persist().catch((err) => logger.error('GalleryStore', 'Persist failed', err))
+}, 500)
 
 export const useGalleryStore = create<GalleryStore>((set, get) => ({
   images: [],
@@ -66,13 +74,21 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     return id
   },
 
+  updateStatus: (id, statusText) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === id ? { ...img, statusText } : img
+      ),
+    }))
+  },
+
   completeImage: (id, filePath, durationMs, cost) => {
     set((state) => ({
       images: state.images.map((img) =>
         img.id === id ? { ...img, filePath, isLoading: false, durationMs, cost } : img
       ),
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   failImage: (id, error) => {
@@ -86,12 +102,14 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
   removeImage: (id) => {
     const img = get().images.find((i) => i.id === id)
     if (img?.filePath && !img.filePath.startsWith('data:')) {
-      window.api.deleteImage(img.filePath).catch(() => {})
+      window.api.deleteImage(img.filePath).catch((err) =>
+        logger.error('GalleryStore', 'Failed to delete image file', err)
+      )
     }
     set((state) => ({
       images: state.images.filter((img) => img.id !== id),
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   moveToWorkspace: (imageId, workspaceId) => {
@@ -100,18 +118,22 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
         img.id === imageId ? { ...img, workspaceId } : img
       ),
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   clearAll: () => {
     const imgs = get().images
     for (const img of imgs) {
       if (img.filePath && !img.filePath.startsWith('data:')) {
-        window.api.deleteImage(img.filePath).catch(() => {})
+        window.api.deleteImage(img.filePath).catch((err) =>
+          logger.error('GalleryStore', 'Failed to delete image file', err)
+        )
       }
     }
     set({ images: [] })
-    get().persistToDisk()
+    get().persistToDisk().catch((err) =>
+      logger.error('GalleryStore', 'Persist failed after clearAll', err)
+    )
   },
 
   loadFromDisk: async () => {
@@ -125,14 +147,13 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           set({ images: completed })
         }
       }
-    } catch {
-      // silent — first launch
+    } catch (err) {
+      logger.warn('GalleryStore', 'Failed to load gallery from disk (may be first launch)', err)
     }
   },
 
   persistToDisk: async () => {
     const images = get().images.filter((img) => img.filePath && !img.isLoading && !img.error)
-    // Only persist metadata + file paths (no base64 in JSON)
     await window.api.saveHistory('gallery', JSON.stringify(images))
   },
 }))

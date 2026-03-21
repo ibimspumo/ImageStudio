@@ -102,7 +102,10 @@ export async function prepareCollectionImages(images: string[]): Promise<string[
     try {
       const result = await window.api.readImage(img)
       return result.success ? result.base64DataUrl : img
-    } catch { return img }
+    } catch {
+      // File path that can't be read — return as-is for graceful degradation
+      return img
+    }
   }))
 
   if (asBase64.length <= 5) {

@@ -4,4 +4,5 @@ export interface AppSettings {
   defaultAspectRatio: string
   defaultResolution: string
   defaultImageCount: number
+  useImageUrls: boolean
 }

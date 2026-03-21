@@ -3,6 +3,7 @@ import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, Folde
 import { useGalleryStore, type GalleryImage, toDisplayUrl } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { cn } from '../../lib/utils'
+import { logger } from '../../lib/logger'
 
 interface GalleryCardProps {
   image: GalleryImage
@@ -19,7 +20,15 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
 
   if (image.isLoading) {
     return (
-      <div className="skeleton aspect-square rounded-2xl" />
+      <div className="skeleton aspect-square rounded-2xl relative">
+        {image.statusText && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-[11px] font-medium text-text-muted/80 bg-surface-1/60 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+              {image.statusText}
+            </span>
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -45,7 +54,7 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
       if (result.success) {
         await window.api.exportImage(result.base64DataUrl, `imagestudio-${image.id}.png`)
       }
-    } catch { /* silent */ }
+    } catch (err) { logger.error('GalleryCard', 'Operation failed', err) }
   }
 
   const handleCopy = async (e: React.MouseEvent) => {
@@ -57,7 +66,7 @@ export function GalleryCard({ image, onClick, onStartChat, onCropImage }: Galler
         const blob = await response.blob()
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
       }
-    } catch { /* silent */ }
+    } catch (err) { logger.error('GalleryCard', 'Operation failed', err) }
   }
 
   const handleDragStart = (e: React.DragEvent) => {

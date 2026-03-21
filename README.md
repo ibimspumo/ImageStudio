@@ -61,6 +61,17 @@ When you first open ImageStudio, a settings dialog appears. Paste your [OpenRout
   <img src="docs/screenshot-settings.jpg" width="500" alt="Settings — paste your OpenRouter API key and see app info" />
 </p>
 
+### Send images as URL (optional)
+
+In Settings, you can enable **"Send images as URL"**. When active, reference images are uploaded to a free temporary host ([litterbox.catbox.moe](https://litterbox.catbox.moe)) and sent as HTTPS links instead of base64. This can improve how some models handle your prompts.
+
+- Images auto-delete after 1 hour
+- Identical images are cached and only uploaded once (important for multi-model generation)
+- Upload status is shown on loading placeholders ("Uploading images...")
+- If upload fails, ImageStudio silently falls back to base64
+- Works across all features: generation, chat, zoom out, collections
+- Default: **off** (standard base64 encoding)
+
 ---
 
 ## Generating Images
@@ -254,16 +265,16 @@ src/
 ├── preload/              # Typed context bridge (window.api)
 └── renderer/src/         # React UI
     ├── components/
-    │   ├── input/        # PromptBar, ModelSelector, AspectRatio, Resolution
+    │   ├── input/        # PromptBar, AttachmentStrip, MentionPopup, ControlsRow, selectors
     │   ├── gallery/      # Grid layout, image cards
     │   ├── chat/         # Image chat modal
     │   ├── workspace/    # Workspace tabs and management
     │   ├── collections/  # Asset collection manager
-    │   └── shared/       # Lightbox, CropModal, ExportPopover, Settings
+    │   └── shared/       # ErrorBoundary, Lightbox, CropModal, ExportPopover, Settings
     ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop)
-    ├── hooks/            # useImageGeneration, useChatGeneration
-    ├── types/            # API types, model definitions
-    └── lib/              # Utils, image compression
+    ├── hooks/            # useImageGeneration, useChatGeneration, useImageRefs
+    ├── types/            # API types, model definitions, shared interfaces
+    └── lib/              # Utils, image compression, date-utils, debounce, logger
 ```
 
 ---
@@ -286,6 +297,7 @@ This triggers a build on macOS, packages the app as `.dmg` and `.zip`, and creat
 - Your API key is stored locally on your machine
 - All generated images are saved as files on disk — metadata is stored in lightweight JSON files (no base64 in memory)
 - ImageStudio never sends data anywhere except to OpenRouter for image generation
+- **Optional:** If "Send images as URL" is enabled, reference images are temporarily uploaded to [litterbox.catbox.moe](https://litterbox.catbox.moe) (auto-deleted after 1 hour). This is opt-in and off by default.
 - Existing data from older versions is automatically migrated on first launch
 - No analytics, no tracking, no accounts
 

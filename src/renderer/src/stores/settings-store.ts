@@ -14,6 +14,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
   defaultImageCount: 1,
+  useImageUrls: false,
   hydrated: false,
 
   hydrate: async () => {

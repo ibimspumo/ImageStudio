@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import { debounce } from '../lib/debounce'
+import { logger } from '../lib/logger'
 
 export interface Workspace {
   id: string
@@ -33,6 +35,10 @@ interface WorkspaceStore {
   persistToDisk: () => Promise<void>
 }
 
+const debouncedPersist = debounce((persist: () => Promise<void>) => {
+  persist().catch((err) => logger.error('WorkspaceStore', 'Persist failed', err))
+}, 500)
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   workspaces: [],
   activeWorkspaceId: null,
@@ -50,7 +56,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaces: [...state.workspaces, workspace],
       activeWorkspaceId: id,
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
     return id
   },
 
@@ -60,7 +66,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         w.id === id ? { ...w, name } : w
       ),
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   deleteWorkspace: (id) => {
@@ -68,7 +74,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       workspaces: state.workspaces.filter((w) => w.id !== id),
       activeWorkspaceId: state.activeWorkspaceId === id ? null : state.activeWorkspaceId,
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   setActiveWorkspace: (id) => {
@@ -92,8 +98,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           set({ workspaces: data })
         }
       }
-    } catch {
-      // silent
+    } catch (err) {
+      logger.warn('WorkspaceStore', 'Failed to load from disk (may be first launch)', err)
     }
   },
 

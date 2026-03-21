@@ -41,6 +41,9 @@ const api = {
     ipcRenderer.invoke('history:save', { id, data }),
   deleteHistory: (id: string) => ipcRenderer.invoke('history:delete', { id }),
 
+  uploadToUrls: (images: string[]) =>
+    ipcRenderer.invoke('image:upload-urls', { images }),
+
   readImage: (filePath: string) => ipcRenderer.invoke('image:read', { filePath }),
   deleteImage: (filePath: string) => ipcRenderer.invoke('image:delete', { filePath }),
   migrate: () => ipcRenderer.invoke('migrate:run')

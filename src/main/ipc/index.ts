@@ -5,6 +5,7 @@ import { IPC_CHANNELS } from '../lib/constants'
 import { registerImageGenerationHandlers } from './image-generation'
 import { registerFileOperationHandlers } from './file-operations'
 import { loadHistory, saveSession, deleteSession } from '../services/image-store'
+import { uploadImagesToUrls } from '../services/image-upload'
 
 function getSettingsPath(): string {
   return join(app.getPath('userData'), 'imagestudio-settings.json')
@@ -16,7 +17,8 @@ function loadSettings(): Record<string, unknown> {
     defaultModel: 'google/gemini-3-pro-image-preview',
     defaultAspectRatio: '1:1',
     defaultResolution: '2K',
-    defaultImageCount: 1
+    defaultImageCount: 1,
+    useImageUrls: false
   }
   const path = getSettingsPath()
   if (existsSync(path)) {
@@ -68,6 +70,19 @@ export function registerAllHandlers(): void {
       return { success: false, error: error instanceof Error ? error.message : 'Failed to save' }
     }
   })
+
+  // Upload base64 images to temp host, return URLs (with caching)
+  ipcMain.handle(
+    IPC_CHANNELS.IMAGE_UPLOAD_URLS,
+    async (_event, { images }: { images: string[] }) => {
+      try {
+        const urls = await uploadImagesToUrls(images)
+        return { success: true, urls }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Upload failed' }
+      }
+    }
+  )
 
   ipcMain.handle(IPC_CHANNELS.HISTORY_DELETE, async (_event, { id }: { id: string }) => {
     try {

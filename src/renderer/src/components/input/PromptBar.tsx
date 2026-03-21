@@ -1,35 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Send, Plus, X, XCircle, FolderOpen, Settings } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useSettingsStore } from '../../stores/settings-store'
 import { useCollectionsStore, type AssetCollection } from '../../stores/collections-store'
-import { AspectRatioSelector } from './AspectRatioSelector'
-import { ResolutionSelector } from './ResolutionSelector'
-import { ImageCountSelector } from './ImageCountSelector'
-import { ModelSelector } from './ModelSelector'
-import type { AspectRatio, Resolution } from '../../types/api'
+import type { AspectRatio, Resolution, ImageRef } from '../../types/api'
 import { cn } from '../../lib/utils'
+import { logger } from '../../lib/logger'
 import { prepareCollectionImages, compressImage } from '../../lib/image-utils'
 import { useCropStore } from '../../stores/crop-store'
 import { toDisplayUrl } from '../../stores/gallery-store'
-
-interface ImageRef {
-  id: string
-  name: string
-  base64: string
-}
-
-interface CollectionRef {
-  id: string
-  collectionId: string
-  name: string
-  thumbnail: string
-  images: string[]
-}
-
-type MentionItem =
-  | { type: 'image'; ref: ImageRef }
-  | { type: 'collection'; collection: AssetCollection }
+import { AttachmentStrip, type CollectionRef } from './AttachmentStrip'
+import { MentionPopup, type MentionItem } from './MentionPopup'
+import { ControlsRow } from './ControlsRow'
 
 interface PromptBarProps {
   onSettingsClick?: () => void
@@ -57,6 +39,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   const apiKey = useSettingsStore((s) => s.apiKey)
   const collections = useCollectionsStore((s) => s.collections)
 
+  // ── Image ref management ──────────────────────────────────────────
+
   const addImageRef = useCallback((base64: string, customName?: string): ImageRef => {
     const existing = imageRefs.find((r) => r.base64 === base64)
     if (existing) return existing
@@ -73,9 +57,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   useEffect(() => {
     if (pendingCropRef) {
       const ref = consumePendingRef()
-      if (ref) {
-        addImageRef(ref.base64, ref.name)
-      }
+      if (ref) addImageRef(ref.base64, ref.name)
     }
   }, [pendingCropRef, consumePendingRef, addImageRef])
 
@@ -88,12 +70,10 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       const reuse = consumePendingReuse()
       if (!reuse) return
 
-      // Clear existing state (prompt, image refs, collection refs)
       setImageRefs([])
       setCollectionRefs([])
       if (editorRef.current) editorRef.current.innerHTML = ''
 
-      // Parse prompt for [@collectionName] mentions and [imageName] refs
       const collectionMentionRegex = /\[@([^\]]+)\]/g
       const imageMentionRegex = /\[([^@\]][^\]]*)\]/g
       const matchedCollections: AssetCollection[] = []
@@ -104,26 +84,21 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
         if (col) matchedCollections.push(col)
       }
 
-      // Count individual image mentions to know how many attachments are individual
       let individualImageCount = 0
       while ((match = imageMentionRegex.exec(reuse.prompt)) !== null) {
         individualImageCount++
       }
 
-      // Build editor HTML with proper chips for collections and plain text for the rest
       if (editorRef.current) {
-        // Split prompt into parts, replacing [@collection] with chip HTML
         let html = ''
         let lastIndex = 0
         const allMentionRegex = /\[@([^\]]+)\]|\[([^@\]][^\]]*)\]/g
 
         while ((match = allMentionRegex.exec(reuse.prompt)) !== null) {
-          // Add text before this match
           const textBefore = reuse.prompt.substring(lastIndex, match.index)
           if (textBefore) html += textBefore.replace(/\n/g, '<br>')
 
           if (match[1]) {
-            // Collection mention [@name]
             const col = collections.find((c) => c.name === match![1])
             if (col) {
               const cRef: CollectionRef = {
@@ -139,24 +114,19 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
                 : '<span class="inline-flex w-4 h-4 items-center justify-center"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>'
               html += `<span contenteditable="false" data-collection-ref-id="${cRef.id}" class="inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none">${thumbnailHtml}<span class="align-middle">@${col.name}</span></span>\u00A0`
             } else {
-              // Collection not found, keep as text
               html += match[0]
             }
           } else if (match[2]) {
-            // Image mention [name] — will be resolved when attachments load
-            // For now insert as placeholder text; chips come from image refs
             html += match[0]
           }
           lastIndex = match.index + match[0].length
         }
 
-        // Add remaining text
         const remaining = reuse.prompt.substring(lastIndex)
         if (remaining) html += remaining.replace(/\n/g, '<br>')
 
         editorRef.current.innerHTML = html
 
-        // Place cursor at end
         const range = document.createRange()
         range.selectNodeContents(editorRef.current)
         range.collapse(false)
@@ -165,7 +135,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
         sel?.addRange(range)
       }
 
-      // Only load individual image attachments (first N), skip collection images
       if (reuse.attachmentFilePaths && reuse.attachmentFilePaths.length > 0) {
         const individualPaths = reuse.attachmentFilePaths.slice(0, individualImageCount)
         ;(async () => {
@@ -176,7 +145,9 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
                 const compressed = await compressImage(result.base64DataUrl)
                 addImageRef(compressed)
               }
-            } catch { /* silent */ }
+            } catch (err) {
+              logger.error('PromptBar', 'Failed to load reuse attachment', err)
+            }
           }
         })()
       }
@@ -200,6 +171,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       chips.forEach((chip) => chip.remove())
     }
   }, [])
+
+  // ── Chip insertion ────────────────────────────────────────────────
 
   const insertChipAtCursor = useCallback((ref: ImageRef) => {
     const editor = editorRef.current
@@ -286,6 +259,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     setMentionFilter('')
   }, [])
 
+  // ── Prompt text extraction ────────────────────────────────────────
+
   const getPromptText = useCallback((): string => {
     const editor = editorRef.current
     if (!editor) return ''
@@ -311,33 +286,30 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     return text.trim()
   }, [imageRefs, collectionRefs])
 
+  // ── Submit ────────────────────────────────────────────────────────
+
   const handleSubmit = useCallback(async () => {
     const text = getPromptText()
     if (!text || !apiKey) return
 
-    // Build flat attachments (for gallery display) and labeled attachments (for AI context)
     const attachments: string[] = []
     const labeledAttachments: { label: string; images: string[] }[] = []
 
-    // Individual image references — each gets its own label
     for (const ref of imageRefs) {
       attachments.push(ref.base64)
       labeledAttachments.push({ label: ref.name, images: [ref.base64] })
     }
 
-    // Collection references — label each group (including composites)
     for (const cRef of collectionRefs) {
       const processed = await prepareCollectionImages(cRef.images)
       attachments.push(...processed)
 
       if (cRef.images.length <= 5) {
-        // Individual images — one labeled group for the whole collection
         labeledAttachments.push({
           label: `Collection "${cRef.name}" (${cRef.images.length} images)`,
           images: processed,
         })
       } else {
-        // Composites — label each grid so the AI knows they're part of the same collection
         const imagesPerGrid = 4
         for (let i = 0; i < processed.length; i++) {
           const startIdx = i * imagesPerGrid + 1
@@ -362,6 +334,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     })
   }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels])
 
+  // ── Mention items ─────────────────────────────────────────────────
+
   const mentionItems: MentionItem[] = [
     ...imageRefs
       .filter((r) => r.name.toLowerCase().includes(mentionFilter.toLowerCase()))
@@ -370,6 +344,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       .filter((c) => c.name.toLowerCase().includes(mentionFilter.toLowerCase()))
       .map((collection): MentionItem => ({ type: 'collection', collection })),
   ]
+
+  // ── Editor keyboard handling ──────────────────────────────────────
 
   const handleEditorKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -382,11 +358,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       if (e.key === 'Enter' && mentionItems.length > 0) {
         e.preventDefault()
         const first = mentionItems[0]
-        if (first.type === 'image') {
-          insertChipAtCursor(first.ref)
-        } else {
-          insertCollectionChipAtCursor(first.collection)
-        }
+        if (first.type === 'image') insertChipAtCursor(first.ref)
+        else insertCollectionChipAtCursor(first.collection)
         return
       }
     }
@@ -397,7 +370,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   }, [handleSubmit, showMentionPopup, mentionItems, insertChipAtCursor, insertCollectionChipAtCursor])
 
   const handleEditorInput = useCallback(() => {
-    // Sync: remove collection/image refs whose chips were deleted from the editor
     const editor = editorRef.current
     if (editor) {
       const existingCollectionChipIds = new Set(
@@ -407,17 +379,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       setCollectionRefs((prev) => {
         const filtered = prev.filter((r) => existingCollectionChipIds.has(r.id))
         return filtered.length !== prev.length ? filtered : prev
-      })
-
-      const existingImageChipIds = new Set(
-        Array.from(editor.querySelectorAll('[data-image-ref-id]'))
-          .map((el) => (el as HTMLElement).dataset.imageRefId)
-      )
-      setImageRefs((prev) => {
-        // Only remove refs that were inserted as chips (not all refs — some are from file upload/crop)
-        // A ref is chip-based if it has a corresponding chip in the editor
-        // For now, keep all refs that aren't chip-based or whose chip still exists
-        return prev
       })
     }
 
@@ -445,21 +406,29 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     if (showMentionPopup) setShowMentionPopup(false)
   }, [imageRefs, collections, showMentionPopup])
 
+  // ── File handling ─────────────────────────────────────────────────
+
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files) return
     for (const file of Array.from(files)) {
       if (!file.type.startsWith('image/')) continue
-      const raw = await new Promise<string>((resolve) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.readAsDataURL(file)
-      })
-      const compressed = await compressImage(raw)
-      addImageRef(compressed)
+      try {
+        const raw = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(file)
+        })
+        const compressed = await compressImage(raw)
+        addImageRef(compressed)
+      } catch (err) {
+        logger.error('PromptBar', 'Failed to read/compress file', err)
+      }
     }
     e.target.value = ''
   }, [addImageRef])
+
+  // ── Drag & drop ───────────────────────────────────────────────────
 
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy' }, [])
   const handleDragEnter = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); dragCountRef.current++; setIsDragOver(true) }, [])
@@ -471,25 +440,30 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     dragCountRef.current = 0
     const internalData = e.dataTransfer.getData('application/x-imagestudio')
     if (internalData) {
-      // Internal drag from gallery — internalData is a file path, load and compress
       try {
         const result = await window.api.readImage(internalData)
         if (result.success) {
           const compressed = await compressImage(result.base64DataUrl)
           addImageRef(compressed)
         }
-      } catch { /* silent */ }
+      } catch (err) {
+        logger.error('PromptBar', 'Failed to load internal drag image', err)
+      }
       return
     }
     const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'))
     for (const file of files) {
-      const raw = await new Promise<string>((resolve) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.readAsDataURL(file)
-      })
-      const compressed = await compressImage(raw)
-      addImageRef(compressed)
+      try {
+        const raw = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(file)
+        })
+        const compressed = await compressImage(raw)
+        addImageRef(compressed)
+      } catch (err) {
+        logger.error('PromptBar', 'Failed to read/compress dropped file', err)
+      }
     }
   }, [addImageRef])
 
@@ -503,17 +477,19 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     }
   }, [])
 
+  // ── Clear ─────────────────────────────────────────────────────────
+
   const clearPrompt = useCallback(() => {
     setImageRefs([])
     setCollectionRefs([])
-    if (editorRef.current) {
-      editorRef.current.innerHTML = ''
-    }
+    if (editorRef.current) editorRef.current.innerHTML = ''
   }, [])
+
+  // ── Render ────────────────────────────────────────────────────────
 
   const promptText = getPromptText()
   const hasContent = promptText || imageRefs.length > 0 || collectionRefs.length > 0
-  const canSend = promptText && apiKey
+  const canSend = !!promptText && !!apiKey
 
   return (
     <div className="shrink-0 flex flex-col items-center px-6 pb-6 pt-3">
@@ -541,59 +517,18 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
             </div>
           )}
 
-          {/* Attached collection refs */}
-          {collectionRefs.length > 0 && (
-            <div className="flex items-center gap-2 px-5 pt-3 overflow-x-auto">
-              {collectionRefs.map((cRef) => (
-                <div key={cRef.id} className="shrink-0 group animate-scale-in flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-accent-main/8 border border-accent-main/20">
-                  {cRef.thumbnail ? (
-                    <img src={toDisplayUrl(cRef.thumbnail)} alt="" className="w-5 h-5 rounded object-cover" />
-                  ) : (
-                    <FolderOpen className="w-4 h-4 text-accent-main" />
-                  )}
-                  <span className="text-[11px] font-medium text-accent-bright">@{cRef.name}</span>
-                  <span className="text-[10px] text-text-muted">{cRef.images.length}</span>
-                  <button
-                    onClick={() => removeCollectionRef(cRef.id)}
-                    className="w-4 h-4 rounded-full flex items-center justify-center text-text-muted hover:text-danger transition-colors"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Attached image thumbnails — above the text when present */}
-          {imageRefs.length > 0 && (
-            <div className="flex items-center gap-2 px-5 pt-4 overflow-x-auto">
-              {imageRefs.map((ref) => (
-                <div key={ref.id} className="relative shrink-0 group/thumb animate-scale-in">
-                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-border-base/80 shadow-[0_2px_6px_rgba(0,0,0,0.3)]">
-                    <img src={ref.base64} alt={ref.name} className="w-full h-full object-cover" />
-                  </div>
-                  <button
-                    onClick={() => removeImageRef(ref.id)}
-                    className="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 rounded-full bg-surface-1 border border-border-base flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-all hover:bg-danger hover:border-danger hover:text-white text-text-muted shadow-md"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              ))}
-              {/* Add more */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="no-drag shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border border-dashed border-border-base text-text-muted hover:text-text-secondary hover:border-border-bright transition-all"
-                title="Add more images"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+          {/* Attachments */}
+          <AttachmentStrip
+            imageRefs={imageRefs}
+            collectionRefs={collectionRefs}
+            onRemoveImage={removeImageRef}
+            onRemoveCollection={removeCollectionRef}
+            onAddMore={() => fileInputRef.current?.click()}
+          />
 
           <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
 
-          {/* ContentEditable editor — with + button only when no images */}
+          {/* ContentEditable editor */}
           <div className={cn('flex items-start gap-2 pb-3', imageRefs.length > 0 ? 'px-5 pt-3' : 'px-4 pt-4')}>
             {imageRefs.length === 0 && (
               <button
@@ -604,7 +539,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
                 <Plus className="w-4 h-4" />
               </button>
             )}
-
             <div
               ref={editorRef}
               contentEditable
@@ -620,97 +554,33 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
           <div className="mx-4 h-px bg-border-dim/60" />
 
           {/* @-mention popup */}
-          {showMentionPopup && mentionItems.length > 0 && (
-            <div className="absolute bottom-full left-4 mb-2 modal-glass border border-border-base rounded-xl p-1.5 z-30 animate-scale-in min-w-[220px] max-h-[240px] overflow-y-auto">
-              {mentionItems.map((item) =>
-                item.type === 'image' ? (
-                  <button
-                    key={`img-${item.ref.id}`}
-                    onMouseDown={(e) => { e.preventDefault(); insertChipAtCursor(item.ref) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left hover:bg-surface-hover transition-colors"
-                  >
-                    <img src={item.ref.base64} className="w-7 h-7 rounded-lg object-cover border border-border-dim" alt="" />
-                    <span className="text-[13px] font-medium text-text-primary">{item.ref.name}</span>
-                  </button>
-                ) : (
-                  <button
-                    key={`col-${item.collection.id}`}
-                    onMouseDown={(e) => { e.preventDefault(); insertCollectionChipAtCursor(item.collection) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left hover:bg-surface-hover transition-colors"
-                  >
-                    <div className="w-7 h-7 rounded-lg bg-accent-dim flex items-center justify-center shrink-0 border border-accent-main/15">
-                      {item.collection.images[0] ? (
-                        <img src={toDisplayUrl(item.collection.images[0])} className="w-7 h-7 rounded-lg object-cover" alt="" />
-                      ) : (
-                        <FolderOpen className="w-3.5 h-3.5 text-accent-main" />
-                      )}
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-[13px] font-medium text-text-primary truncate">@{item.collection.name}</span>
-                      <span className="text-[10px] text-text-muted">{item.collection.images.length} images</span>
-                    </div>
-                  </button>
-                )
-              )}
-            </div>
+          {showMentionPopup && (
+            <MentionPopup
+              items={mentionItems}
+              onSelectImage={insertChipAtCursor}
+              onSelectCollection={insertCollectionChipAtCursor}
+            />
           )}
 
-          {/* Controls row */}
-          <div className="flex items-center gap-1 px-4 py-3">
-            <ModelSelector selectedModels={selectedModels} onChange={setSelectedModels} />
-            <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-            <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} customRatio={customRatio} onCustomRatioChange={setCustomRatio} />
-            <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-            <ResolutionSelector value={resolution} onChange={setResolution} />
-            <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-            <ImageCountSelector value={imageCount} onChange={setImageCount} />
-            <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-
-            {onCollectionsClick && (
-              <button
-                onClick={onCollectionsClick}
-                className="no-drag flex items-center justify-center h-8 w-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[14px] font-semibold"
-                title="Collections (@)"
-              >
-                @
-              </button>
-            )}
-            {onSettingsClick && (
-              <button
-                onClick={onSettingsClick}
-                className="no-drag flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
-                title="Settings"
-              >
-                <Settings className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            <div className="flex-1" />
-
-            {hasContent && (
-              <button
-                onClick={clearPrompt}
-                className="no-drag flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-3 transition-all"
-                title="Clear prompt"
-              >
-                <XCircle className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            <button
-              onClick={handleSubmit}
-              disabled={!canSend}
-              className={cn(
-                'no-drag btn-interactive flex items-center justify-center h-9 rounded-xl transition-all',
-                canSend
-                  ? 'bg-accent-main hover:bg-accent-bright text-white px-4 gap-2 glow-accent shadow-lg'
-                  : 'bg-surface-3 text-text-muted cursor-not-allowed w-9'
-              )}
-            >
-              <Send className="w-4 h-4" />
-              {canSend && <span className="text-[12px] font-semibold tracking-wide">Generate</span>}
-            </button>
-          </div>
+          {/* Controls */}
+          <ControlsRow
+            selectedModels={selectedModels}
+            onModelsChange={setSelectedModels}
+            aspectRatio={aspectRatio}
+            onAspectRatioChange={setAspectRatio}
+            customRatio={customRatio}
+            onCustomRatioChange={setCustomRatio}
+            resolution={resolution}
+            onResolutionChange={setResolution}
+            imageCount={imageCount}
+            onImageCountChange={setImageCount}
+            canSend={canSend}
+            hasContent={!!hasContent}
+            onSubmit={handleSubmit}
+            onClear={clearPrompt}
+            onSettingsClick={onSettingsClick}
+            onCollectionsClick={onCollectionsClick}
+          />
         </div>
 
         {/* Hint */}

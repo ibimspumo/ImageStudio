@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Download, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { logger } from '../../lib/logger'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
 
@@ -120,7 +121,9 @@ export function ExportPopover({ imageSrc, defaultName, className }: ExportPopove
     try {
       const { dataUrl } = await convertImage(imageSrc, 'png', 100)
       await window.api.exportImage(dataUrl, defaultName)
-    } catch { /* silent */ }
+    } catch (err) {
+      logger.error('ExportPopover', 'Quick save failed', err)
+    }
   }
 
   const handleExportWithOptions = async () => {
@@ -130,8 +133,8 @@ export function ExportPopover({ imageSrc, defaultName, className }: ExportPopove
       const name = defaultName.replace(/\.\w+$/, '') + '.' + ext
       await window.api.exportImage(dataUrl, name)
       setOpen(false)
-    } catch {
-      // silent
+    } catch (err) {
+      logger.error('ExportPopover', 'Export with options failed', err)
     }
   }
 

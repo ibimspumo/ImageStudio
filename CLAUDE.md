@@ -16,16 +16,19 @@ npx electron-vite build    # Build check only (no Electron)
 - `src/main/` — Electron main process (IPC, API, files)
 - `src/preload/` — Typed context bridge (`window.api`)
 - `src/renderer/src/` — React UI
-  - `stores/` — Zustand: gallery, collections, chat, settings, workspace
-  - `hooks/` — useImageGeneration, useChatGeneration
-  - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, getModelName
-  - `components/input/` — PromptBar (contentEditable, @-mentions, chips), ModelSelector, AspectRatioSelector (visual boxes + custom), ResolutionSelector, ImageCountSelector
-  - `components/gallery/` — Masonry grid, image cards with hover actions (save, copy, chat, move-to-workspace)
+  - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop (all with debounced persistence via `lib/debounce.ts`)
+  - `hooks/` — useImageGeneration, useChatGeneration, useImageRefs (shared image attachment logic)
+  - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, getModelName, ImageRef, LabeledAttachment
+  - `components/input/` — PromptBar (orchestrator), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (model/aspect/resolution/count/buttons), ModelSelector, AspectRatioSelector, ResolutionSelector, ImageCountSelector
+  - `components/gallery/` — Masonry grid, GalleryCard with hover actions (save, copy, chat, move-to-workspace)
   - `components/chat/` — ChatView (iterative editing with per-message model selection)
   - `components/workspace/` — WorkspaceBar (pill tabs, create, rename, delete, filter gallery)
-  - `components/shared/` — ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog
+  - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog
   - `components/collections/` — Asset collection CRUD
   - `lib/image-utils.ts` — compressImage, createGridComposite, prepareCollectionImages
+  - `lib/date-utils.ts` — formatDuration, formatTime, formatDate (shared across components)
+  - `lib/debounce.ts` — debounce utility for store persistence
+  - `lib/logger.ts` — structured logger replacing silent catch blocks
 
 ## Models
 Defined in `types/api.ts` as `AVAILABLE_MODELS`. Default: `google/gemini-3-pro-image-preview` (Nano Banana Pro).
@@ -36,12 +39,14 @@ Chat uses single model per message, selectable via ModelSelector.
 - Tailwind CSS v4: `@theme {}` in app.css — NEVER add `* {}` resets outside @layer
 - Colors: surface-0..4, border-dim/base/bright, text-primary/secondary/muted, accent-main/dim/bright
 - IPC: `ipcRenderer.invoke()` / `ipcMain.handle()` via preload
-- Persistence: `window.api.saveHistory(key, json)` / `listHistory()`
+- Persistence: `window.api.saveHistory(key, json)` / `listHistory()` — stores use debounced persistence (500ms)
+- Error handling: use `logger` from `lib/logger.ts` — NEVER use silent `catch {}` blocks
 - API key: stored in ~/Library/Application Support/Electron/, NEVER in source
 - Generation: fire-and-forget, placeholder → complete pattern, non-blocking
 - API response: images in `message.images[]`, NOT `message.content`
 - Electron drag: use `no-drag` class on all interactive elements in top 48px
 - Image uploads: always compress via `compressImage()` (JPEG 75%, max 1000px)
+- Shared types: use `ImageRef` and `LabeledAttachment` from `types/api.ts` — don't redeclare locally
 - Export: ExportPopover supports PNG/JPEG/WebP with quality slider, conversion via Canvas in renderer
 - Workspaces: optional image organization, `workspaceId` on GalleryImage, auto-tag on generation
 - License: MIT, fully open source

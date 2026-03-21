@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import { debounce } from '../lib/debounce'
+import { logger } from '../lib/logger'
 
 export interface ChatMessage {
   id: string
@@ -41,6 +43,10 @@ interface ChatStore {
   persistToDisk: () => Promise<void>
 }
 
+const debouncedPersist = debounce((persist: () => Promise<void>) => {
+  persist().catch((err) => logger.error('ChatStore', 'Persist failed', err))
+}, 500)
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   chats: [],
   activeChatId: null,
@@ -67,7 +73,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       chats: [chat, ...state.chats],
       activeChatId: chatId
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
     return chatId
   },
 
@@ -125,7 +131,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           : c
       )
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   failAssistantMessage: (chatId, messageId, error) => {
@@ -142,7 +148,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           : c
       )
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   setActiveChat: (chatId) => {
@@ -154,7 +160,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       chats: state.chats.filter((c) => c.id !== chatId),
       activeChatId: state.activeChatId === chatId ? null : state.activeChatId
     }))
-    setTimeout(() => get().persistToDisk(), 100)
+    debouncedPersist(get().persistToDisk)
   },
 
   loadFromDisk: async () => {
@@ -167,8 +173,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           set({ chats: data })
         }
       }
-    } catch {
-      // silent — first launch
+    } catch (err) {
+      logger.warn('ChatStore', 'Failed to load chats from disk (may be first launch)', err)
     }
   },
 

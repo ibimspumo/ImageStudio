@@ -11,7 +11,7 @@ export interface GenerateRequest {
   apiKey: string
   aspectRatio: string
   resolution: string
-  attachments?: string[] // base64 data URLs (flat, for backward compat)
+  attachments?: string[] // base64 data URLs or HTTPS URLs
   labeledAttachments?: LabeledAttachment[] // labeled groups for contextual API requests
 }
 
@@ -56,6 +56,7 @@ export async function generateImage(
   const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = []
 
   // Add attached images with labels for context (so the AI knows which image is which)
+  // Images may be base64 data URLs or HTTPS URLs (if pre-uploaded by renderer)
   if (request.labeledAttachments && request.labeledAttachments.length > 0) {
     for (const group of request.labeledAttachments) {
       content.push({ type: 'text', text: `[${group.label}]:` })

@@ -25,6 +25,8 @@ import { getModelName } from '../../types/api'
 import { ExportPopover } from './ExportPopover'
 import { cn } from '../../lib/utils'
 import { compressImage } from '../../lib/image-utils'
+import { formatDuration, formatDate } from '../../lib/date-utils'
+import { logger } from '../../lib/logger'
 
 interface ImageViewerProps {
   images: GalleryImage[]
@@ -35,22 +37,6 @@ interface ImageViewerProps {
   onReusePrompt: (image: GalleryImage) => void
   onOpenChat?: (chatId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
-}
-
-function formatDuration(ms: number): string {
-  return (ms / 1000).toFixed(1) + 's'
-}
-
-function formatDate(timestamp: number): string {
-  const d = new Date(timestamp)
-  return d.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }) + ' at ' + d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 const ZOOM_LEVELS = [1.5, 2, 3, 4] as const
@@ -82,10 +68,12 @@ export function ImageViewer({
   const [zoomGenerating, setZoomGenerating] = useState<number | null>(null)
   const removeImage = useGalleryStore((s) => s.removeImage)
   const addPlaceholder = useGalleryStore((s) => s.addPlaceholder)
+  const updateStatus = useGalleryStore((s) => s.updateStatus)
   const completeImage = useGalleryStore((s) => s.completeImage)
   const failImage = useGalleryStore((s) => s.failImage)
   const chats = useChatStore((s) => s.chats)
   const apiKey = useSettingsStore((s) => s.apiKey)
+  const useImageUrls = useSettingsStore((s) => s.useImageUrls)
   const image = images[currentIndex]
   const displayUrl = image ? toDisplayUrl(image.filePath) : undefined
 
@@ -126,7 +114,9 @@ export function ImageViewer({
         const blob = await response.blob()
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
       }
-    } catch { /* silent */ }
+    } catch (err) {
+      logger.error('ImageViewer', 'Failed to copy image to clipboard', err)
+    }
   }
 
   const handleCopyPrompt = async () => {
@@ -135,7 +125,9 @@ export function ImageViewer({
       await navigator.clipboard.writeText(image.prompt)
       setPromptCopied(true)
       setTimeout(() => setPromptCopied(false), 2000)
-    } catch { /* silent */ }
+    } catch (err) {
+      logger.error('ImageViewer', 'Failed to copy prompt to clipboard', err)
+    }
   }
 
   const handleDelete = () => {
@@ -168,6 +160,21 @@ export function ImageViewer({
       )
       onClose()
 
+      // Upload image to temp URL if enabled
+      let resolvedAttachments = [compressedRef]
+      if (useImageUrls) {
+        updateStatus(placeholderId, 'Uploading image...')
+        try {
+          const uploadResult = await window.api.uploadToUrls([compressedRef])
+          if (uploadResult.success) {
+            resolvedAttachments = uploadResult.urls
+          }
+        } catch (err) {
+          logger.warn('ImageViewer', 'Upload failed, falling back to base64', err)
+        }
+        updateStatus(placeholderId, undefined)
+      }
+
       const startTime = Date.now()
       const response = await window.api.generateImage({
         prompt,
@@ -177,7 +184,7 @@ export function ImageViewer({
         resolution: image.resolution,
         count: 1,
         requestId: crypto.randomUUID(),
-        attachments: [compressedRef],
+        attachments: resolvedAttachments,
       })
 
       const durationMs = Date.now() - startTime
@@ -192,10 +199,12 @@ export function ImageViewer({
       } else {
         failImage(placeholderId, response.error || response.results?.[0]?.error || 'Zoom out failed')
       }
-    } catch { /* handled */ } finally {
+    } catch (err) {
+      logger.error('ImageViewer', 'Zoom out failed', err)
+    } finally {
       setZoomGenerating(null)
     }
-  }, [image, apiKey, zoomGenerating, addPlaceholder, completeImage, failImage, onClose])
+  }, [image, apiKey, useImageUrls, zoomGenerating, addPlaceholder, updateStatus, completeImage, failImage, onClose])
 
   if (!image) return null
 
