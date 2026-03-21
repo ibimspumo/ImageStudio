@@ -12,6 +12,7 @@ import { createHash } from 'crypto'
 const LITTERBOX_API = 'https://litterbox.catbox.moe/resources/internals/api.php'
 const EXPIRY = '1h' // 1h | 12h | 24h | 72h
 const CACHE_TTL_MS = 50 * 60 * 1000 // 50 minutes (just under 1h expiry)
+const MAX_CACHE_SIZE = 50 // evict oldest entries when exceeded
 
 interface CacheEntry {
   url: string
@@ -25,13 +26,19 @@ function hashBase64(base64DataUrl: string): string {
   return createHash('sha256').update(base64DataUrl).digest('hex').slice(0, 24)
 }
 
-/** Prune expired cache entries */
+/** Prune expired cache entries + enforce max size (LRU eviction) */
 function pruneCache(): void {
   const now = Date.now()
   for (const [key, entry] of cache) {
     if (now - entry.uploadedAt > CACHE_TTL_MS) {
       cache.delete(key)
     }
+  }
+  // Evict oldest if over max size
+  if (cache.size > MAX_CACHE_SIZE) {
+    const sorted = [...cache.entries()].sort((a, b) => a[1].uploadedAt - b[1].uploadedAt)
+    const toRemove = sorted.slice(0, cache.size - MAX_CACHE_SIZE)
+    for (const [key] of toRemove) cache.delete(key)
   }
 }
 

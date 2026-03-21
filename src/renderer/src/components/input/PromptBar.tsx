@@ -467,13 +467,14 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     }
   }, [addImageRef])
 
+  // Prevent browser default drag behavior (opening files)
   useEffect(() => {
-    const prevent = (e: DragEvent) => { e.preventDefault() }
-    document.addEventListener('dragover', prevent)
-    document.addEventListener('drop', prevent)
+    const handler = (e: DragEvent) => e.preventDefault()
+    document.addEventListener('dragover', handler)
+    document.addEventListener('drop', handler)
     return () => {
-      document.removeEventListener('dragover', prevent)
-      document.removeEventListener('drop', prevent)
+      document.removeEventListener('dragover', handler)
+      document.removeEventListener('drop', handler)
     }
   }, [])
 

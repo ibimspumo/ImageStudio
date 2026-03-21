@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useCallback } from 'react'
 import { GalleryCard } from './GalleryCard'
 import type { GalleryImage } from '../../stores/gallery-store'
 
@@ -20,6 +20,17 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage }:
     () => images.filter((img) => img.filePath && !img.isLoading && !img.error),
     [images]
   )
+
+  // Stable callback that GalleryCard can use — avoids inline closure per card
+  const handleCardClick = useCallback(
+    (imageId: string, filePath: string) => {
+      if (!filePath) return
+      const idx = completedImages.findIndex((img) => img.id === imageId)
+      onImageClick(completedImages, idx >= 0 ? idx : 0)
+    },
+    [completedImages, onImageClick]
+  )
+
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-4">
       <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
@@ -27,12 +38,7 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage }:
           <GalleryCard
             key={image.id}
             image={image}
-            onClick={() => {
-              if (image.filePath) {
-                const idx = completedImages.findIndex((img) => img.id === image.id)
-                onImageClick(completedImages, idx >= 0 ? idx : 0)
-              }
-            }}
+            onClick={handleCardClick}
             onStartChat={onStartChat}
             onCropImage={onCropImage}
           />

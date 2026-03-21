@@ -93,17 +93,4 @@ export function registerFileOperationHandlers(): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.IMAGE_COMPRESS, async (_event, { base64DataUrl, maxWidth }: { base64DataUrl: string; maxWidth?: number }) => {
-    try {
-      // Simple compression: decode, re-encode as JPEG with quality
-      const match = base64DataUrl.match(/^data:image\/\w+;base64,(.+)$/)
-      if (!match) throw new Error('Invalid image data')
-
-      // For now, return as-is; Sharp integration can be added later
-      // This keeps the app functional without native dependency issues
-      return { success: true, base64DataUrl }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Compression failed' }
-    }
-  })
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import {
   ArrowLeft,
   X,
@@ -29,7 +29,7 @@ interface ChatViewProps {
   initialModel?: string
 }
 
-function MessageBubble({ message, allImages, onImageClick }: { message: ChatMessage; allImages: string[]; onImageClick?: (images: string[], index: number) => void }) {
+const MessageBubble = memo(function MessageBubble({ message, allImages, onImageClick }: { message: ChatMessage; allImages: string[]; onImageClick?: (images: string[], index: number) => void }) {
   const isUser = message.role === 'user'
 
   if (isUser) {
@@ -69,23 +69,27 @@ function MessageBubble({ message, allImages, onImageClick }: { message: ChatMess
         </div>
       )}
 
-      {message.imageFilePath && (
+      {message.imageFilePath && (() => {
+        const filePath = message.imageFilePath
+        const displayUrl = toDisplayUrl(filePath)
+        return (
         <div
           className="w-full max-w-md cursor-pointer"
           onClick={() => {
             if (onImageClick) {
-              const idx = allImages.indexOf(toDisplayUrl(message.imageFilePath!))
+              const idx = allImages.indexOf(displayUrl)
               onImageClick(allImages, idx >= 0 ? idx : 0)
             }
           }}
         >
           <img
-            src={toDisplayUrl(message.imageFilePath)}
+            src={displayUrl}
             alt="Generated"
             className="w-full rounded-2xl border border-border-dim hover:border-border-base transition-colors"
           />
         </div>
-      )}
+        )
+      })()}
 
       {message.error && (
         <div className="inline-flex items-center gap-2 text-danger text-[13px] bg-danger/8 rounded-xl px-4 py-2.5 border border-danger/15">
@@ -117,7 +121,7 @@ function MessageBubble({ message, allImages, onImageClick }: { message: ChatMess
       </div>
     </div>
   )
-}
+})
 
 export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
   const [lightboxState, setLightboxState] = useState<{ images: string[]; index: number } | null>(null)
@@ -279,8 +283,8 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
           {chat.messages.map((message) => {
             const allChatImages = chat.messages
-              .filter((m) => m.imageFilePath)
-              .map((m) => toDisplayUrl(m.imageFilePath!))
+              .filter((m): m is typeof m & { imageFilePath: string } => !!m.imageFilePath)
+              .map((m) => toDisplayUrl(m.imageFilePath))
             return (
               <MessageBubble
                 key={message.id}

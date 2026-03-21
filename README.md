@@ -155,7 +155,21 @@ Collections with more than 5 images are intelligently composited into grid layou
 
 ## AI Zoom Out
 
-Want to see what's beyond the edges of an image? In the lightbox, use the **Zoom Out** buttons (1.5x, 2x, 3x, 4x) to extend your image outward. ImageStudio sends the original image as a reference to the same AI model that created it, with a prompt to seamlessly continue the scene. The result appears as a new image in your gallery at the same resolution.
+Want to see what's beyond the edges of an image? In the lightbox, use the **Zoom Out** buttons (1.5x, 2x, 3x, 4x) to extend your image outward. ImageStudio creates a canvas with the original image centered and black borders, then sends both the canvas and the original as references — so the AI knows exactly what to fill. The result appears as a new image in your gallery.
+
+---
+
+## AI Upscale
+
+Upscale any image to a higher resolution directly from the lightbox. Available options depend on the original resolution:
+
+- **1K images** → Upscale to 2K or 4K
+- **2K images** → Upscale to 4K
+- **4K images** → Already at max resolution
+
+Choose which AI model to use for upscaling via the dropdown (defaults to Nano Banana Pro). The original image is sent as a reference with instructions to recreate it at the target resolution while preserving every detail.
+
+> **Note:** Resolution output depends on the AI model. Occasionally the API may return a smaller image than requested — ImageStudio will warn you if this happens so you can retry.
 
 ---
 

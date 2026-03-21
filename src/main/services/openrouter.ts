@@ -100,6 +100,23 @@ export async function generateImage(
     body.modalities = ['image', 'text']
   }
 
+  // Log full message structure for debugging
+  const contentSummary = content.map(c => {
+    if (c.type === 'text') return { type: 'text', text: (c.text || '').slice(0, 80) }
+    if (c.type === 'image_url') {
+      const url = c.image_url?.url || ''
+      const isBase64 = url.startsWith('data:')
+      return { type: 'image_url', format: isBase64 ? 'base64' : 'url', size: isBase64 ? Math.round(url.length * 0.75 / 1024) + 'KB' : url.slice(0, 60) }
+    }
+    return c
+  })
+  console.log('[OpenRouter] Request:', {
+    model: request.model,
+    image_config: body.image_config,
+    hasModalities: !!body.modalities,
+    content: contentSummary,
+  })
+
   const response = await fetch(OPENROUTER_API_URL, {
     method: 'POST',
     headers: {
@@ -160,6 +177,39 @@ export async function generateImage(
     }
   }
 
+  // Decode and check actual image dimensions
+  let imageDims = ''
+  if (imageBase64) {
+    try {
+      const raw = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+      const buf = Buffer.from(raw, 'base64')
+      // JPEG: scan for SOF0 marker (FF C0) to get dimensions
+      if (buf[0] === 0xFF && buf[1] === 0xD8) {
+        for (let i = 0; i < buf.length - 8; i++) {
+          if (buf[i] === 0xFF && (buf[i+1] === 0xC0 || buf[i+1] === 0xC2)) {
+            const h = buf.readUInt16BE(i + 5)
+            const w = buf.readUInt16BE(i + 7)
+            imageDims = `${w}x${h}`
+            break
+          }
+        }
+      }
+      // PNG
+      if (buf[0] === 0x89 && buf[1] === 0x50) {
+        imageDims = `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`
+      }
+    } catch { /* ignore */ }
+  }
+
+  console.log('[OpenRouter] Response:', {
+    model: data.model,
+    imageTokens: data.usage?.completion_tokens_details?.image_tokens,
+    cost: data.usage?.cost,
+    hasImage: !!imageBase64,
+    imageSize: imageBase64 ? Math.round(imageBase64.length * 0.75 / 1024) + 'KB' : 'none',
+    imageDims,
+  })
+
   // Try to get cost from inline usage first
   let cost = data.usage?.total_cost ?? data.usage?.cost
   if (typeof cost !== 'number' || cost <= 0) {
@@ -176,9 +226,24 @@ export async function generateImage(
     cost = await fetchGenerationCost(generationId, request.apiKey)
   }
 
+  // Validate output dimensions match requested resolution
+  let dimensionWarning: string | undefined
+  if (imageBase64 && imageDims) {
+    const expectedMin: Record<string, number> = { '2K': 1400, '4K': 2800 }
+    const minExpected = expectedMin[request.resolution]
+    if (minExpected) {
+      const [wStr] = imageDims.split('x')
+      const actualW = parseInt(wStr, 10)
+      if (actualW < minExpected) {
+        dimensionWarning = `Resolution mismatch: requested ${request.resolution} but got ${imageDims}. This is an API-side issue — try again.`
+        console.warn('[OpenRouter]', dimensionWarning)
+      }
+    }
+  }
+
   return {
     id: generationId || crypto.randomUUID(),
-    text,
+    text: dimensionWarning ? (text ? `${text}\n\n⚠️ ${dimensionWarning}` : `⚠️ ${dimensionWarning}`) : text,
     imageBase64,
     cost
   }

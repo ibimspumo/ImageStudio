@@ -4,7 +4,6 @@ export const IPC_CHANNELS = {
   IMAGE_SAVE: 'image:save',
   IMAGE_EXPORT: 'image:export',
   IMAGE_START_DRAG: 'image:start-drag',
-  IMAGE_COMPRESS: 'image:compress',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
   HISTORY_LOAD: 'history:load',

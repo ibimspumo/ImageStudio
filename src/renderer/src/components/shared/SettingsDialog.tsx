@@ -99,7 +99,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             <div className="flex items-center gap-2 mb-2">
               <Sparkles className="w-3.5 h-3.5 text-accent-main" />
               <span className="text-[13px] font-medium text-text-primary">ImageStudio</span>
-              <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-surface-3">v0.2</span>
+              <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-surface-3">v0.3</span>
             </div>
             <p className="text-[11px] text-text-muted leading-relaxed">
               Open-source AI image generation for macOS. Supports 7 models via OpenRouter — generate, iterate with chat, organize with workspaces, and export in any format.

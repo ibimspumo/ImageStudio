@@ -15,16 +15,19 @@ import {
   DollarSign,
   ZoomOut,
   Loader2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ArrowUpCircle,
+  ChevronDown
 } from 'lucide-react'
 import type { GalleryImage } from '../../stores/gallery-store'
 import { useGalleryStore, toDisplayUrl } from '../../stores/gallery-store'
 import { useChatStore } from '../../stores/chat-store'
 import { useSettingsStore } from '../../stores/settings-store'
-import { getModelName } from '../../types/api'
+import { AVAILABLE_MODELS, getModelName } from '../../types/api'
+import { compressImage } from '../../lib/image-utils'
 import { ExportPopover } from './ExportPopover'
 import { cn } from '../../lib/utils'
-import { compressImage } from '../../lib/image-utils'
+import { createZoomOutCanvas, upscaleForApi } from '../../lib/image-utils'
 import { formatDuration, formatDate } from '../../lib/date-utils'
 import { logger } from '../../lib/logger'
 
@@ -66,6 +69,9 @@ export function ImageViewer({
   const [promptCopied, setPromptCopied] = useState(false)
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null)
   const [zoomGenerating, setZoomGenerating] = useState<number | null>(null)
+  const [upscaleGenerating, setUpscaleGenerating] = useState<string | null>(null)
+  const [upscaleModel, setUpscaleModel] = useState('google/gemini-3-pro-image-preview')
+  const [showUpscaleModelPicker, setShowUpscaleModelPicker] = useState(false)
   const removeImage = useGalleryStore((s) => s.removeImage)
   const addPlaceholder = useGalleryStore((s) => s.addPlaceholder)
   const updateStatus = useGalleryStore((s) => s.updateStatus)
@@ -143,12 +149,14 @@ export function ImageViewer({
     if (!image || !image.filePath || !apiKey || zoomGenerating) return
     setZoomGenerating(factor)
     try {
-      // Load base64 from disk, compress for API
+      // Load base64 from disk
       const readResult = await window.api.readImage(image.filePath)
       if (!readResult.success) throw new Error('Failed to read image')
-      const compressedRef = await compressImage(readResult.base64DataUrl)
 
-      const prompt = `Take this image and zoom out by ${factor}x, extending the scene naturally beyond all edges. Keep the original image content exactly as-is in the center, and seamlessly continue the environment, lighting, colors, and composition outward. Original description: "${image.prompt}"`
+      // Create zoom-out canvas (image centered on larger black canvas) + compressed reference
+      const { canvas, reference } = await createZoomOutCanvas(readResult.base64DataUrl, factor)
+
+      const prompt = `I have placed the original image centered on a larger black canvas. Fill in the black/empty areas naturally, seamlessly extending the scene outward in all directions. Keep the original center image exactly as-is — do not alter, crop, or re-interpret it. Continue the environment, lighting, colors, perspective, and composition from the edges outward. Original description: "${image.prompt}"`
 
       const placeholderId = addPlaceholder(
         `Zoom ${factor}x: ${image.prompt}`,
@@ -160,14 +168,24 @@ export function ImageViewer({
       )
       onClose()
 
-      // Upload image to temp URL if enabled
-      let resolvedAttachments = [compressedRef]
+      // Two attachments: canvas (shows layout) + reference (full-quality original)
+      let resolvedAttachments = [canvas, reference]
+      let resolvedLabeled: { label: string; images: string[] }[] = [
+        { label: 'Canvas layout — fill the black areas around the centered image', images: [canvas] },
+        { label: 'Original image (high quality reference)', images: [reference] },
+      ]
+
+      // Upload to temp URLs if enabled
       if (useImageUrls) {
-        updateStatus(placeholderId, 'Uploading image...')
+        updateStatus(placeholderId, 'Uploading images...')
         try {
-          const uploadResult = await window.api.uploadToUrls([compressedRef])
+          const uploadResult = await window.api.uploadToUrls([canvas, reference])
           if (uploadResult.success) {
             resolvedAttachments = uploadResult.urls
+            resolvedLabeled = [
+              { label: 'Canvas layout — fill the black areas around the centered image', images: [uploadResult.urls[0]] },
+              { label: 'Original image (high quality reference)', images: [uploadResult.urls[1]] },
+            ]
           }
         } catch (err) {
           logger.warn('ImageViewer', 'Upload failed, falling back to base64', err)
@@ -185,6 +203,7 @@ export function ImageViewer({
         count: 1,
         requestId: crypto.randomUUID(),
         attachments: resolvedAttachments,
+        labeledAttachments: resolvedLabeled,
       })
 
       const durationMs = Date.now() - startTime
@@ -205,6 +224,93 @@ export function ImageViewer({
       setZoomGenerating(null)
     }
   }, [image, apiKey, useImageUrls, zoomGenerating, addPlaceholder, updateStatus, completeImage, failImage, onClose])
+
+  // Upscale
+  const handleUpscale = useCallback(async (targetResolution: string) => {
+    if (!image || !image.filePath || !apiKey || upscaleGenerating) return
+    setUpscaleGenerating(targetResolution)
+    try {
+      const readResult = await window.api.readImage(image.filePath)
+      if (!readResult.success) throw new Error('Failed to read image')
+
+      // Pre-upscale small images so the API produces the requested resolution.
+      // Gemini matches output size to input size — a 1024px input with image_size:"4K"
+      // still returns 1024px. By sending a 2048px+ input, 4K output works reliably.
+      const minDimForTarget = targetResolution === '4K' ? 2048 : 1024
+      const upscaled = await upscaleForApi(readResult.base64DataUrl, minDimForTarget)
+      const compressed = await compressImage(upscaled, 4096, 0.85)
+
+      const prompt = `Recreate this exact image in higher resolution. Preserve every detail precisely — same composition, colors, lighting, textures, subjects, and style. Do not add, remove, or change anything. Simply produce a pixel-perfect higher-resolution version of this exact image. Original description: "${image.prompt}"`
+
+      const placeholderId = addPlaceholder(
+        `Upscale to ${targetResolution}: ${image.prompt}`,
+        image.aspectRatio,
+        targetResolution,
+        upscaleModel,
+        [image.filePath],
+        image.workspaceId
+      )
+      onClose()
+
+      let resolvedAttachments = [compressed]
+      let resolvedLabeled = [
+        { label: 'Original image — recreate this exactly at higher resolution', images: [compressed] },
+      ]
+
+      if (useImageUrls) {
+        updateStatus(placeholderId, 'Uploading image...')
+        try {
+          const uploadResult = await window.api.uploadToUrls([compressed])
+          if (uploadResult.success) {
+            resolvedAttachments = uploadResult.urls
+            resolvedLabeled = [
+              { label: 'Original image — recreate this exactly at higher resolution', images: [uploadResult.urls[0]] },
+            ]
+          }
+        } catch (err) {
+          logger.warn('ImageViewer', 'Upload failed, falling back to base64', err)
+        }
+        updateStatus(placeholderId, undefined)
+      }
+
+      const startTime = Date.now()
+      const response = await window.api.generateImage({
+        prompt,
+        model: upscaleModel,
+        apiKey,
+        aspectRatio: image.aspectRatio,
+        resolution: targetResolution,
+        count: 1,
+        requestId: crypto.randomUUID(),
+        attachments: resolvedAttachments,
+        labeledAttachments: resolvedLabeled,
+      })
+
+      const durationMs = Date.now() - startTime
+      if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
+        const filename = `${placeholderId}.png`
+        const saveResult = await window.api.saveImage(response.results[0].result.imageBase64, filename)
+        if (saveResult.success && saveResult.filePath) {
+          completeImage(placeholderId, saveResult.filePath, durationMs, response.results[0].result.cost)
+        } else {
+          failImage(placeholderId, 'Failed to save image')
+        }
+      } else {
+        failImage(placeholderId, response.error || response.results?.[0]?.error || 'Upscale failed')
+      }
+    } catch (err) {
+      logger.error('ImageViewer', 'Upscale failed', err)
+    } finally {
+      setUpscaleGenerating(null)
+    }
+  }, [image, apiKey, useImageUrls, upscaleGenerating, upscaleModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
+
+  // Available upscale targets based on original resolution
+  const upscaleTargets = image
+    ? image.resolution === '1K' ? ['2K', '4K']
+      : image.resolution === '2K' ? ['4K']
+      : []
+    : []
 
   if (!image) return null
 
@@ -290,6 +396,66 @@ export function ImageViewer({
             {zoomGenerating && <p className="text-[10px] text-accent-main/70 text-center animate-pulse">Extending image {zoomGenerating}x...</p>}
           </div>
 
+          {/* Upscale */}
+          {upscaleTargets.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Upscale</span>
+              <div className="flex gap-1.5">
+                {upscaleTargets.map((res) => {
+                  const isGenerating = upscaleGenerating === res
+                  return (
+                    <button key={res} onClick={() => handleUpscale(res)} disabled={!!upscaleGenerating || !!zoomGenerating || !apiKey}
+                      className={cn('flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-[11px] font-medium transition-all',
+                        isGenerating ? 'bg-accent-dim border-accent-main/30 text-accent-main'
+                          : upscaleGenerating ? 'bg-surface-3/50 border-border-dim text-text-muted cursor-not-allowed opacity-50'
+                          : 'bg-surface-3 border-border-dim text-text-secondary hover:bg-surface-4 hover:border-border-base hover:text-text-primary')}>
+                      {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpCircle className="w-3.5 h-3.5" />}
+                      <span>{res}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {/* Model picker */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowUpscaleModelPicker(!showUpscaleModelPicker)}
+                  className={cn(
+                    'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-[11px] transition-colors',
+                    showUpscaleModelPicker
+                      ? 'bg-surface-4 border-border-base text-text-primary'
+                      : 'bg-surface-3 border-border-dim text-text-muted hover:text-text-secondary hover:border-border-base'
+                  )}
+                >
+                  <span>{getModelName(upscaleModel)}</span>
+                  <ChevronDown className={cn('w-3 h-3 transition-transform', showUpscaleModelPicker && 'rotate-180')} />
+                </button>
+                {showUpscaleModelPicker && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setShowUpscaleModelPicker(false)} />
+                    <div className="absolute bottom-full left-0 right-0 mb-1 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 z-30 animate-scale-in max-h-[200px] overflow-y-auto">
+                      {AVAILABLE_MODELS.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => { setUpscaleModel(m.id); setShowUpscaleModelPicker(false) }}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
+                            upscaleModel === m.id
+                              ? 'bg-surface-4 text-text-primary font-medium'
+                              : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
+                          )}
+                        >
+                          <span className="flex-1">{m.name}</span>
+                          <span className="text-[9px] text-text-muted">{m.provider}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              {upscaleGenerating && <p className="text-[10px] text-accent-main/70 text-center animate-pulse">Upscaling to {upscaleGenerating}...</p>}
+            </div>
+          )}
+
           {linkedChat && (
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Chat Origin</span>
@@ -361,7 +527,7 @@ export function ImageViewer({
               <button onClick={handleCopy} className={cn('flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg', 'bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium')}>
                 <Copy className="w-3.5 h-3.5" /> Copy
               </button>
-              <ExportPopover imageSrc={displayUrl!} defaultName={`imagestudio-${Date.now()}.png`} className="flex-1" />
+              <ExportPopover imageSrc={displayUrl ?? ''} defaultName={`imagestudio-${Date.now()}.png`} className="flex-1" />
             </div>
             <button onClick={handleDelete} className={cn('flex items-center justify-center gap-2 px-3 py-2 rounded-lg', 'bg-surface-3 text-danger hover:bg-danger/10 transition-colors text-[13px] font-medium')}>
               <Trash2 className="w-3.5 h-3.5" /> Delete

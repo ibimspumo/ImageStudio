@@ -29,9 +29,6 @@ const api = {
 
   startDrag: (filePath: string) => ipcRenderer.send('image:start-drag', filePath),
 
-  compressImage: (base64DataUrl: string, maxWidth?: number) =>
-    ipcRenderer.invoke('image:compress', { base64DataUrl, maxWidth }),
-
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSetting: (key: string, value: unknown) =>
     ipcRenderer.invoke('settings:set', { key, value }),

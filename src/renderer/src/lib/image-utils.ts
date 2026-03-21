@@ -1,8 +1,13 @@
 /**
- * Compresses a base64 image to JPEG 75% quality, max 1000x1000px.
- * Used for all image uploads (collections, references, etc.)
+ * Compresses a base64 image to JPEG quality, with configurable max dimension.
+ * Default: max 1000px, 75% quality. Used for all image uploads (collections, references, etc.)
+ * For upscale, use a higher maxDimension to preserve source resolution.
  */
-export async function compressImage(base64DataUrl: string): Promise<string> {
+export async function compressImage(
+  base64DataUrl: string,
+  maxDimension: number = 1000,
+  quality: number = 0.75
+): Promise<string> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const i = new Image()
     i.onload = () => resolve(i)
@@ -10,11 +15,10 @@ export async function compressImage(base64DataUrl: string): Promise<string> {
     i.src = base64DataUrl
   })
 
-  const maxSize = 1000
   let { width, height } = img
 
-  if (width > maxSize || height > maxSize) {
-    const ratio = Math.min(maxSize / width, maxSize / height)
+  if (width > maxDimension || height > maxDimension) {
+    const ratio = Math.min(maxDimension / width, maxDimension / height)
     width = Math.round(width * ratio)
     height = Math.round(height * ratio)
   }
@@ -24,7 +28,94 @@ export async function compressImage(base64DataUrl: string): Promise<string> {
   canvas.height = height
   const ctx = canvas.getContext('2d')!
   ctx.drawImage(img, 0, 0, width, height)
-  return canvas.toDataURL('image/jpeg', 0.75)
+  return canvas.toDataURL('image/jpeg', quality)
+}
+
+/**
+ * Upscales an image to a minimum dimension using canvas (simple bilinear).
+ * Used to pre-scale small images before sending to the API, because
+ * Gemini tends to match output resolution to input resolution.
+ *
+ * @param base64DataUrl - Source image
+ * @param minDimension - Minimum width/height the result should have
+ * @returns Upscaled image as JPEG base64 (or original if already large enough)
+ */
+export async function upscaleForApi(
+  base64DataUrl: string,
+  minDimension: number
+): Promise<string> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image()
+    i.onload = () => resolve(i)
+    i.onerror = reject
+    i.src = base64DataUrl
+  })
+
+  // Already large enough
+  if (img.width >= minDimension && img.height >= minDimension) {
+    return base64DataUrl
+  }
+
+  // Scale up so the smallest side reaches minDimension
+  const scale = Math.max(minDimension / img.width, minDimension / img.height)
+  const w = Math.round(img.width * scale)
+  const h = Math.round(img.height * scale)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')!
+  // Enable image smoothing for better upscale quality
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(img, 0, 0, w, h)
+
+  return canvas.toDataURL('image/jpeg', 0.92)
+}
+
+/**
+ * Creates a zoom-out canvas: larger canvas with the original image centered,
+ * surrounded by black. Both the canvas and a compressed reference of the
+ * original are returned (both max 1000px, JPEG 75%).
+ *
+ * @param base64DataUrl - The original image as base64
+ * @param factor - Zoom-out factor (e.g. 2 = canvas is 2x the image size)
+ * @returns { canvas, reference } - canvas with image centered, reference = compressed original
+ */
+export async function createZoomOutCanvas(
+  base64DataUrl: string,
+  factor: number
+): Promise<{ canvas: string; reference: string }> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image()
+    i.onload = () => resolve(i)
+    i.onerror = reject
+    i.src = base64DataUrl
+  })
+
+  // Canvas at the zoomed-out size
+  const canvasW = Math.round(img.width * factor)
+  const canvasH = Math.round(img.height * factor)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = canvasW
+  canvas.height = canvasH
+  const ctx = canvas.getContext('2d')!
+
+  // Black background (the "empty" area the AI should fill)
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, canvasW, canvasH)
+
+  // Center the original image
+  const offsetX = Math.round((canvasW - img.width) / 2)
+  const offsetY = Math.round((canvasH - img.height) / 2)
+  ctx.drawImage(img, offsetX, offsetY)
+
+  // Compress both to max 1000px JPEG
+  const canvasCompressed = await compressImage(canvas.toDataURL('image/png'))
+  const reference = await compressImage(base64DataUrl)
+
+  return { canvas: canvasCompressed, reference }
 }
 
 /**

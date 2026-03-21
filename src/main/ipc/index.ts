@@ -7,32 +7,60 @@ import { registerFileOperationHandlers } from './file-operations'
 import { loadHistory, saveSession, deleteSession } from '../services/image-store'
 import { uploadImagesToUrls } from '../services/image-upload'
 
+/** Valid settings keys — rejects unknown keys from renderer */
+const VALID_SETTINGS_KEYS = new Set([
+  'apiKey',
+  'defaultModel',
+  'defaultAspectRatio',
+  'defaultResolution',
+  'defaultImageCount',
+  'useImageUrls',
+])
+
+interface AppSettings {
+  apiKey: string
+  defaultModel: string
+  defaultAspectRatio: string
+  defaultResolution: string
+  defaultImageCount: number
+  useImageUrls: boolean
+}
+
+const DEFAULTS: AppSettings = {
+  apiKey: '',
+  defaultModel: 'google/gemini-3-pro-image-preview',
+  defaultAspectRatio: '1:1',
+  defaultResolution: '2K',
+  defaultImageCount: 1,
+  useImageUrls: false,
+}
+
 function getSettingsPath(): string {
   return join(app.getPath('userData'), 'imagestudio-settings.json')
 }
 
-function loadSettings(): Record<string, unknown> {
-  const defaults: Record<string, unknown> = {
-    apiKey: '',
-    defaultModel: 'google/gemini-3-pro-image-preview',
-    defaultAspectRatio: '1:1',
-    defaultResolution: '2K',
-    defaultImageCount: 1,
-    useImageUrls: false
-  }
+function loadSettings(): AppSettings {
   const path = getSettingsPath()
-  if (existsSync(path)) {
-    try {
-      const data = JSON.parse(readFileSync(path, 'utf-8'))
-      return { ...defaults, ...data }
-    } catch {
-      return defaults
+  if (!existsSync(path)) return { ...DEFAULTS }
+
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf-8'))
+    // Validate each field — only accept known keys with correct types
+    return {
+      apiKey: typeof raw.apiKey === 'string' ? raw.apiKey : DEFAULTS.apiKey,
+      defaultModel: typeof raw.defaultModel === 'string' ? raw.defaultModel : DEFAULTS.defaultModel,
+      defaultAspectRatio: typeof raw.defaultAspectRatio === 'string' ? raw.defaultAspectRatio : DEFAULTS.defaultAspectRatio,
+      defaultResolution: typeof raw.defaultResolution === 'string' ? raw.defaultResolution : DEFAULTS.defaultResolution,
+      defaultImageCount: typeof raw.defaultImageCount === 'number' ? raw.defaultImageCount : DEFAULTS.defaultImageCount,
+      useImageUrls: typeof raw.useImageUrls === 'boolean' ? raw.useImageUrls : DEFAULTS.useImageUrls,
     }
+  } catch {
+    console.error('[Settings] Failed to parse settings file, using defaults')
+    return { ...DEFAULTS }
   }
-  return defaults
 }
 
-function persistSettings(settings: Record<string, unknown>): void {
+function persistSettings(settings: AppSettings): void {
   writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
 }
 
@@ -47,7 +75,10 @@ export function registerAllHandlers(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, (_event, { key, value }: { key: string; value: unknown }) => {
-    settings = { ...settings, [key]: value }
+    if (!VALID_SETTINGS_KEYS.has(key)) {
+      return { success: false, error: `Unknown setting: ${key}` }
+    }
+    settings = { ...settings, [key]: value } as AppSettings
     persistSettings(settings)
     return { success: true }
   })
