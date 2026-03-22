@@ -154,6 +154,10 @@ Hover over any gallery image and click the crop icon, or use "Crop as Reference"
 
 Create named groups of reference images (e.g. `@brand-photos`, `@product-shots`). Type **@** in the prompt to mention a collection inline. The images are automatically prepared and attached. Removing the @-mention chip from the text also removes the collection reference — nothing gets sent that you don't see.
 
+<p align="center">
+  <img src="docs/screenshot-collections.jpg" width="500" alt="Collections — group reference images for @-mention" />
+</p>
+
 Collections with more than 5 images are intelligently composited into grid layouts to stay within API limits.
 
 ---
@@ -181,6 +185,10 @@ Choose which AI model to use for upscaling via the dropdown (defaults to Nano Ba
 ## Canvas Generation
 
 Click the **palette icon** in the prompt bar to open the full-screen Canvas editor. Paint a color-coded sketch using multi-layer drawing tools, then let AI turn it into a detailed image.
+
+<p align="center">
+  <img src="docs/screenshot-canvas.jpg" width="800" alt="Canvas editor — sketch shapes and colors, then generate with AI" />
+</p>
 
 ### Drawing Tools
 
@@ -266,6 +274,10 @@ Add custom tags to any image from the lightbox detail panel. Tags support autoco
 
 The gallery toolbar appears above your images with powerful filtering options:
 
+<p align="center">
+  <img src="docs/screenshot-filters.jpg" width="800" alt="Gallery filters — model, aspect ratio, date, tags" />
+</p>
+
 - **Search** — full-text search across prompts and tags
 - **Model filter** — show only images from specific AI models
 - **Aspect ratio filter** — filter by aspect ratio
@@ -282,6 +294,10 @@ All filters can be combined and cleared with one click.
 ## Style Presets
 
 Style presets append predefined style suffixes to your prompt. Click the preset selector in the prompt bar to choose one.
+
+<p align="center">
+  <img src="docs/screenshot-presets.jpg" width="800" alt="Style presets — Cinematic, Anime, Photorealistic, and more" />
+</p>
 
 **Built-in presets:** Cinematic, Anime, Photorealistic, Oil Painting, Minimalist, Watercolor, 3D Render
 
@@ -383,6 +399,10 @@ Click the dropdown arrow next to "Save" to open export options:
 
 As your gallery grows, workspaces help you stay organized. Think of them as lightweight folders for your images.
 
+<p align="center">
+  <img src="docs/screenshot-workspaces.jpg" width="800" alt="Workspaces — organize images into lightweight folders" />
+</p>
+
 - **By default, you work without a workspace** — all images are visible
 - Click **+ Workspace** below the title bar to create one
 - When a workspace is active, new generations automatically go into it
@@ -396,6 +416,10 @@ Each workspace gets its own color. Images in a workspace show a subtle colored b
 ## Keyboard Shortcuts
 
 Press **?** anywhere (outside a text input) to see the full shortcuts help overlay.
+
+<p align="center">
+  <img src="docs/screenshot-shortcuts.jpg" width="500" alt="Keyboard shortcuts overlay" />
+</p>
 
 | Shortcut | Action |
 |---|---|

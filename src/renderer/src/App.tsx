@@ -177,7 +177,7 @@ export default function App() {
   }
 
   useKeyboardShortcuts({
-    onToggleShortcutsHelp: () => setShowShortcutsHelp(prev => !prev),
+    showShortcutsHelp: () => setShowShortcutsHelp(prev => !prev),
   })
 
   return (
