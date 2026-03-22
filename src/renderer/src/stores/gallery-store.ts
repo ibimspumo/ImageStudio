@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import { debounce } from '../lib/debounce'
 import { logger } from '../lib/logger'
+import { getResolutionLabel } from '../lib/image-utils'
 
 export interface GalleryImage {
   id: string
@@ -20,6 +21,11 @@ export interface GalleryImage {
   workspaceId?: string
   cost?: number
   statusText?: string           // shown on loading skeleton (e.g. "Uploading images...")
+  isFavorite?: boolean          // A1: favorites
+  negativePrompt?: string       // A2: negative prompts
+  seed?: number                 // A3: seed control
+  tags?: string[]               // A4: tags
+  inpaintSourceId?: string      // D12: inpainting source
 }
 
 /** Convert a file path to a displayable URL (handles spaces and special chars) */
@@ -34,12 +40,15 @@ export function toDisplayUrl(filePath: string): string {
 
 interface GalleryStore {
   images: GalleryImage[]
-  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string) => string
+  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string }) => string
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
   updateStatus: (id: string, statusText: string | undefined) => void
   failImage: (id: string, error: string) => void
   removeImage: (id: string) => void
   moveToWorkspace: (imageId: string, workspaceId: string | undefined) => void
+  toggleFavorite: (id: string) => void
+  updateTags: (id: string, tags: string[]) => void
+  updateResolution: (id: string, resolution: string) => void
   clearAll: () => void
   loadFromDisk: () => Promise<void>
   persistToDisk: () => Promise<void>
@@ -52,7 +61,7 @@ const debouncedPersist = debounce((persist: () => Promise<void>) => {
 export const useGalleryStore = create<GalleryStore>((set, get) => ({
   images: [],
 
-  addPlaceholder: (prompt, aspectRatio, resolution, model, attachments, workspaceId) => {
+  addPlaceholder: (prompt, aspectRatio, resolution, model, attachments, workspaceId, extra) => {
     const id = nanoid()
     set((state) => ({
       images: [
@@ -67,6 +76,9 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           model,
           attachments,
           workspaceId,
+          negativePrompt: extra?.negativePrompt,
+          seed: extra?.seed,
+          inpaintSourceId: extra?.inpaintSourceId,
         },
         ...state.images,
       ],
@@ -121,6 +133,33 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     debouncedPersist(get().persistToDisk)
   },
 
+  toggleFavorite: (id) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === id ? { ...img, isFavorite: !img.isFavorite } : img
+      ),
+    }))
+    debouncedPersist(get().persistToDisk)
+  },
+
+  updateTags: (id, tags) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === id ? { ...img, tags } : img
+      ),
+    }))
+    debouncedPersist(get().persistToDisk)
+  },
+
+  updateResolution: (id, resolution) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === id ? { ...img, resolution } : img
+      ),
+    }))
+    debouncedPersist(get().persistToDisk)
+  },
+
   clearAll: () => {
     const imgs = get().images
     for (const img of imgs) {
@@ -145,6 +184,23 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           const data = JSON.parse(gallerySession.data) as GalleryImage[]
           const completed = data.filter((img) => img.filePath && !img.isLoading && !img.error)
           set({ images: completed })
+
+          // Background migration: fix resolution labels based on actual image dimensions
+          setTimeout(() => {
+            const { images, updateResolution } = get()
+            for (const img of images) {
+              if (!img.filePath || img.filePath.startsWith('data:')) continue
+              const imgEl = new window.Image()
+              imgEl.onload = () => {
+                const actualRes = getResolutionLabel(imgEl.naturalWidth, imgEl.naturalHeight)
+                if (actualRes !== img.resolution) {
+                  updateResolution(img.id, actualRes)
+                }
+              }
+              const encoded = img.filePath.split('/').map(part => encodeURIComponent(part)).join('/')
+              imgEl.src = `file://${encoded}`
+            }
+          }, 2000) // Delay to not block initial render
         }
       }
     } catch (err) {

@@ -9,6 +9,7 @@ interface ExportPopoverProps {
   imageSrc: string  // file:// URL or base64 data URL
   defaultName: string
   className?: string
+  metadata?: Record<string, string>
 }
 
 const FORMAT_LABELS: Record<ExportFormat, string> = {
@@ -75,9 +76,10 @@ function convertImage(
   })
 }
 
-export function ExportPopover({ imageSrc, defaultName, className }: ExportPopoverProps) {
+export function ExportPopover({ imageSrc, defaultName, className, metadata }: ExportPopoverProps) {
   const [open, setOpen] = useState(false)
   const [format, setFormat] = useState<ExportFormat>('png')
+  const [embedMetadata, setEmbedMetadata] = useState(true)
   const [quality, setQuality] = useState(92)
   const [fileSize, setFileSize] = useState<number | null>(null)
   const [originalSize, setOriginalSize] = useState<number | null>(null)
@@ -131,7 +133,11 @@ export function ExportPopover({ imageSrc, defaultName, className }: ExportPopove
       const { dataUrl } = await convertImage(imageSrc, format, quality)
       const ext = format === 'jpeg' ? 'jpg' : format
       const name = defaultName.replace(/\.\w+$/, '') + '.' + ext
-      await window.api.exportImage(dataUrl, name)
+      if (metadata && embedMetadata) {
+        await window.api.exportImageWithMetadata(dataUrl, name, metadata)
+      } else {
+        await window.api.exportImage(dataUrl, name)
+      }
       setOpen(false)
     } catch (err) {
       logger.error('ExportPopover', 'Export with options failed', err)
@@ -236,6 +242,21 @@ export function ExportPopover({ imageSrc, defaultName, className }: ExportPopove
                 )}
               </div>
             </div>
+
+            {metadata && (
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="checkbox"
+                  id="embed-metadata"
+                  checked={embedMetadata}
+                  onChange={(e) => setEmbedMetadata(e.target.checked)}
+                  className="rounded border-border-base accent-accent-main"
+                />
+                <label htmlFor="embed-metadata" className="text-[11px] text-text-secondary cursor-pointer">
+                  Embed metadata (prompt, model, etc.)
+                </label>
+              </div>
+            )}
 
             {/* Export button */}
             <button

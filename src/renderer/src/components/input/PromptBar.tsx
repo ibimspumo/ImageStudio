@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Wand2, MinusCircle } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useSettingsStore } from '../../stores/settings-store'
 import { useCollectionsStore, type AssetCollection } from '../../stores/collections-store'
@@ -12,23 +12,42 @@ import { toDisplayUrl } from '../../stores/gallery-store'
 import { AttachmentStrip, type CollectionRef } from './AttachmentStrip'
 import { MentionPopup, type MentionItem } from './MentionPopup'
 import { ControlsRow } from './ControlsRow'
+import { usePresetsStore } from '../../stores/presets-store'
+
+export interface InpaintContext {
+  imageId: string
+  filePath: string
+  sourcePrompt: string
+  getOverlayBase64: () => string | null
+  onClose: () => void
+}
 
 interface PromptBarProps {
   onSettingsClick?: () => void
   onCollectionsClick?: () => void
+  onPresetsManage?: () => void
+  onQueueClick?: () => void
+  queuePendingCount?: number
+  inpaintContext?: InpaintContext
+  initialModels?: string[]
 }
 
-export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProps = {}) {
+export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, queuePendingCount, inpaintContext, initialModels }: PromptBarProps = {}) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
   const [customRatio, setCustomRatio] = useState<string>('4:3')
   const [resolution, setResolution] = useState<Resolution>('2K')
   const [imageCount, setImageCount] = useState(1)
-  const [selectedModels, setSelectedModels] = useState<string[]>(['google/gemini-3-pro-image-preview'])
+  const [selectedModels, setSelectedModels] = useState<string[]>(initialModels || ['google/gemini-3-pro-image-preview'])
   const [imageRefs, setImageRefs] = useState<ImageRef[]>([])
   const [collectionRefs, setCollectionRefs] = useState<CollectionRef[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [showMentionPopup, setShowMentionPopup] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
+  const [negativePrompt, setNegativePrompt] = useState('')
+  const [showNegativePrompt, setShowNegativePrompt] = useState(false)
+  const [seed, setSeed] = useState<number | undefined>(undefined)
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
+  const [isEnhancing, setIsEnhancing] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -38,6 +57,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
   const { generate } = useImageGeneration()
   const apiKey = useSettingsStore((s) => s.apiKey)
   const collections = useCollectionsStore((s) => s.collections)
+  const presets = usePresetsStore((s) => s.presets)
 
   // ── Image ref management ──────────────────────────────────────────
 
@@ -133,6 +153,15 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
         const sel = window.getSelection()
         sel?.removeAllRanges()
         sel?.addRange(range)
+      }
+
+      // Restore negative prompt and seed if available
+      if (reuse.negativePrompt) {
+        setNegativePrompt(reuse.negativePrompt)
+        setShowNegativePrompt(true)
+      }
+      if (reuse.seed != null) {
+        setSeed(reuse.seed)
       }
 
       if (reuse.attachmentFilePaths && reuse.attachmentFilePaths.length > 0) {
@@ -322,17 +351,64 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
       }
     }
 
+    // Inject inpaint context if present
+    if (inpaintContext) {
+      const overlayBase64 = inpaintContext.getOverlayBase64()
+      if (!overlayBase64) return // no mask drawn
+
+      try {
+        const readResult = await window.api.readImage(inpaintContext.filePath)
+        if (!readResult.success || !readResult.base64DataUrl) return
+
+        const compressedOriginal = await compressImage(readResult.base64DataUrl as string, 2048, 0.85)
+        const compressedOverlay = await compressImage(overlayBase64, 2048, 0.85)
+
+        // Prepend inpaint attachments
+        attachments.unshift(compressedOverlay, compressedOriginal)
+        labeledAttachments.unshift(
+          { label: 'Image with green highlight showing the region to edit — replace ONLY the green area', images: [compressedOverlay] },
+          { label: 'Original image (clean, high quality reference) — preserve everything outside the highlighted region exactly', images: [compressedOriginal] },
+        )
+      } catch (err) {
+        console.error('Failed to prepare inpaint images', err)
+        return
+      }
+    }
+
+    // Apply active preset suffix
+    const activePreset = activePresetId ? presets.find(p => p.id === activePresetId) : null
+    const finalPrompt = activePreset ? `${text}, ${activePreset.suffix}` : text
+
+    // Build separate API prompt for inpaint mode
+    let apiPromptText: string | undefined
+    if (inpaintContext) {
+      const hasUserRefs = imageRefs.length > 0 || collectionRefs.length > 0
+      const refNote = hasUserRefs
+        ? ' The user has also attached additional reference images — use them as visual guidance for what should appear in the edited region.'
+        : ''
+      apiPromptText = `Edit this image. The green-highlighted region should be replaced with: ${finalPrompt}. Keep everything outside the green highlight exactly the same — same composition, lighting, colors, and details.${refNote} Original description of the source image: "${inpaintContext.sourcePrompt}"`
+    }
+
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
     generate({
-      prompt: text,
+      prompt: inpaintContext ? `Inpaint: ${text}` : finalPrompt,
+      apiPrompt: apiPromptText || undefined,
       aspectRatio: resolvedAspectRatio,
       resolution,
       imageCount,
       attachments: attachments.length > 0 ? attachments : undefined,
       labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
       models: selectedModels,
+      negativePrompt: negativePrompt || undefined,
+      seed,
+      inpaintSourceId: inpaintContext?.imageId,
     })
-  }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels])
+
+    // Close inpaint modal after generating
+    if (inpaintContext) {
+      inpaintContext.onClose()
+    }
+  }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, negativePrompt, seed, activePresetId, presets, inpaintContext])
 
   // ── Mention items ─────────────────────────────────────────────────
 
@@ -484,16 +560,36 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
     setImageRefs([])
     setCollectionRefs([])
     if (editorRef.current) editorRef.current.innerHTML = ''
+    setNegativePrompt('')
+    setShowNegativePrompt(false)
+    setSeed(undefined)
   }, [])
+
+  const handleEnhancePrompt = useCallback(async () => {
+    const text = getPromptText()
+    if (!text || !apiKey || isEnhancing) return
+    setIsEnhancing(true)
+    try {
+      const result = await window.api.enhancePrompt({ prompt: text, apiKey })
+      if (result.success && result.enhanced && editorRef.current) {
+        editorRef.current.textContent = result.enhanced
+      }
+    } catch (err) {
+      logger.error('PromptBar', 'Prompt enhancement failed', err)
+    } finally {
+      setIsEnhancing(false)
+    }
+  }, [getPromptText, apiKey, isEnhancing])
 
   // ── Render ────────────────────────────────────────────────────────
 
   const promptText = getPromptText()
   const hasContent = promptText || imageRefs.length > 0 || collectionRefs.length > 0
   const canSend = !!promptText && !!apiKey
+  const isInpaintMode = !!inpaintContext
 
   return (
-    <div className="shrink-0 flex flex-col items-center px-6 pb-6 pt-3">
+    <div className={cn("shrink-0 flex flex-col items-center", isInpaintMode ? "px-6 pb-4 pt-3" : "px-6 pb-6 pt-3")}>
       <div className="w-full max-w-[800px] relative">
         <div
           className={cn(
@@ -546,10 +642,38 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
               suppressContentEditableWarning
               onInput={handleEditorInput}
               onKeyDown={handleEditorKeyDown}
-              data-placeholder="Describe your image..."
+              data-placeholder={isInpaintMode ? "Describe what should appear in the masked area..." : "Describe your image..."}
               className="prompt-editor flex-1 min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none pt-1"
             />
+            <button
+              onClick={handleEnhancePrompt}
+              disabled={isEnhancing || !getPromptText()}
+              className={cn(
+                'no-drag shrink-0 mt-1 w-7 h-7 rounded-lg flex items-center justify-center transition-all',
+                isEnhancing
+                  ? 'text-accent-main animate-pulse'
+                  : getPromptText()
+                    ? 'text-text-muted hover:text-accent-main hover:bg-surface-3'
+                    : 'text-text-muted/30 cursor-not-allowed'
+              )}
+              title="Enhance prompt"
+            >
+              <Wand2 className="w-3.5 h-3.5" />
+            </button>
           </div>
+
+          {/* Negative prompt (collapsible) */}
+          {showNegativePrompt && (
+            <div className="px-5 pb-3">
+              <textarea
+                value={negativePrompt}
+                onChange={(e) => setNegativePrompt(e.target.value)}
+                placeholder="Negative prompt — what to avoid..."
+                className="w-full min-h-[36px] max-h-[80px] bg-surface-3 border border-border-dim rounded-lg px-3 py-2 text-[13px] text-text-secondary leading-relaxed outline-none resize-none placeholder:text-text-muted/50 focus:border-border-base transition-colors"
+                rows={1}
+              />
+            </div>
+          )}
 
           {/* Separator */}
           <div className="mx-4 h-px bg-border-dim/60" />
@@ -579,31 +703,42 @@ export function PromptBar({ onSettingsClick, onCollectionsClick }: PromptBarProp
             hasContent={!!hasContent}
             onSubmit={handleSubmit}
             onClear={clearPrompt}
-            onSettingsClick={onSettingsClick}
-            onCollectionsClick={onCollectionsClick}
+            onSettingsClick={isInpaintMode ? undefined : onSettingsClick}
+            onCollectionsClick={isInpaintMode ? undefined : onCollectionsClick}
+            negativePromptActive={showNegativePrompt}
+            onNegativePromptToggle={() => setShowNegativePrompt(!showNegativePrompt)}
+            seed={seed}
+            onSeedChange={setSeed}
+            activePresetId={activePresetId}
+            onPresetChange={setActivePresetId}
+            onPresetsManage={isInpaintMode ? undefined : onPresetsManage}
+            onQueueClick={isInpaintMode ? undefined : onQueueClick}
+            queuePendingCount={isInpaintMode ? undefined : queuePendingCount}
           />
         </div>
 
-        {/* Hint */}
-        <div className="flex justify-center mt-2.5">
-          <p className="text-[11px] text-text-muted/70">
-            {!apiKey ? (
-              <span className="text-danger/80">API key missing — open Settings</span>
-            ) : (
-              <>
-                <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mr-0.5">&#x2318;</kbd>
-                <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">&#x23CE;</kbd>
-                {(imageRefs.length > 0 || collections.length > 0) && (
-                  <>
-                    {'  \u00B7  '}
-                    <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">@</kbd>
-                    {' references'}
-                  </>
-                )}
-              </>
-            )}
-          </p>
-        </div>
+        {/* Hint - only show when not in inpaint mode */}
+        {!isInpaintMode && (
+          <div className="flex justify-center mt-2.5">
+            <p className="text-[11px] text-text-muted/70">
+              {!apiKey ? (
+                <span className="text-danger/80">API key missing — open Settings</span>
+              ) : (
+                <>
+                  <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mr-0.5">&#x2318;</kbd>
+                  <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">&#x23CE;</kbd>
+                  {(imageRefs.length > 0 || collections.length > 0) && (
+                    <>
+                      {'  \u00B7  '}
+                      <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">@</kbd>
+                      {' references'}
+                    </>
+                  )}
+                </>
+              )}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

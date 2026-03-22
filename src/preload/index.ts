@@ -11,6 +11,8 @@ const api = {
     requestId: string
     attachments?: string[]
     labeledAttachments?: { label: string; images: string[] }[]
+    negativePrompt?: string
+    seed?: number
   }) => ipcRenderer.invoke('image:generate', request),
 
   onGenerateProgress: (callback: (data: unknown) => void) => {
@@ -43,7 +45,15 @@ const api = {
 
   readImage: (filePath: string) => ipcRenderer.invoke('image:read', { filePath }),
   deleteImage: (filePath: string) => ipcRenderer.invoke('image:delete', { filePath }),
-  migrate: () => ipcRenderer.invoke('migrate:run')
+  migrate: () => ipcRenderer.invoke('migrate:run'),
+
+  // C8: Prompt enhancer
+  enhancePrompt: (request: { prompt: string; apiKey: string; model?: string }) =>
+    ipcRenderer.invoke('prompt:enhance', request),
+
+  // C9: Export with metadata
+  exportImageWithMetadata: (base64DataUrl: string, defaultName: string, metadata?: Record<string, string>) =>
+    ipcRenderer.invoke('image:export-metadata', { base64DataUrl, defaultName, metadata }),
 }
 
 contextBridge.exposeInMainWorld('api', api)

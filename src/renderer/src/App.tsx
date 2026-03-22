@@ -5,6 +5,9 @@ import { useCollectionsStore } from './stores/collections-store'
 import { useChatStore } from './stores/chat-store'
 import { useWorkspaceStore } from './stores/workspace-store'
 import { useCropStore } from './stores/crop-store'
+import { usePresetsStore } from './stores/presets-store'
+import { useQueueStore } from './stores/queue-store'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { TitleBar } from './components/layout/TitleBar'
 import { MainContent } from './components/layout/MainContent'
@@ -13,6 +16,11 @@ import { ImageViewer } from './components/shared/ImageViewer'
 import { CropModal } from './components/shared/CropModal'
 import { CollectionsDialog } from './components/collections/CollectionsDialog'
 import { ChatView } from './components/chat/ChatView'
+import { PresetsDialog } from './components/presets/PresetsDialog'
+import { ShortcutsHelp } from './components/shared/ShortcutsHelp'
+import { ImageCompare } from './components/shared/ImageCompare'
+import { InpaintModal } from './components/shared/InpaintModal'
+import { QueuePanel } from './components/queue/QueuePanel'
 
 interface ViewerState {
   images: GalleryImage[]
@@ -30,6 +38,9 @@ export default function App() {
   const loadCollections = useCollectionsStore((s) => s.loadFromDisk)
   const loadChats = useChatStore((s) => s.loadFromDisk)
   const loadWorkspaces = useWorkspaceStore((s) => s.loadFromDisk)
+  const loadPresets = usePresetsStore((s) => s.loadFromDisk)
+  const loadQueue = useQueueStore((s) => s.loadFromDisk)
+  const queuePendingCount = useQueueStore((s) => s.items.filter(i => i.status === 'pending').length)
   const apiKey = useSettingsStore((s) => s.apiKey)
   const [showSettings, setShowSettings] = useState(false)
   const [showCollections, setShowCollections] = useState(false)
@@ -37,6 +48,11 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [chatInitialModel, setChatInitialModel] = useState<string | undefined>(undefined)
   const [cropState, setCropState] = useState<CropState | null>(null)
+  const [showPresets, setShowPresets] = useState(false)
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
+  const [showQueue, setShowQueue] = useState(false)
+  const [compareState, setCompareState] = useState<[GalleryImage, GalleryImage] | null>(null)
+  const [inpaintState, setInpaintState] = useState<GalleryImage | null>(null)
 
   const startChat = useChatStore((s) => s.startChat)
   const addPendingRef = useCropStore((s) => s.addPendingRef)
@@ -50,8 +66,10 @@ export default function App() {
       loadCollections()
       loadChats()
       loadWorkspaces()
+      loadPresets()
+      loadQueue()
     })
-  }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces])
+  }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces, loadPresets, loadQueue])
 
   useEffect(() => {
     if (useSettingsStore.getState().hydrated && !apiKey) {
@@ -98,8 +116,37 @@ export default function App() {
   }
 
   const handleReusePrompt = (image: GalleryImage) => {
-    setPendingReuse(image.prompt, image.attachments)
+    setPendingReuse(image.prompt, image.attachments, image.negativePrompt, image.seed)
     setViewerState(null)
+  }
+
+  const handleInpaint = (imageId: string, filePath: string) => {
+    const img = useGalleryStore.getState().images.find((i) => i.id === imageId)
+    if (img) {
+      setInpaintState(img)
+      setViewerState(null)
+    }
+  }
+
+  const handleCompare = (image: GalleryImage) => {
+    // Find parent image via attachments (upscale, zoom out, inpaint all store source filePath)
+    const allImgs = useGalleryStore.getState().images
+    let parent: GalleryImage | undefined
+
+    // Try inpaintSourceId first
+    if (image.inpaintSourceId) {
+      parent = allImgs.find(i => i.id === image.inpaintSourceId)
+    }
+
+    // Fallback: first attachment file path matches a gallery image
+    if (!parent && image.attachments?.length) {
+      parent = allImgs.find(i => i.filePath === image.attachments![0] && i.id !== image.id)
+    }
+
+    if (parent) {
+      setCompareState([parent, image])
+      setViewerState(null)
+    }
   }
 
   const handleCropImage = (imageId: string, filePath: string) => {
@@ -112,6 +159,10 @@ export default function App() {
     setCropState(null)
   }
 
+  useKeyboardShortcuts({
+    onToggleShortcutsHelp: () => setShowShortcutsHelp(prev => !prev),
+  })
+
   return (
     <ErrorBoundary>
     <div className="flex flex-col h-screen bg-surface-0 overflow-hidden">
@@ -123,6 +174,9 @@ export default function App() {
           onCollectionsClick={() => setShowCollections(true)}
           onStartChat={handleStartChat}
           onCropImage={handleCropImage}
+          onPresetsManage={() => setShowPresets(true)}
+          onQueueClick={() => setShowQueue(true)}
+          queuePendingCount={queuePendingCount}
         />
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
         {showCollections && <CollectionsDialog onClose={() => setShowCollections(false)} />}
@@ -136,6 +190,8 @@ export default function App() {
             onReusePrompt={handleReusePrompt}
             onOpenChat={handleOpenChat}
             onCropImage={handleCropImage}
+            onInpaint={handleInpaint}
+            onCompare={handleCompare}
           />
         )}
         {activeChatId && (
@@ -152,6 +208,34 @@ export default function App() {
             onCrop={handleCropConfirm}
             onClose={() => setCropState(null)}
           />
+        )}
+        {showPresets && (
+          <PresetsDialog onClose={() => setShowPresets(false)} />
+        )}
+        {showShortcutsHelp && (
+          <ShortcutsHelp onClose={() => setShowShortcutsHelp(false)} />
+        )}
+        {compareState && (
+          <ImageCompare
+            imageA={compareState[0]}
+            imageB={compareState[1]}
+            onClose={() => setCompareState(null)}
+          />
+        )}
+        {inpaintState && (
+          <InpaintModal
+            imageId={inpaintState.id}
+            filePath={inpaintState.filePath}
+            prompt={inpaintState.prompt}
+            model={inpaintState.model}
+            aspectRatio={inpaintState.aspectRatio}
+            resolution={inpaintState.resolution}
+            workspaceId={inpaintState.workspaceId}
+            onClose={() => setInpaintState(null)}
+          />
+        )}
+        {showQueue && (
+          <QueuePanel onClose={() => setShowQueue(false)} />
         )}
       </div>
     </div>

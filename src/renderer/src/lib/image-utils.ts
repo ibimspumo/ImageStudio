@@ -186,6 +186,17 @@ export async function createGridComposite(
  * - <=5 images: send all individually
  * - >5 images: create 2x2 grid composites (max 5 composites = 20 images)
  */
+/**
+ * Determines resolution label (1K/2K/4K) from actual image dimensions.
+ * Based on the max dimension of the image.
+ */
+export function getResolutionLabel(width: number, height: number): string {
+  const maxDim = Math.max(width, height)
+  if (maxDim >= 3072) return '4K'   // 4K threshold
+  if (maxDim >= 1536) return '2K'   // 2K threshold
+  return '1K'
+}
+
 export async function prepareCollectionImages(images: string[]): Promise<string[]> {
   // Convert file paths to base64 for API submission
   const asBase64 = await Promise.all(images.map(async (img) => {

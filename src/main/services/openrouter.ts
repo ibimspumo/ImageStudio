@@ -1,4 +1,4 @@
-import { OPENROUTER_API_URL } from '../lib/constants'
+import { OPENROUTER_API_URL, NEGATIVE_PROMPT_MODELS } from '../lib/constants'
 
 export interface LabeledAttachment {
   label: string
@@ -13,6 +13,8 @@ export interface GenerateRequest {
   resolution: string
   attachments?: string[] // base64 data URLs or HTTPS URLs
   labeledAttachments?: LabeledAttachment[] // labeled groups for contextual API requests
+  negativePrompt?: string  // A2: negative prompts (only sent to supported models)
+  seed?: number            // A3: seed for reproducibility
 }
 
 export interface GenerateResult {
@@ -98,6 +100,19 @@ export async function generateImage(
 
   if (needsModalities) {
     body.modalities = ['image', 'text']
+  }
+
+  // Add seed for reproducibility (OpenRouter top-level parameter)
+  if (request.seed != null) {
+    body.seed = request.seed
+  }
+
+  // Add negative prompt for models that support it
+  if (request.negativePrompt) {
+    const supportsNegative = Array.from(NEGATIVE_PROMPT_MODELS).some(m => request.model.includes(m))
+    if (supportsNegative) {
+      body.negative_prompt = request.negativePrompt
+    }
   }
 
   // Log full message structure for debugging
@@ -247,4 +262,58 @@ export async function generateImage(
     imageBase64,
     cost
   }
+}
+
+/**
+ * C8: Enhance/improve a prompt using a text LLM via OpenRouter.
+ */
+export async function enhancePrompt(request: {
+  prompt: string
+  apiKey: string
+  model?: string
+}): Promise<{ enhanced: string; error?: string }> {
+  const model = request.model || 'google/gemini-2.0-flash-001'
+
+  const body = {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a prompt engineer for AI image generation. Take the user\'s rough prompt and improve it by adding specific visual details, lighting, composition, style, and artistic direction. Keep the core intent intact. Return ONLY the improved prompt text, nothing else. Do not include any explanations, prefixes, or formatting — just the improved prompt.'
+      },
+      {
+        role: 'user',
+        content: request.prompt
+      }
+    ]
+  }
+
+  const response = await fetch(OPENROUTER_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${request.apiKey}`,
+      'HTTP-Referer': 'https://imagestudio.local',
+      'X-OpenRouter-Title': 'ImageStudio'
+    },
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.text()
+    let message = `API error ${response.status}`
+    try {
+      const parsed = JSON.parse(errorBody)
+      message = parsed.error?.message || message
+    } catch { /* use default */ }
+    return { enhanced: request.prompt, error: message }
+  }
+
+  const data = await response.json()
+  const content = data.choices?.[0]?.message?.content
+  if (typeof content === 'string' && content.trim()) {
+    return { enhanced: content.trim() }
+  }
+
+  return { enhanced: request.prompt, error: 'No enhanced prompt returned' }
 }

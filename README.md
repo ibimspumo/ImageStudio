@@ -85,11 +85,16 @@ Type your prompt into the prompt bar at the bottom. Press **⌘ Enter** to gener
 The prompt bar gives you full control over your generation:
 
 - **+** button — attach reference images (moves above the text when images are attached)
-- **Model selector** — choose which AI model to use
+- **Model selector** — choose which AI model to use (select multiple to compare)
 - **Aspect ratio** — pick from 10 visual presets or define a custom ratio
 - **Resolution** — 1K, 2K, or 4K output
 - **Image count** — generate up to 4 images at once
+- **Seed** — lock a seed for reproducible results (dice icon)
+- **Negative prompt** — toggle to describe what to avoid (minus icon)
+- **Style preset** — append predefined style suffixes to your prompt
+- **Prompt enhancer** — AI-powered prompt improvement (wand icon)
 - **@** button — open your asset collections
+- **Queue** — batch processing queue status
 - **Clear** (⊗) — clear the current prompt, attachments, and collection references
 - **⚙** — settings & about
 
@@ -169,7 +174,95 @@ Upscale any image to a higher resolution directly from the lightbox. Available o
 
 Choose which AI model to use for upscaling via the dropdown (defaults to Nano Banana Pro). The original image is sent as a reference with instructions to recreate it at the target resolution while preserving every detail.
 
-> **Note:** Resolution output depends on the AI model. Occasionally the API may return a smaller image than requested — ImageStudio will warn you if this happens so you can retry.
+> **Note:** Resolution output depends on the AI model. If the API returns a smaller image than requested, ImageStudio automatically detects the actual dimensions and corrects the resolution label in your gallery metadata.
+
+---
+
+## Inpainting
+
+Select any image in the lightbox and click **Inpaint** to open the mask editor. Paint over the area you want to change, then describe what should appear there using the full prompt bar at the bottom.
+
+- **Brush tool** — adjustable size (5–100px), with undo and clear
+- **Full prompt bar** — same prompt bar as the main app, with attachments, @-mentions, negative prompt, seed, presets, and multi-model support
+- **Reference images** — attach additional images as visual guidance (e.g. "Replace jacket with @image1")
+- **Green overlay** — the masked area is sent as a green highlight on the original, so the AI can visually see exactly what to edit
+- **Lineage tracking** — inpainted images link back to their source, visible in the detail panel and usable for comparison
+
+---
+
+## Image Comparison
+
+Compare an image with its original version using the **Compare with Original** button in the lightbox. Available for any image that was derived from another (via upscale, zoom out, inpaint, or chat).
+
+- **Slider mode** — both images overlaid with a draggable vertical divider
+- **Side-by-side mode** — 50/50 split view with model and resolution labels
+- Resolution-independent — images are displayed at the same visual size regardless of pixel dimensions
+
+---
+
+## Favorites & Tags
+
+### Favorites
+
+Click the star icon on any gallery card or in the lightbox to mark an image as a favorite. Favorites are persisted across sessions and can be filtered in the gallery toolbar.
+
+### Tags
+
+Add custom tags to any image from the lightbox detail panel. Tags support autocomplete from all existing tags in your gallery. Use tags to organize images by project, theme, or any category you choose — then filter by tag in the gallery toolbar.
+
+---
+
+## Gallery Search & Filters
+
+The gallery toolbar appears above your images with powerful filtering options:
+
+- **Search** — full-text search across prompts and tags
+- **Model filter** — show only images from specific AI models
+- **Aspect ratio filter** — filter by aspect ratio
+- **Date range** — Today, This Week, This Month
+- **Favorites only** — show only starred images
+- **Tag filter** — filter by one or more tags
+- **Sort** — newest or oldest first
+- **Smart albums** — auto-generated album chips for quick access (by model, date, favorites)
+
+All filters can be combined and cleared with one click.
+
+---
+
+## Style Presets
+
+Style presets append predefined style suffixes to your prompt. Click the preset selector in the prompt bar to choose one.
+
+**Built-in presets:** Cinematic, Anime, Photorealistic, Oil Painting, Minimalist, Watercolor, 3D Render
+
+Create your own custom presets via **Manage Presets** — each preset has a name, optional emoji icon, and a suffix that gets appended to your prompt on generation.
+
+---
+
+## Batch Queue
+
+Add generations to a queue for sequential processing. The generate button includes a dropdown to "Add to Queue" instead of generating immediately.
+
+- **Queue panel** — slide-out panel showing all queued items with progress
+- **Sequential processing** — one generation at a time, with progress tracking
+- **Persistent** — queue survives app restarts
+- **Cancel & clear** — cancel individual items or clear completed ones
+
+---
+
+## Prompt Enhancer
+
+Click the wand icon (✨) next to the prompt editor to have AI improve your prompt. The enhancer adds specific visual details, lighting, composition, and style keywords to make your prompt more effective. The enhanced text replaces your current prompt while preserving any attached images and @-mentions.
+
+---
+
+## EXIF Metadata in Exports
+
+When exporting images, metadata is embedded directly in the file:
+
+- **PNG** — custom `tEXt` chunks with prompt, model, seed, aspect ratio, resolution, and timestamp
+- Toggle **"Embed metadata"** in the export popover (on by default)
+- Metadata is readable by standard tools like `exiftool` or macOS Get Info
 
 ---
 
@@ -202,21 +295,27 @@ The info panel includes:
 
 - **Prompt** — with a copy button
 - **Model** — which AI model was used (shown as a readable name)
-- **Size** — aspect ratio, resolution, and pixel dimensions
+- **Size** — aspect ratio, resolution, and pixel dimensions (resolution auto-corrected to match actual image)
+- **Negative prompt** — if one was used
+- **Seed** — with a copy button for reproducibility
 - **Duration** — how long the generation took
 - **Cost** — how much the API call cost (fetched from OpenRouter)
 - **Date** — when the image was created
+- **Tags** — add/remove custom tags with autocomplete
 - **Chat origin** — if the image came from a chat, click to reopen it
 - **Reference images** — click to navigate to that image in the lightbox (if it's in your gallery)
 
 ### Actions
 
-- **Reuse Prompt** — restore the prompt, @-collection mentions (as inline chips), and individual image references back into the prompt bar for quick re-generation
+- **Favorite** — star/unstar the image
+- **Reuse Prompt** — restore the prompt, negative prompt, seed, @-collection mentions, and image references back into the prompt bar
 - **Start Chat / Continue Chat** — open an editing conversation from this image
 - **Crop as Reference** — select a region of the image to use as reference
+- **Inpaint** — open the mask editor to selectively edit parts of the image
+- **Compare with Original** — slider/side-by-side comparison with the source image (available for upscaled, zoomed, inpainted, or chat-edited images)
 - **Zoom Out** — extend the image outward by 1.5x, 2x, 3x, or 4x using AI
 - **Copy** — copy the image to your clipboard
-- **Save** — quick export as PNG, or click the dropdown arrow to choose format and quality
+- **Save** — quick export as PNG (with embedded metadata), or click the dropdown arrow to choose format and quality
 - **Delete** — remove from your gallery
 
 ### Export with format & quality
@@ -246,13 +345,24 @@ Each workspace gets its own color. Images in a workspace show a subtle colored b
 
 ## Keyboard Shortcuts
 
+Press **?** anywhere (outside a text input) to see the full shortcuts help overlay.
+
 | Shortcut | Action |
 |---|---|
 | `⌘ Enter` | Generate images |
 | `@` | Reference images/collections in prompt |
+| `G` | Focus prompt editor |
+| `⌘ F` | Focus search bar |
+| `F` | Toggle favorite (in lightbox) |
+| `E` | Export (in lightbox) |
+| `R` | Reuse prompt (in lightbox) |
+| `⌘ C` | Copy image (in lightbox) |
+| `Delete` | Delete image (in lightbox) |
 | `←` `→` | Navigate images in lightbox |
-| `Escape` | Close lightbox, chat, or dialogs |
-| `Enter` | Confirm crop selection |
+| `⌘ Z` | Undo brush stroke (in inpaint) |
+| `1`–`4` | Open image 1–4 in gallery |
+| `Escape` | Close topmost modal/dialog |
+| `?` | Show shortcuts help |
 
 ---
 
@@ -274,19 +384,22 @@ Each workspace gets its own color. Images in a workspace show a subtle colored b
 ```
 src/
 ├── main/                 # Electron main process
-│   ├── ipc/              # IPC handlers (generation, files, settings)
-│   └── services/         # OpenRouter client, image storage
+│   ├── ipc/              # IPC handlers (generation, files, settings, metadata)
+│   └── services/         # OpenRouter client, image storage, prompt enhancer
 ├── preload/              # Typed context bridge (window.api)
 └── renderer/src/         # React UI
     ├── components/
-    │   ├── input/        # PromptBar, AttachmentStrip, MentionPopup, ControlsRow, selectors
-    │   ├── gallery/      # Grid layout, image cards
+    │   ├── input/        # PromptBar, ControlsRow, selectors, SeedInput, PresetSelector
+    │   ├── gallery/      # Grid layout, cards, GalleryToolbar, SmartAlbumBar
     │   ├── chat/         # Image chat modal
     │   ├── workspace/    # Workspace tabs and management
     │   ├── collections/  # Asset collection manager
-    │   └── shared/       # ErrorBoundary, Lightbox, CropModal, ExportPopover, Settings
-    ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop)
-    ├── hooks/            # useImageGeneration, useChatGeneration, useImageRefs
+    │   ├── presets/      # Style presets dialog
+    │   ├── queue/        # Batch queue panel
+    │   ├── tags/         # Tag input with autocomplete
+    │   └── shared/       # Lightbox, CropModal, InpaintModal, ImageCompare, ExportPopover, ShortcutsHelp, Settings
+    ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop, presets, queue, gallery-filter)
+    ├── hooks/            # useImageGeneration, useChatGeneration, useKeyboardShortcuts
     ├── types/            # API types, model definitions, shared interfaces
     └── lib/              # Utils, image compression, date-utils, debounce, logger
 ```

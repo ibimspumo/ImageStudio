@@ -4,7 +4,10 @@ import { PromptBar } from '../input/PromptBar'
 import { WorkspaceBar } from '../workspace/WorkspaceBar'
 import { useGalleryStore, type GalleryImage } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
-import { Sparkles } from 'lucide-react'
+import { useGalleryFilterStore } from '../../stores/gallery-filter-store'
+import { GalleryToolbar } from '../gallery/GalleryToolbar'
+import { SmartAlbumBar } from '../gallery/SmartAlbumBar'
+import { Sparkles, SearchX } from 'lucide-react'
 
 
 interface MainContentProps {
@@ -13,17 +16,86 @@ interface MainContentProps {
   onCollectionsClick: () => void
   onStartChat?: (imageId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
+  onPresetsManage?: () => void
+  onQueueClick?: () => void
+  queuePendingCount?: number
 }
 
-export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage }: MainContentProps) {
+export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage, onPresetsManage, onQueueClick, queuePendingCount }: MainContentProps) {
   const allImages = useGalleryStore((s) => s.images)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
+  const searchQuery = useGalleryFilterStore((s) => s.searchQuery)
+  const filterModels = useGalleryFilterStore((s) => s.filterModels)
+  const filterAspectRatios = useGalleryFilterStore((s) => s.filterAspectRatios)
+  const filterDateRange = useGalleryFilterStore((s) => s.filterDateRange)
+  const sortBy = useGalleryFilterStore((s) => s.sortBy)
+  const favoritesOnly = useGalleryFilterStore((s) => s.favoritesOnly)
+  const filterTags = useGalleryFilterStore((s) => s.filterTags)
+  const clearFilters = useGalleryFilterStore((s) => s.clearFilters)
 
-  // Filter images by active workspace
   const images = useMemo(() => {
-    if (activeWorkspaceId === null) return allImages
-    return allImages.filter((img) => img.workspaceId === activeWorkspaceId)
-  }, [allImages, activeWorkspaceId])
+    let filtered = activeWorkspaceId === null ? allImages : allImages.filter((img) => img.workspaceId === activeWorkspaceId)
+
+    // Search query (case-insensitive on prompt + tags)
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      filtered = filtered.filter((img) =>
+        img.prompt.toLowerCase().includes(q) ||
+        img.tags?.some((t) => t.toLowerCase().includes(q))
+      )
+    }
+
+    // Model filter
+    if (filterModels.length > 0) {
+      filtered = filtered.filter((img) => filterModels.includes(img.model))
+    }
+
+    // Aspect ratio filter
+    if (filterAspectRatios.length > 0) {
+      filtered = filtered.filter((img) => filterAspectRatios.includes(img.aspectRatio))
+    }
+
+    // Date range filter
+    if (filterDateRange) {
+      const now = Date.now()
+      const cutoff = filterDateRange === 'today' ? now - 86400000
+        : filterDateRange === 'week' ? now - 604800000
+        : filterDateRange === 'month' ? now - 2592000000
+        : 0
+      if (cutoff > 0) {
+        filtered = filtered.filter((img) => img.timestamp >= cutoff)
+      }
+    }
+
+    // Favorites filter
+    if (favoritesOnly) {
+      filtered = filtered.filter((img) => img.isFavorite)
+    }
+
+    // Tag filter
+    if (filterTags.length > 0) {
+      filtered = filtered.filter((img) => img.tags?.some((t) => filterTags.includes(t)))
+    }
+
+    // Sort
+    if (sortBy === 'oldest') {
+      filtered = [...filtered].sort((a, b) => a.timestamp - b.timestamp)
+    }
+    // default 'newest' is already the store order (newest first)
+
+    return filtered
+  }, [allImages, activeWorkspaceId, searchQuery, filterModels, filterAspectRatios, filterDateRange, sortBy, favoritesOnly, filterTags])
+
+  const hasActiveFilters = searchQuery || filterModels.length > 0 || filterAspectRatios.length > 0 || filterDateRange || favoritesOnly || filterTags.length > 0
+
+  // Collect all tags for toolbar autocomplete
+  const allTags = useMemo(() => {
+    const tags = new Set<string>()
+    for (const img of allImages) {
+      if (img.tags) for (const t of img.tags) tags.add(t)
+    }
+    return Array.from(tags)
+  }, [allImages])
 
   return (
     <main className="flex-1 flex flex-col min-w-0 h-full relative">
@@ -36,7 +108,15 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
       {/* Workspace bar */}
       <WorkspaceBar />
 
-      {images.length === 0 && allImages.length === 0 ? (
+      {/* Gallery toolbar & smart albums — only when gallery has images */}
+      {allImages.length > 0 && (
+        <>
+          <GalleryToolbar allTags={allTags} totalCount={allImages.length} filteredCount={images.length} />
+          <SmartAlbumBar images={allImages} />
+        </>
+      )}
+
+      {allImages.length === 0 ? (
         /* Empty state with aurora atmosphere — only when truly empty */
         <div className="aurora-bg flex-1 flex flex-col items-center justify-center px-8">
           {/* Floating orb */}
@@ -64,7 +144,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
             ))}
           </div>
         </div>
-      ) : images.length === 0 && activeWorkspaceId !== null ? (
+      ) : images.length === 0 && activeWorkspaceId !== null && !hasActiveFilters ? (
         /* Empty workspace state */
         <div className="flex-1 flex flex-col items-center justify-center px-8">
           <div className="w-12 h-12 rounded-xl bg-surface-3 border border-border-dim flex items-center justify-center mb-4">
@@ -73,6 +153,17 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
           <p className="text-[14px] text-text-muted mb-1">This workspace is empty</p>
           <p className="text-[12px] text-text-muted/60">Generate images or move existing ones here</p>
         </div>
+      ) : images.length === 0 && hasActiveFilters ? (
+        /* No filter results state */
+        <div className="flex-1 flex flex-col items-center justify-center px-8">
+          <div className="w-12 h-12 rounded-xl bg-surface-3 border border-border-dim flex items-center justify-center mb-4">
+            <SearchX className="w-5 h-5 text-text-muted" />
+          </div>
+          <p className="text-[14px] text-text-muted mb-1">No images match your filters</p>
+          <button onClick={clearFilters} className="text-[12px] text-accent-main hover:text-accent-bright transition-colors mt-2">
+            Clear all filters
+          </button>
+        </div>
       ) : (
         <ImageGallery images={images} onImageClick={onImageClick} onStartChat={onStartChat} onCropImage={onCropImage} />
       )}
@@ -80,6 +171,9 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
       <PromptBar
         onSettingsClick={onSettingsClick}
         onCollectionsClick={onCollectionsClick}
+        onPresetsManage={onPresetsManage}
+        onQueueClick={onQueueClick}
+        queuePendingCount={queuePendingCount}
       />
     </main>
   )

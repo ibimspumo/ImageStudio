@@ -1,8 +1,11 @@
-import { Send, XCircle, Settings } from 'lucide-react'
+import { Send, XCircle, Settings, MinusCircle } from 'lucide-react'
 import { AspectRatioSelector } from './AspectRatioSelector'
 import { ResolutionSelector } from './ResolutionSelector'
 import { ImageCountSelector } from './ImageCountSelector'
 import { ModelSelector } from './ModelSelector'
+import { SeedInput } from './SeedInput'
+import { PresetSelector } from './PresetSelector'
+import { QueueButton } from '../queue/QueueButton'
 import type { AspectRatio, Resolution } from '../../types/api'
 import { cn } from '../../lib/utils'
 
@@ -23,6 +26,15 @@ interface ControlsRowProps {
   onClear: () => void
   onSettingsClick?: () => void
   onCollectionsClick?: () => void
+  negativePromptActive?: boolean
+  onNegativePromptToggle?: () => void
+  seed?: number | undefined
+  onSeedChange?: (seed: number | undefined) => void
+  activePresetId?: string | null
+  onPresetChange?: (presetId: string | null) => void
+  onPresetsManage?: () => void
+  onQueueClick?: () => void
+  queuePendingCount?: number
 }
 
 export function ControlsRow({
@@ -42,6 +54,15 @@ export function ControlsRow({
   onClear,
   onSettingsClick,
   onCollectionsClick,
+  negativePromptActive,
+  onNegativePromptToggle,
+  seed,
+  onSeedChange,
+  activePresetId = null,
+  onPresetChange,
+  onPresetsManage,
+  onQueueClick,
+  queuePendingCount = 0,
 }: ControlsRowProps) {
   return (
     <div className="flex items-center gap-1 px-4 py-3">
@@ -53,6 +74,31 @@ export function ControlsRow({
       <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
       <ImageCountSelector value={imageCount} onChange={onImageCountChange} />
       <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+
+      {onSeedChange && (
+        <SeedInput value={seed} onChange={onSeedChange} />
+      )}
+      <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+
+      {onNegativePromptToggle && (
+        <button
+          onClick={onNegativePromptToggle}
+          className={cn(
+            'no-drag flex items-center justify-center w-8 h-8 rounded-lg border transition-all',
+            negativePromptActive
+              ? 'bg-accent-main/20 border-accent-main/30 text-accent-bright'
+              : 'bg-surface-3 hover:bg-surface-4 border-border-base text-text-secondary hover:text-text-primary'
+          )}
+          title="Negative prompt"
+        >
+          <MinusCircle className="w-3.5 h-3.5" />
+        </button>
+      )}
+      <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+
+      {onPresetChange && (
+        <PresetSelector activePresetId={activePresetId} onPresetChange={onPresetChange} onManage={onPresetsManage} />
+      )}
 
       {onCollectionsClick && (
         <button
@@ -72,6 +118,8 @@ export function ControlsRow({
           <Settings className="w-3.5 h-3.5" />
         </button>
       )}
+
+      {onQueueClick && <QueueButton pendingCount={queuePendingCount ?? 0} onClick={onQueueClick} />}
 
       <div className="flex-1" />
 

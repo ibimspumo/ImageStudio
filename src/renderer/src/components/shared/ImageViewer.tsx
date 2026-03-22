@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   X,
   Copy,
@@ -17,15 +17,20 @@ import {
   Loader2,
   Image as ImageIcon,
   ArrowUpCircle,
-  ChevronDown
+  ChevronDown,
+  Star,
+  Paintbrush,
+  Columns,
+  Hash
 } from 'lucide-react'
 import type { GalleryImage } from '../../stores/gallery-store'
 import { useGalleryStore, toDisplayUrl } from '../../stores/gallery-store'
 import { useChatStore } from '../../stores/chat-store'
 import { useSettingsStore } from '../../stores/settings-store'
 import { AVAILABLE_MODELS, getModelName } from '../../types/api'
-import { compressImage } from '../../lib/image-utils'
+import { compressImage, getResolutionLabel } from '../../lib/image-utils'
 import { ExportPopover } from './ExportPopover'
+import { TagInput } from '../tags/TagInput'
 import { cn } from '../../lib/utils'
 import { createZoomOutCanvas, upscaleForApi } from '../../lib/image-utils'
 import { formatDuration, formatDate } from '../../lib/date-utils'
@@ -40,6 +45,8 @@ interface ImageViewerProps {
   onReusePrompt: (image: GalleryImage) => void
   onOpenChat?: (chatId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
+  onInpaint?: (imageId: string, filePath: string) => void
+  onCompare?: (image: GalleryImage) => void
 }
 
 const ZOOM_LEVELS = [1.5, 2, 3, 4] as const
@@ -63,7 +70,9 @@ export function ImageViewer({
   onStartChat,
   onReusePrompt,
   onOpenChat,
-  onCropImage
+  onCropImage,
+  onInpaint,
+  onCompare
 }: ImageViewerProps) {
   const [hovered, setHovered] = useState(false)
   const [promptCopied, setPromptCopied] = useState(false)
@@ -77,6 +86,9 @@ export function ImageViewer({
   const updateStatus = useGalleryStore((s) => s.updateStatus)
   const completeImage = useGalleryStore((s) => s.completeImage)
   const failImage = useGalleryStore((s) => s.failImage)
+  const toggleFavorite = useGalleryStore((s) => s.toggleFavorite)
+  const updateTags = useGalleryStore((s) => s.updateTags)
+  const allImages = useGalleryStore((s) => s.images)
   const chats = useChatStore((s) => s.chats)
   const apiKey = useSettingsStore((s) => s.apiKey)
   const useImageUrls = useSettingsStore((s) => s.useImageUrls)
@@ -85,10 +97,33 @@ export function ImageViewer({
 
   const linkedChat = image?.chatId ? chats.find((c) => c.id === image.chatId) : null
 
+  // Check if this image has a parent (was derived from another via upscale, zoom out, inpaint, etc.)
+  const hasParentImage = image ? !!(
+    image.inpaintSourceId ||
+    (image.attachments?.length && allImages.some(i => i.filePath === image.attachments![0] && i.id !== image.id))
+  ) : false
+
+  const allTags = useMemo(() => {
+    const tags = new Set<string>()
+    for (const img of allImages) {
+      if (img.tags) for (const t of img.tags) tags.add(t)
+    }
+    return Array.from(tags)
+  }, [allImages])
+
   useEffect(() => {
     if (!displayUrl) { setImageDims(null); return }
     const img = new window.Image()
-    img.onload = () => setImageDims({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onload = () => {
+      setImageDims({ w: img.naturalWidth, h: img.naturalHeight })
+      // Auto-fix resolution label if it doesn't match actual dimensions
+      if (image) {
+        const actualRes = getResolutionLabel(img.naturalWidth, img.naturalHeight)
+        if (actualRes !== image.resolution) {
+          useGalleryStore.getState().updateResolution(image.id, actualRes)
+        }
+      }
+    }
     img.onerror = () => setImageDims(null)
     img.src = displayUrl
     return () => { img.onload = null; img.onerror = null }
@@ -110,6 +145,15 @@ export function ImageViewer({
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
+
+  const handleCopySeed = async () => {
+    if (image?.seed == null) return
+    try {
+      await navigator.clipboard.writeText(String(image.seed))
+    } catch (err) {
+      logger.error('ImageViewer', 'Failed to copy seed', err)
+    }
+  }
 
   const handleCopy = async () => {
     if (!image?.filePath) return
@@ -351,6 +395,22 @@ export function ImageViewer({
             </button>
           </div>
 
+          {/* Favorite toggle */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => toggleFavorite(image.id)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-[13px] font-medium',
+                image.isFavorite
+                  ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                  : 'bg-surface-3 text-text-secondary hover:bg-surface-4'
+              )}
+            >
+              <Star className={cn('w-4 h-4', image.isFavorite && 'fill-current')} />
+              {image.isFavorite ? 'Favorited' : 'Favorite'}
+            </button>
+          </div>
+
           <div className="flex flex-col gap-2">
             <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Prompt</span>
             <div className="relative group">
@@ -362,6 +422,13 @@ export function ImageViewer({
             </div>
           </div>
 
+          {image.negativePrompt && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Negative Prompt</span>
+              <p className="text-[13px] text-text-secondary leading-relaxed bg-surface-3 rounded-lg p-3">{image.negativePrompt}</p>
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             <button onClick={() => onReusePrompt(image)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-dim text-accent-main hover:bg-accent-main/20 transition-colors text-[13px] font-medium">
               <RotateCcw className="w-3.5 h-3.5" /> Reuse Prompt
@@ -372,6 +439,16 @@ export function ImageViewer({
             {onCropImage && (
               <button onClick={() => onCropImage(image.id, image.filePath)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium">
                 <Crop className="w-3.5 h-3.5" /> Crop as Reference
+              </button>
+            )}
+            {onInpaint && (
+              <button onClick={() => onInpaint(image.id, image.filePath)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium">
+                <Paintbrush className="w-3.5 h-3.5" /> Inpaint
+              </button>
+            )}
+            {onCompare && hasParentImage && (
+              <button onClick={() => onCompare(image)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium">
+                <Columns className="w-3.5 h-3.5" /> Compare with Original
               </button>
             )}
           </div>
@@ -500,6 +577,28 @@ export function ImageViewer({
               <span className="text-[12px] text-text-muted w-20 shrink-0">Created</span>
               <div className="flex items-center gap-1.5 text-[12px] text-text-secondary"><Calendar className="w-3 h-3 text-text-muted" />{formatDate(image.timestamp)}</div>
             </div>
+            {image.seed != null && (
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-text-muted w-20 shrink-0">Seed</span>
+                <div className="flex items-center gap-1.5">
+                  <Hash className="w-3 h-3 text-text-muted" />
+                  <span className="text-[12px] text-text-secondary font-mono">{image.seed}</span>
+                  <button onClick={handleCopySeed} className="p-1 rounded text-text-muted hover:text-text-secondary transition-colors" title="Copy seed">
+                    <Clipboard className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tags */}
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Tags</span>
+            <TagInput
+              tags={image.tags || []}
+              onTagsChange={(tags) => updateTags(image.id, tags)}
+              suggestions={allTags}
+            />
           </div>
 
           {image.attachments && image.attachments.length > 0 && (
@@ -527,7 +626,7 @@ export function ImageViewer({
               <button onClick={handleCopy} className={cn('flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg', 'bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium')}>
                 <Copy className="w-3.5 h-3.5" /> Copy
               </button>
-              <ExportPopover imageSrc={displayUrl ?? ''} defaultName={`imagestudio-${Date.now()}.png`} className="flex-1" />
+              <ExportPopover imageSrc={displayUrl ?? ''} defaultName={`imagestudio-${Date.now()}.png`} className="flex-1" metadata={{ prompt: image.prompt, model: image.model, aspectRatio: image.aspectRatio, resolution: image.resolution, ...(image.seed != null ? { seed: String(image.seed) } : {}), ...(image.negativePrompt ? { negativePrompt: image.negativePrompt } : {}), timestamp: new Date(image.timestamp).toISOString() }} />
             </div>
             <button onClick={handleDelete} className={cn('flex items-center justify-center gap-2 px-3 py-2 rounded-lg', 'bg-surface-3 text-danger hover:bg-danger/10 transition-colors text-[13px] font-medium')}>
               <Trash2 className="w-3.5 h-3.5" /> Delete

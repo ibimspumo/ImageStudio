@@ -12,6 +12,8 @@ interface ChatGenerateOptions {
   model: string
   extraAttachments?: string[]
   extraLabeledAttachments?: { label: string; images: string[] }[]
+  negativePrompt?: string
+  seed?: number
 }
 
 /**
@@ -66,7 +68,7 @@ export function useChatGeneration() {
     async (options: ChatGenerateOptions) => {
       if (!apiKey) return
 
-      const { chatId, prompt, aspectRatio, resolution, model, extraAttachments, extraLabeledAttachments } = options
+      const { chatId, prompt, aspectRatio, resolution, model, extraAttachments, extraLabeledAttachments, negativePrompt, seed } = options
 
       const chat = useChatStore.getState().chats.find((c) => c.id === chatId)
       if (!chat) return
@@ -133,6 +135,8 @@ export function useChatGeneration() {
           requestId,
           attachments: attachments.length > 0 ? attachments : undefined,
           labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
+          negativePrompt,
+          seed,
         })
 
         if (!response.success) {

@@ -3,15 +3,20 @@ import { useGalleryStore } from '../stores/gallery-store'
 import { useSettingsStore } from '../stores/settings-store'
 import { useWorkspaceStore } from '../stores/workspace-store'
 import { logger } from '../lib/logger'
+import { getResolutionLabel } from '../lib/image-utils'
 
 interface GenerateOptions {
   prompt: string
+  apiPrompt?: string  // if different from prompt, send this to the API
   aspectRatio: string
   resolution: string
   imageCount: number
   attachments?: string[]
   labeledAttachments?: { label: string; images: string[] }[]
   models: string[]
+  negativePrompt?: string
+  seed?: number
+  inpaintSourceId?: string  // links generated image to inpaint source
 }
 
 /**
@@ -79,7 +84,7 @@ async function uploadAttachments(
 }
 
 export function useImageGeneration() {
-  const { addPlaceholder, updateStatus, completeImage, failImage } = useGalleryStore()
+  const { addPlaceholder, updateStatus, completeImage, failImage, updateResolution } = useGalleryStore()
   const apiKey = useSettingsStore((s) => s.apiKey)
   const useImageUrls = useSettingsStore((s) => s.useImageUrls)
 
@@ -97,7 +102,7 @@ export function useImageGeneration() {
       for (const model of models) {
         const ids: string[] = []
         for (let i = 0; i < options.imageCount; i++) {
-          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments, activeWorkspaceId)
+          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments, activeWorkspaceId, { negativePrompt: options.negativePrompt, seed: options.seed, inpaintSourceId: options.inpaintSourceId })
           ids.push(id)
           allPlaceholderIds.push(id)
         }
@@ -129,7 +134,7 @@ export function useImageGeneration() {
 
           window.api
             .generateImage({
-              prompt: resolvedOptions.prompt,
+              prompt: resolvedOptions.apiPrompt || resolvedOptions.prompt,
               model,
               apiKey,
               aspectRatio: resolvedOptions.aspectRatio,
@@ -138,6 +143,8 @@ export function useImageGeneration() {
               requestId,
               attachments: resolvedOptions.attachments,
               labeledAttachments: resolvedOptions.labeledAttachments,
+              negativePrompt: resolvedOptions.negativePrompt,
+              seed: resolvedOptions.seed,
             })
             .then(async (response) => {
               if (!response.success) {
@@ -157,6 +164,18 @@ export function useImageGeneration() {
                     const saveResult = await window.api.saveImage(result.result.imageBase64, filename)
                     if (saveResult.success && saveResult.filePath) {
                       completeImage(placeholderIds[i], saveResult.filePath, durationMs, result.result.cost)
+
+                      // Detect actual resolution from saved image
+                      try {
+                        const img = new window.Image()
+                        img.onload = () => {
+                          const actualRes = getResolutionLabel(img.naturalWidth, img.naturalHeight)
+                          if (actualRes !== options.resolution) {
+                            updateResolution(placeholderIds[i], actualRes)
+                          }
+                        }
+                        img.src = `file://${encodeURI(saveResult.filePath)}`
+                      } catch {}
                     } else {
                       failImage(placeholderIds[i], 'Failed to save image to disk')
                     }
@@ -177,7 +196,7 @@ export function useImageGeneration() {
         }
       })()
     },
-    [apiKey, useImageUrls, addPlaceholder, updateStatus, completeImage, failImage]
+    [apiKey, useImageUrls, addPlaceholder, updateStatus, completeImage, failImage, updateResolution]
   )
 
   return { generate }

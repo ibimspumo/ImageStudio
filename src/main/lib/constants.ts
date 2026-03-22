@@ -22,3 +22,6 @@ export const DEFAULT_MODEL = 'google/gemini-3-pro-image-preview'
 export const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '2:3', '3:2', '5:4', '4:5', '21:9'] as const
 export const RESOLUTIONS = ['1K', '2K', '4K'] as const
 export const MAX_IMAGE_COUNT = 4
+
+/** Models that support negative_prompt parameter */
+export const NEGATIVE_PROMPT_MODELS = new Set(['flux', 'seedream'])

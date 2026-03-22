@@ -7,7 +7,8 @@ import {
   AlertCircle,
   Clock,
   Link2,
-  Cpu
+  Cpu,
+  MinusCircle
 } from 'lucide-react'
 import { useChatStore, type ChatMessage } from '../../stores/chat-store'
 import { toDisplayUrl } from '../../stores/gallery-store'
@@ -135,6 +136,8 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
   const [resolution, setResolution] = useState<Resolution>('2K')
   const [selectedModels, setSelectedModels] = useState<string[]>([initialModel || 'google/gemini-3-pro-image-preview'])
   const [imageRefs, setImageRefs] = useState<Array<{ id: string; base64: string }>>([])
+  const [negativePrompt, setNegativePrompt] = useState('')
+  const [showNegativePrompt, setShowNegativePrompt] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -188,7 +191,8 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
       resolution,
       model: selectedModels[0],
       extraAttachments: extraAttachments.length > 0 ? extraAttachments : undefined,
-      extraLabeledAttachments: extraLabeledAttachments.length > 0 ? extraLabeledAttachments : undefined
+      extraLabeledAttachments: extraLabeledAttachments.length > 0 ? extraLabeledAttachments : undefined,
+      negativePrompt: negativePrompt || undefined
     })
 
     // Clear editor and refs
@@ -196,7 +200,7 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
       editorRef.current.textContent = ''
     }
     setImageRefs([])
-  }, [getPromptText, apiKey, chat, imageRefs, generate, aspectRatio, customRatio, resolution, selectedModels])
+  }, [getPromptText, apiKey, chat, imageRefs, generate, aspectRatio, customRatio, resolution, selectedModels, negativePrompt])
 
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -352,6 +356,18 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
               />
             </div>
 
+            {showNegativePrompt && (
+              <div className="px-5 pb-2">
+                <textarea
+                  value={negativePrompt}
+                  onChange={(e) => setNegativePrompt(e.target.value)}
+                  placeholder="Negative prompt — what to avoid..."
+                  className="w-full min-h-[32px] max-h-[60px] bg-surface-3 border border-border-dim rounded-lg px-3 py-2 text-[12px] text-text-secondary leading-relaxed outline-none resize-none placeholder:text-text-muted/50 focus:border-border-base transition-colors"
+                  rows={1}
+                />
+              </div>
+            )}
+
             {/* Controls row */}
             <div className="flex items-center gap-1.5 px-4 pb-4">
               <button
@@ -376,6 +392,20 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
               <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} customRatio={customRatio} onCustomRatioChange={setCustomRatio} />
               <div className="w-px h-4 bg-border-dim mx-0.5" />
               <ResolutionSelector value={resolution} onChange={setResolution} />
+
+              <div className="w-px h-4 bg-border-dim mx-0.5" />
+              <button
+                onClick={() => setShowNegativePrompt(!showNegativePrompt)}
+                className={cn(
+                  'no-drag flex items-center justify-center h-8 w-8 rounded-lg border transition-all',
+                  showNegativePrompt
+                    ? 'bg-accent-dim border-accent-main/30 text-accent-main'
+                    : 'bg-surface-3 hover:bg-surface-4 border-border-base text-text-secondary hover:text-text-primary'
+                )}
+                title="Negative prompt"
+              >
+                <MinusCircle className="w-3.5 h-3.5" />
+              </button>
 
               <div className="flex-1" />
 

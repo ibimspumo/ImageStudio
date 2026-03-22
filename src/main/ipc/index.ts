@@ -6,6 +6,7 @@ import { registerImageGenerationHandlers } from './image-generation'
 import { registerFileOperationHandlers } from './file-operations'
 import { loadHistory, saveSession, deleteSession } from '../services/image-store'
 import { uploadImagesToUrls } from '../services/image-upload'
+import { enhancePrompt } from '../services/openrouter'
 
 /** Valid settings keys — rejects unknown keys from renderer */
 const VALID_SETTINGS_KEYS = new Set([
@@ -15,6 +16,7 @@ const VALID_SETTINGS_KEYS = new Set([
   'defaultResolution',
   'defaultImageCount',
   'useImageUrls',
+  'promptEnhancerModel',
 ])
 
 interface AppSettings {
@@ -24,6 +26,7 @@ interface AppSettings {
   defaultResolution: string
   defaultImageCount: number
   useImageUrls: boolean
+  promptEnhancerModel: string
 }
 
 const DEFAULTS: AppSettings = {
@@ -33,6 +36,7 @@ const DEFAULTS: AppSettings = {
   defaultResolution: '2K',
   defaultImageCount: 1,
   useImageUrls: false,
+  promptEnhancerModel: 'google/gemini-2.0-flash-001',
 }
 
 function getSettingsPath(): string {
@@ -53,6 +57,7 @@ function loadSettings(): AppSettings {
       defaultResolution: typeof raw.defaultResolution === 'string' ? raw.defaultResolution : DEFAULTS.defaultResolution,
       defaultImageCount: typeof raw.defaultImageCount === 'number' ? raw.defaultImageCount : DEFAULTS.defaultImageCount,
       useImageUrls: typeof raw.useImageUrls === 'boolean' ? raw.useImageUrls : DEFAULTS.useImageUrls,
+      promptEnhancerModel: typeof raw.promptEnhancerModel === 'string' ? raw.promptEnhancerModel : DEFAULTS.promptEnhancerModel,
     }
   } catch {
     console.error('[Settings] Failed to parse settings file, using defaults')
@@ -121,6 +126,16 @@ export function registerAllHandlers(): void {
       return { success: true }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Failed to delete' }
+    }
+  })
+
+  // C8: Prompt enhancer
+  ipcMain.handle('prompt:enhance', async (_event, request: { prompt: string; apiKey: string; model?: string }) => {
+    try {
+      const result = await enhancePrompt(request)
+      return { success: true, enhanced: result.enhanced, error: result.error }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Enhancement failed' }
     }
   })
 }

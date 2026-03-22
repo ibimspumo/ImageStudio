@@ -1,5 +1,5 @@
 import { useState, memo } from 'react'
-import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop } from 'lucide-react'
+import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop, Star } from 'lucide-react'
 import { useGalleryStore, type GalleryImage, toDisplayUrl } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { cn } from '../../lib/utils'
@@ -14,6 +14,7 @@ interface GalleryCardProps {
 
 export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartChat, onCropImage }: GalleryCardProps) {
   const removeImage = useGalleryStore((s) => s.removeImage)
+  const toggleFavorite = useGalleryStore((s) => s.toggleFavorite)
   const moveToWorkspace = useGalleryStore((s) => s.moveToWorkspace)
   const workspaces = useWorkspaceStore((s) => s.workspaces)
   const [showMoveMenu, setShowMoveMenu] = useState(false)
@@ -122,6 +123,17 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
       )}
 
       <button
+        onClick={(e) => { e.stopPropagation(); toggleFavorite(image.id) }}
+        className={cn(
+          'btn-interactive absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors',
+          image.isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        )}
+        title="Favorite"
+      >
+        <Star className={cn('w-3.5 h-3.5', image.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-white')} />
+      </button>
+
+      <button
         onClick={handleDelete}
         className="btn-interactive absolute top-2 right-2 z-10 p-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/5 hover:bg-danger/80 transition-colors opacity-0 group-hover:opacity-100"
         title="Delete"
@@ -130,7 +142,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
       </button>
 
       <div className="img-overlay absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 transition-opacity duration-200 flex items-end p-3">
-        <div className="flex items-center gap-1.5 w-full">
+        <div className="flex items-center gap-1.5 w-full flex-wrap">
           <button onClick={handleSave} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Save">
             <Download className="w-3.5 h-3.5 text-white" />
           </button>

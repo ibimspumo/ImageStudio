@@ -9,6 +9,8 @@ export interface ElectronAPI {
     requestId: string
     attachments?: string[]
     labeledAttachments?: { label: string; images: string[] }[]
+    negativePrompt?: string
+    seed?: number
   }): Promise<{
     success: boolean
     results?: Array<{
@@ -42,6 +44,9 @@ export interface ElectronAPI {
   readImage(filePath: string): Promise<{ success: boolean; base64DataUrl?: string; error?: string }>
   deleteImage(filePath: string): Promise<{ success: boolean; error?: string }>
   migrate(): Promise<{ success: boolean; error?: string }>
+
+  enhancePrompt(request: { prompt: string; apiKey: string; model?: string }): Promise<{ success: boolean; enhanced?: string; error?: string }>
+  exportImageWithMetadata(base64DataUrl: string, defaultName: string, metadata?: Record<string, string>): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>
 }
 
 declare global {
