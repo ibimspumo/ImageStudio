@@ -19,9 +19,10 @@ interface MainContentProps {
   onPresetsManage?: () => void
   onQueueClick?: () => void
   queuePendingCount?: number
+  onCanvasClick?: () => void
 }
 
-export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage, onPresetsManage, onQueueClick, queuePendingCount }: MainContentProps) {
+export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage, onPresetsManage, onQueueClick, queuePendingCount, onCanvasClick }: MainContentProps) {
   const allImages = useGalleryStore((s) => s.images)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   const searchQuery = useGalleryFilterStore((s) => s.searchQuery)
@@ -174,6 +175,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
         onPresetsManage={onPresetsManage}
         onQueueClick={onQueueClick}
         queuePendingCount={queuePendingCount}
+        onCanvasClick={onCanvasClick}
       />
     </main>
   )

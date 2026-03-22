@@ -21,6 +21,8 @@ import { ShortcutsHelp } from './components/shared/ShortcutsHelp'
 import { ImageCompare } from './components/shared/ImageCompare'
 import { InpaintModal } from './components/shared/InpaintModal'
 import { QueuePanel } from './components/queue/QueuePanel'
+import { CanvasModal } from './components/canvas/CanvasModal'
+import { useCanvasStore } from './stores/canvas-store'
 
 interface ViewerState {
   images: GalleryImage[]
@@ -53,6 +55,8 @@ export default function App() {
   const [showQueue, setShowQueue] = useState(false)
   const [compareState, setCompareState] = useState<[GalleryImage, GalleryImage] | null>(null)
   const [inpaintState, setInpaintState] = useState<GalleryImage | null>(null)
+  const showCanvas = useCanvasStore((s) => s.isOpen)
+  const openCanvas = useCanvasStore((s) => s.open)
 
   const startChat = useChatStore((s) => s.startChat)
   const addPendingRef = useCropStore((s) => s.addPendingRef)
@@ -143,6 +147,19 @@ export default function App() {
       parent = allImgs.find(i => i.filePath === image.attachments![0] && i.id !== image.id)
     }
 
+    // Canvas sketch: create a pseudo gallery image for comparison
+    if (!parent && image.canvasSketchPath) {
+      parent = {
+        id: `canvas-sketch-${image.id}`,
+        filePath: image.canvasSketchPath,
+        prompt: 'Canvas Sketch',
+        aspectRatio: image.aspectRatio,
+        resolution: image.resolution,
+        timestamp: image.timestamp,
+        model: 'sketch',
+      }
+    }
+
     if (parent) {
       setCompareState([parent, image])
       setViewerState(null)
@@ -177,6 +194,7 @@ export default function App() {
           onPresetsManage={() => setShowPresets(true)}
           onQueueClick={() => setShowQueue(true)}
           queuePendingCount={queuePendingCount}
+          onCanvasClick={openCanvas}
         />
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
         {showCollections && <CollectionsDialog onClose={() => setShowCollections(false)} />}
@@ -237,6 +255,7 @@ export default function App() {
         {showQueue && (
           <QueuePanel onClose={() => setShowQueue(false)} />
         )}
+        {showCanvas && <CanvasModal />}
       </div>
     </div>
     </ErrorBoundary>

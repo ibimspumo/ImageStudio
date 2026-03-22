@@ -6,6 +6,7 @@ import { useCollectionsStore, type AssetCollection } from '../../stores/collecti
 import type { AspectRatio, Resolution, ImageRef } from '../../types/api'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
+import { nanoid } from 'nanoid'
 import { prepareCollectionImages, compressImage } from '../../lib/image-utils'
 import { useCropStore } from '../../stores/crop-store'
 import { toDisplayUrl } from '../../stores/gallery-store'
@@ -22,6 +23,11 @@ export interface InpaintContext {
   onClose: () => void
 }
 
+export interface CanvasContext {
+  getCanvasBase64: () => string | null
+  onClose: () => void
+}
+
 interface PromptBarProps {
   onSettingsClick?: () => void
   onCollectionsClick?: () => void
@@ -29,10 +35,12 @@ interface PromptBarProps {
   onQueueClick?: () => void
   queuePendingCount?: number
   inpaintContext?: InpaintContext
+  canvasContext?: CanvasContext
   initialModels?: string[]
+  onCanvasClick?: () => void
 }
 
-export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, queuePendingCount, inpaintContext, initialModels }: PromptBarProps = {}) {
+export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, queuePendingCount, inpaintContext, canvasContext, initialModels, onCanvasClick }: PromptBarProps = {}) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
   const [customRatio, setCustomRatio] = useState<string>('4:3')
   const [resolution, setResolution] = useState<Resolution>('2K')
@@ -375,6 +383,32 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       }
     }
 
+    // Inject canvas context if present
+    let canvasSketchPath: string | undefined
+    if (canvasContext) {
+      const canvasBase64 = canvasContext.getCanvasBase64()
+      if (!canvasBase64) return // empty canvas
+
+      try {
+        const compressedCanvas = await compressImage(canvasBase64, 2048, 0.85)
+
+        // Save sketch to disk for compare functionality
+        const sketchFilename = `canvas-sketch-${nanoid()}.png`
+        const saveResult = await window.api.saveImage(canvasBase64, sketchFilename)
+        if (saveResult.success && saveResult.filePath) {
+          canvasSketchPath = saveResult.filePath
+        }
+
+        attachments.unshift(compressedCanvas)
+        labeledAttachments.unshift(
+          { label: 'Reference sketch drawn by the user — generate a detailed image based on this sketch, following its composition, layout, and color placement', images: [compressedCanvas] },
+        )
+      } catch (err) {
+        console.error('Failed to prepare canvas image', err)
+        return
+      }
+    }
+
     // Apply active preset suffix
     const activePreset = activePresetId ? presets.find(p => p.id === activePresetId) : null
     const finalPrompt = activePreset ? `${text}, ${activePreset.suffix}` : text
@@ -389,9 +423,18 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       apiPromptText = `Edit this image. The green-highlighted region should be replaced with: ${finalPrompt}. Keep everything outside the green highlight exactly the same — same composition, lighting, colors, and details.${refNote} Original description of the source image: "${inpaintContext.sourcePrompt}"`
     }
 
+    // Build separate API prompt for canvas mode
+    if (canvasContext) {
+      const hasUserRefs = imageRefs.length > 0 || collectionRefs.length > 0
+      const refNote = hasUserRefs
+        ? ' The user has also attached additional reference images — use them as visual guidance.'
+        : ''
+      apiPromptText = `Generate an image based on the attached sketch. The sketch shows the composition, shapes, and color layout. Create a detailed, high-quality image that matches the sketch's layout: ${finalPrompt}${refNote}`
+    }
+
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
     generate({
-      prompt: inpaintContext ? `Inpaint: ${text}` : finalPrompt,
+      prompt: inpaintContext ? `Inpaint: ${text}` : canvasContext ? `Canvas: ${text}` : finalPrompt,
       apiPrompt: apiPromptText || undefined,
       aspectRatio: resolvedAspectRatio,
       resolution,
@@ -402,13 +445,19 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       negativePrompt: negativePrompt || undefined,
       seed,
       inpaintSourceId: inpaintContext?.imageId,
+      canvasSketchPath,
     })
 
     // Close inpaint modal after generating
     if (inpaintContext) {
       inpaintContext.onClose()
     }
-  }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, negativePrompt, seed, activePresetId, presets, inpaintContext])
+
+    // Close canvas modal after generating
+    if (canvasContext) {
+      canvasContext.onClose()
+    }
+  }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, negativePrompt, seed, activePresetId, presets, inpaintContext, canvasContext])
 
   // ── Mention items ─────────────────────────────────────────────────
 
@@ -587,9 +636,11 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   const hasContent = promptText || imageRefs.length > 0 || collectionRefs.length > 0
   const canSend = !!promptText && !!apiKey
   const isInpaintMode = !!inpaintContext
+  const isCanvasMode = !!canvasContext
+  const isEmbeddedMode = isInpaintMode || isCanvasMode
 
   return (
-    <div className={cn("shrink-0 flex flex-col items-center", isInpaintMode ? "px-6 pb-4 pt-3" : "px-6 pb-6 pt-3")}>
+    <div className={cn("shrink-0 flex flex-col items-center", isEmbeddedMode ? "px-6 pb-4 pt-3" : "px-6 pb-6 pt-3")}>
       <div className="w-full max-w-[800px] relative">
         <div
           className={cn(
@@ -642,7 +693,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
               suppressContentEditableWarning
               onInput={handleEditorInput}
               onKeyDown={handleEditorKeyDown}
-              data-placeholder={isInpaintMode ? "Describe what should appear in the masked area..." : "Describe your image..."}
+              data-placeholder={isInpaintMode ? "Describe what should appear in the masked area..." : isCanvasMode ? "Describe what to generate from your sketch..." : "Describe your image..."}
               className="prompt-editor flex-1 min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none pt-1"
             />
             <button
@@ -703,22 +754,23 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
             hasContent={!!hasContent}
             onSubmit={handleSubmit}
             onClear={clearPrompt}
-            onSettingsClick={isInpaintMode ? undefined : onSettingsClick}
-            onCollectionsClick={isInpaintMode ? undefined : onCollectionsClick}
+            onSettingsClick={isEmbeddedMode ? undefined : onSettingsClick}
+            onCollectionsClick={isEmbeddedMode ? undefined : onCollectionsClick}
             negativePromptActive={showNegativePrompt}
             onNegativePromptToggle={() => setShowNegativePrompt(!showNegativePrompt)}
             seed={seed}
             onSeedChange={setSeed}
             activePresetId={activePresetId}
             onPresetChange={setActivePresetId}
-            onPresetsManage={isInpaintMode ? undefined : onPresetsManage}
-            onQueueClick={isInpaintMode ? undefined : onQueueClick}
-            queuePendingCount={isInpaintMode ? undefined : queuePendingCount}
+            onPresetsManage={isEmbeddedMode ? undefined : onPresetsManage}
+            onQueueClick={isEmbeddedMode ? undefined : onQueueClick}
+            queuePendingCount={isEmbeddedMode ? undefined : queuePendingCount}
+            onCanvasClick={isEmbeddedMode ? undefined : onCanvasClick}
           />
         </div>
 
-        {/* Hint - only show when not in inpaint mode */}
-        {!isInpaintMode && (
+        {/* Hint - only show when not in embedded mode */}
+        {!isEmbeddedMode && (
           <div className="flex justify-center mt-2.5">
             <p className="text-[11px] text-text-muted/70">
               {!apiKey ? (

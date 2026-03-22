@@ -100,6 +100,7 @@ export function ImageViewer({
   // Check if this image has a parent (was derived from another via upscale, zoom out, inpaint, etc.)
   const hasParentImage = image ? !!(
     image.inpaintSourceId ||
+    image.canvasSketchPath ||
     (image.attachments?.length && allImages.some(i => i.filePath === image.attachments![0] && i.id !== image.id))
   ) : false
 

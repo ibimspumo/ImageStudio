@@ -26,6 +26,7 @@ export interface GalleryImage {
   seed?: number                 // A3: seed control
   tags?: string[]               // A4: tags
   inpaintSourceId?: string      // D12: inpainting source
+  canvasSketchPath?: string     // file path of the canvas sketch used to generate this image
 }
 
 /** Convert a file path to a displayable URL (handles spaces and special chars) */
@@ -40,7 +41,7 @@ export function toDisplayUrl(filePath: string): string {
 
 interface GalleryStore {
   images: GalleryImage[]
-  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string }) => string
+  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string; canvasSketchPath?: string }) => string
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
   updateStatus: (id: string, statusText: string | undefined) => void
   failImage: (id: string, error: string) => void
@@ -79,6 +80,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           negativePrompt: extra?.negativePrompt,
           seed: extra?.seed,
           inpaintSourceId: extra?.inpaintSourceId,
+          canvasSketchPath: extra?.canvasSketchPath,
         },
         ...state.images,
       ],

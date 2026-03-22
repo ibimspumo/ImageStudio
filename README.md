@@ -178,6 +178,55 @@ Choose which AI model to use for upscaling via the dropdown (defaults to Nano Ba
 
 ---
 
+## Canvas Generation
+
+Click the **palette icon** in the prompt bar to open the full-screen Canvas editor. Paint a color-coded sketch using multi-layer drawing tools, then let AI turn it into a detailed image.
+
+### Drawing Tools
+
+- **Brush** — freehand drawing with adjustable size and color
+- **Eraser** — remove strokes from the active layer
+- **Shapes** — rectangle, circle, and line tools with optional fill
+- **Color Picker** — 24-color palette + custom hex input
+- **Layers** — up to 8 layers with visibility toggle, opacity slider, and drag-to-reorder
+- **Undo/Redo** — up to 30 steps of history (⌘Z / ⌘⇧Z)
+- **Aspect Ratio** — choose canvas dimensions before you start
+
+### Simple Mode
+
+Write a text prompt at the bottom and generate. Your sketch is automatically attached as a reference — the AI follows your composition, shapes, and color layout.
+
+### Expert Mode
+
+For precise control, switch to Expert mode. An intelligent panel on the right lets you:
+
+- **Detect Colors** — automatically find all unique colors on your canvas
+- **Describe each color** — a text field per color to explain what that region represents (e.g. "#FF0000 = red sports car")
+- **Attach references** — add images or @-mention collections per color field for visual guidance
+- **General description** — overall scene prompt that applies to the whole image
+- **Model/Resolution/Count** — full control over generation parameters
+
+All color descriptions are assembled into a structured prompt. Collections are deduplicated across fields — even if you mention the same collection in multiple color descriptions, it's only sent once.
+
+### Compare with Sketch
+
+Canvas-generated images support the **Compare with Original** feature. Your sketch is saved to disk automatically, so you can use the slider or side-by-side view to see your original sketch next to the AI result.
+
+### Keyboard Shortcuts (Canvas)
+
+| Shortcut | Action |
+|---|---|
+| `B` | Brush tool |
+| `E` | Eraser tool |
+| `R` | Rectangle tool |
+| `C` | Circle tool |
+| `L` | Line tool |
+| `⌘ Z` | Undo |
+| `⌘ ⇧ Z` | Redo |
+| `Escape` | Close canvas |
+
+---
+
 ## Inpainting
 
 Select any image in the lightbox and click **Inpaint** to open the mask editor. Paint over the area you want to change, then describe what should appear there using the full prompt bar at the bottom.
@@ -192,11 +241,12 @@ Select any image in the lightbox and click **Inpaint** to open the mask editor. 
 
 ## Image Comparison
 
-Compare an image with its original version using the **Compare with Original** button in the lightbox. Available for any image that was derived from another (via upscale, zoom out, inpaint, or chat).
+Compare an image with its original version using the **Compare with Original** button in the lightbox. Available for any image that was derived from another (via upscale, zoom out, inpaint, canvas generation, or chat).
 
 - **Slider mode** — both images overlaid with a draggable vertical divider
 - **Side-by-side mode** — 50/50 split view with model and resolution labels
 - Resolution-independent — images are displayed at the same visual size regardless of pixel dimensions
+- **Canvas sketches** — compare your hand-drawn sketch with the AI-generated result
 
 ---
 
@@ -312,7 +362,7 @@ The info panel includes:
 - **Start Chat / Continue Chat** — open an editing conversation from this image
 - **Crop as Reference** — select a region of the image to use as reference
 - **Inpaint** — open the mask editor to selectively edit parts of the image
-- **Compare with Original** — slider/side-by-side comparison with the source image (available for upscaled, zoomed, inpainted, or chat-edited images)
+- **Compare with Original** — slider/side-by-side comparison with the source image (available for upscaled, zoomed, inpainted, canvas-generated, or chat-edited images)
 - **Zoom Out** — extend the image outward by 1.5x, 2x, 3x, or 4x using AI
 - **Copy** — copy the image to your clipboard
 - **Save** — quick export as PNG (with embedded metadata), or click the dropdown arrow to choose format and quality
@@ -359,7 +409,7 @@ Press **?** anywhere (outside a text input) to see the full shortcuts help overl
 | `⌘ C` | Copy image (in lightbox) |
 | `Delete` | Delete image (in lightbox) |
 | `←` `→` | Navigate images in lightbox |
-| `⌘ Z` | Undo brush stroke (in inpaint) |
+| `⌘ Z` | Undo brush stroke (in inpaint/canvas) |
 | `1`–`4` | Open image 1–4 in gallery |
 | `Escape` | Close topmost modal/dialog |
 | `?` | Show shortcuts help |
@@ -391,6 +441,7 @@ src/
     ├── components/
     │   ├── input/        # PromptBar, ControlsRow, selectors, SeedInput, PresetSelector
     │   ├── gallery/      # Grid layout, cards, GalleryToolbar, SmartAlbumBar
+    │   ├── canvas/       # Canvas editor: modal, workspace, toolbar, layers, color picker, expert mode
     │   ├── chat/         # Image chat modal
     │   ├── workspace/    # Workspace tabs and management
     │   ├── collections/  # Asset collection manager
@@ -398,8 +449,8 @@ src/
     │   ├── queue/        # Batch queue panel
     │   ├── tags/         # Tag input with autocomplete
     │   └── shared/       # Lightbox, CropModal, InpaintModal, ImageCompare, ExportPopover, ShortcutsHelp, Settings
-    ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop, presets, queue, gallery-filter)
-    ├── hooks/            # useImageGeneration, useChatGeneration, useKeyboardShortcuts
+    ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop, presets, queue, canvas, gallery-filter)
+    ├── hooks/            # useImageGeneration, useChatGeneration, useCanvasRenderer, useKeyboardShortcuts
     ├── types/            # API types, model definitions, shared interfaces
     └── lib/              # Utils, image compression, date-utils, debounce, logger
 ```

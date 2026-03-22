@@ -1,4 +1,4 @@
-import { Send, XCircle, Settings, MinusCircle } from 'lucide-react'
+import { Send, XCircle, Settings, MinusCircle, Palette } from 'lucide-react'
 import { AspectRatioSelector } from './AspectRatioSelector'
 import { ResolutionSelector } from './ResolutionSelector'
 import { ImageCountSelector } from './ImageCountSelector'
@@ -35,6 +35,7 @@ interface ControlsRowProps {
   onPresetsManage?: () => void
   onQueueClick?: () => void
   queuePendingCount?: number
+  onCanvasClick?: () => void
 }
 
 export function ControlsRow({
@@ -63,6 +64,7 @@ export function ControlsRow({
   onPresetsManage,
   onQueueClick,
   queuePendingCount = 0,
+  onCanvasClick,
 }: ControlsRowProps) {
   return (
     <div className="flex items-center gap-1 px-4 py-3">
@@ -107,6 +109,15 @@ export function ControlsRow({
           title="Collections (@)"
         >
           @
+        </button>
+      )}
+      {onCanvasClick && (
+        <button
+          onClick={onCanvasClick}
+          className="no-drag flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
+          title="Canvas — sketch to generate"
+        >
+          <Palette className="w-3.5 h-3.5" />
         </button>
       )}
       {onSettingsClick && (

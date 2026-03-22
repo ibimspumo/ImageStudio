@@ -17,6 +17,7 @@ interface GenerateOptions {
   negativePrompt?: string
   seed?: number
   inpaintSourceId?: string  // links generated image to inpaint source
+  canvasSketchPath?: string // file path of canvas sketch for compare
 }
 
 /**
@@ -102,7 +103,7 @@ export function useImageGeneration() {
       for (const model of models) {
         const ids: string[] = []
         for (let i = 0; i < options.imageCount; i++) {
-          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments, activeWorkspaceId, { negativePrompt: options.negativePrompt, seed: options.seed, inpaintSourceId: options.inpaintSourceId })
+          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments, activeWorkspaceId, { negativePrompt: options.negativePrompt, seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath })
           ids.push(id)
           allPlaceholderIds.push(id)
         }
