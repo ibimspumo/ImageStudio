@@ -32,10 +32,28 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   const sortBy = useGalleryFilterStore((s) => s.sortBy)
   const favoritesOnly = useGalleryFilterStore((s) => s.favoritesOnly)
   const filterTags = useGalleryFilterStore((s) => s.filterTags)
+  const activeSmartAlbum = useGalleryFilterStore((s) => s.activeSmartAlbum)
   const clearFilters = useGalleryFilterStore((s) => s.clearFilters)
 
   const images = useMemo(() => {
     let filtered = activeWorkspaceId === null ? allImages : allImages.filter((img) => img.workspaceId === activeWorkspaceId)
+
+    // Smart album filter (takes priority — these are predefined filter shortcuts)
+    if (activeSmartAlbum) {
+      if (activeSmartAlbum === 'favorites') {
+        filtered = filtered.filter((img) => img.isFavorite)
+      } else if (activeSmartAlbum === 'today') {
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+        filtered = filtered.filter((img) => img.timestamp >= todayStart.getTime())
+      } else if (activeSmartAlbum.startsWith('model:')) {
+        const model = activeSmartAlbum.slice(6)
+        filtered = filtered.filter((img) => img.model === model)
+      } else if (activeSmartAlbum.startsWith('tag:')) {
+        const tag = activeSmartAlbum.slice(4)
+        filtered = filtered.filter((img) => img.tags?.includes(tag))
+      }
+    }
 
     // Search query (case-insensitive on prompt + tags)
     if (searchQuery) {
@@ -85,9 +103,9 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
     // default 'newest' is already the store order (newest first)
 
     return filtered
-  }, [allImages, activeWorkspaceId, searchQuery, filterModels, filterAspectRatios, filterDateRange, sortBy, favoritesOnly, filterTags])
+  }, [allImages, activeWorkspaceId, activeSmartAlbum, searchQuery, filterModels, filterAspectRatios, filterDateRange, sortBy, favoritesOnly, filterTags])
 
-  const hasActiveFilters = searchQuery || filterModels.length > 0 || filterAspectRatios.length > 0 || filterDateRange || favoritesOnly || filterTags.length > 0
+  const hasActiveFilters = searchQuery || filterModels.length > 0 || filterAspectRatios.length > 0 || filterDateRange || favoritesOnly || filterTags.length > 0 || activeSmartAlbum
 
   // Collect all tags for toolbar autocomplete
   const allTags = useMemo(() => {
