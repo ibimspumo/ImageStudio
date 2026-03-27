@@ -30,7 +30,7 @@
         { "target": "dmg", "arch": ["arm64"] },
         { "target": "zip", "arch": ["arm64"] }
       ],
-      "icon": "resources/icon.icns",
+      "icon": "resources/icon.png",
       "category": "public.app-category.graphics-design",
       "identity": null,
       "artifactName": "${productName}-${version}-${arch}.${ext}"
@@ -45,9 +45,7 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "resources/icon.ico",
-      "uninstallerIcon": "resources/icon.ico"
+      "allowToChangeInstallationDirectory": true
     },
     "dmg": {
       "contents": [
