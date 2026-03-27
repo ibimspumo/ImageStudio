@@ -92,7 +92,9 @@ export function ImageViewer({
   const chats = useChatStore((s) => s.chats)
   const apiKey = useSettingsStore((s) => s.apiKey)
   const useImageUrls = useSettingsStore((s) => s.useImageUrls)
-  const image = images[currentIndex]
+  const snapshotImage = images[currentIndex]
+  // Read live image from store so toggleFavorite/updateTags reflect immediately
+  const image = allImages.find((img) => img.id === snapshotImage?.id) ?? snapshotImage
   const displayUrl = image ? toDisplayUrl(image.filePath) : undefined
 
   const linkedChat = image?.chatId ? chats.find((c) => c.id === image.chatId) : null
