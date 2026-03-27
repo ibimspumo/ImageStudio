@@ -8,7 +8,23 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            artifact-name: ImageStudio-macOS
+            artifact-glob: |
+              dist/*.dmg
+              dist/*.zip
+          - os: windows-latest
+            platform: win
+            artifact-name: ImageStudio-Windows
+            artifact-glob: |
+              dist/*.exe
+              dist/*.zip
+
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
 
@@ -28,37 +44,55 @@ jobs:
       - name: Build app
         run: npx electron-vite build
 
-      - name: Package for macOS (unsigned)
+      - name: Package (unsigned)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder --mac --publish never
+        run: npx electron-builder --${{ matrix.platform }} --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-glob }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
           name: ImageStudio-macOS
-          path: |
-            dist/*.dmg
-            dist/*.zip
+          path: artifacts/
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ImageStudio-Windows
+          path: artifacts/
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.dmg
-            dist/*.zip
+          files: artifacts/*
           generate_release_notes: true
           body: |
-            ## Installation (macOS)
+            ## Download
 
-            1. Download the `.dmg` file below
-            2. Open it and drag **ImageStudio** to your Applications folder
-            3. **Important:** The app is unsigned (no Apple Developer certificate). Before opening it for the first time, run this in Terminal:
+            | Platform | File |
+            |---|---|
+            | **Windows** | `.exe` installer or `.zip` portable |
+            | **macOS** | `.dmg` disk image or `.zip` |
 
+            ### macOS note
+            The app is unsigned. Before opening it for the first time, run:
             ```bash
             xattr -r -d com.apple.quarantine /Applications/ImageStudio.app
             ```
 
-            4. Now open ImageStudio from your Applications folder
-            5. Paste your [OpenRouter API key](https://openrouter.ai/keys) in Settings and start generating
+            ### Windows note
+            Windows SmartScreen may show a warning on first launch. Click **"More info"** → **"Run anyway"**.

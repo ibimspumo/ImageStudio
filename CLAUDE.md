@@ -9,6 +9,8 @@ When architecture changes, update the tree below.
 ```bash
 npm run dev                # Dev with hot reload
 npm run build              # Production build
+npm run build:mac          # Package for macOS (.dmg)
+npm run build:win          # Package for Windows (.exe)
 npx electron-vite build    # Build check only (no Electron)
 ```
 

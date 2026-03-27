@@ -4,13 +4,17 @@ import { registerAllHandlers } from './ipc'
 import { ensureDirectories } from './services/image-store'
 
 function createWindow(): void {
+  const isMac = process.platform === 'darwin'
+
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
     minHeight: 700,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 14 },
+    ...(isMac
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 14 } }
+      : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#09090b', symbolColor: '#a1a1aa', height: 48 } }
+    ),
     icon: join(__dirname, '../../resources/icon.png'),
     backgroundColor: '#09090b',
     show: false,

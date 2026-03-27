@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue" />
-  <img src="https://img.shields.io/badge/platform-macOS-lightgrey" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey" />
   <img src="https://img.shields.io/badge/electron-41-47848F?logo=electron&logoColor=white" />
 </p>
 
@@ -23,7 +23,7 @@
 
 ## What is ImageStudio?
 
-ImageStudio is a native macOS app that lets you generate images using the best AI models — all through a single, polished interface. No browser tabs, no subscriptions, no clutter. Just you, your prompts, and your images.
+ImageStudio is a native desktop app for macOS and Windows that lets you generate images using the best AI models — all through a single, polished interface. No browser tabs, no subscriptions, no clutter. Just you, your prompts, and your images.
 
 You bring your own [OpenRouter](https://openrouter.ai) API key and pay only for what you use. ImageStudio supports multiple models from different providers, so you can compare results side by side.
 
@@ -31,9 +31,14 @@ You bring your own [OpenRouter](https://openrouter.ai) API key and pay only for 
 
 ## Download
 
-Download the latest `.dmg` from the [Releases](https://github.com/ibimspumo/ImageStudio/releases) page.
+Download the latest release for your platform from the [Releases](https://github.com/ibimspumo/ImageStudio/releases) page.
 
-> **Note:** ImageStudio is not signed with an Apple Developer certificate. macOS will block it on first launch. To fix this, open Terminal and run:
+| Platform | File | Notes |
+|---|---|---|
+| **Windows** | `.exe` installer or `.zip` portable | SmartScreen may warn on first launch — click "More info" → "Run anyway" |
+| **macOS** | `.dmg` disk image | Unsigned — see below |
+
+> **macOS note:** ImageStudio is not signed with an Apple Developer certificate. macOS will block it on first launch. To fix this, open Terminal and run:
 >
 > ```bash
 > xattr -r -d com.apple.quarantine /Applications/ImageStudio.app
@@ -48,7 +53,8 @@ git clone https://github.com/ibimspumo/ImageStudio.git
 cd ImageStudio
 npm install
 npm run dev          # Development with hot reload
-npm run build:mac    # Build distributable .dmg
+npm run build:mac    # Build distributable .dmg (macOS)
+npm run build:win    # Build distributable .exe (Windows)
 ```
 
 ---
@@ -76,7 +82,7 @@ In Settings, you can enable **"Send images as URL"**. When active, reference ima
 
 ## Generating Images
 
-Type your prompt into the floating prompt bar at the bottom. It overlays the gallery so your images get maximum screen space. Press **⌘ Enter** to generate.
+Type your prompt into the floating prompt bar at the bottom. It overlays the gallery so your images get maximum screen space. Press **⌘/Ctrl Enter** to generate.
 
 <p align="center">
   <img src="docs/screenshot-prompt.jpg" width="800" alt="Type a prompt and generate" />
@@ -229,8 +235,8 @@ Canvas-generated images support the **Compare with Original** feature. Your sket
 | `R` | Rectangle tool |
 | `C` | Circle tool |
 | `L` | Line tool |
-| `⌘ Z` | Undo |
-| `⌘ ⇧ Z` | Redo |
+| `⌘/Ctrl Z` | Undo |
+| `⌘/Ctrl ⇧ Z` | Redo |
 | `Escape` | Close canvas |
 
 ---
@@ -328,7 +334,7 @@ When exporting images, metadata is embedded directly in the file:
 
 - **PNG** — custom `tEXt` chunks with prompt, model, seed, aspect ratio, resolution, and timestamp
 - Toggle **"Embed metadata"** in the export popover (on by default)
-- Metadata is readable by standard tools like `exiftool` or macOS Get Info
+- Metadata is readable by standard tools like `exiftool` or file property viewers
 
 ---
 
@@ -423,17 +429,17 @@ Press **?** anywhere (outside a text input) to see the full shortcuts help overl
 
 | Shortcut | Action |
 |---|---|
-| `⌘ Enter` | Generate images |
+| `⌘/Ctrl Enter` | Generate images |
 | `@` | Reference images/collections in prompt |
 | `G` | Focus prompt editor |
-| `⌘ F` | Focus search bar |
+| `⌘/Ctrl F` | Focus search bar |
 | `F` | Toggle favorite (in lightbox) |
 | `E` | Export (in lightbox) |
 | `R` | Reuse prompt (in lightbox) |
-| `⌘ C` | Copy image (in lightbox) |
+| `⌘/Ctrl C` | Copy image (in lightbox) |
 | `Delete` | Delete image (in lightbox) |
 | `←` `→` | Navigate images in lightbox |
-| `⌘ Z` | Undo brush stroke (in inpaint/canvas) |
+| `⌘/Ctrl Z` | Undo brush stroke (in inpaint/canvas) |
 | `1`–`4` | Open image 1–4 in gallery |
 | `Escape` | Close topmost modal/dialog |
 | `?` | Show shortcuts help |
@@ -486,11 +492,11 @@ src/
 Releases are built automatically via GitHub Actions when a version tag is pushed:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
-This triggers a build on macOS, packages the app as `.dmg` and `.zip`, and creates a GitHub Release with the artifacts and auto-generated changelog.
+This triggers parallel builds on macOS and Windows, packages the app for both platforms (`.dmg`/`.zip` for macOS, `.exe`/`.zip` for Windows), and creates a GitHub Release with all artifacts and an auto-generated changelog.
 
 ---
 
