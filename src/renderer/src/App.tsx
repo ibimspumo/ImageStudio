@@ -10,7 +10,7 @@ import { useQueueStore } from './stores/queue-store'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { TitleBar } from './components/layout/TitleBar'
-import { MainContent } from './components/layout/MainContent'
+import { MainContent, type AppMode } from './components/layout/MainContent'
 import { SettingsDialog } from './components/shared/SettingsDialog'
 import { ImageViewer } from './components/shared/ImageViewer'
 import { CropModal } from './components/shared/CropModal'
@@ -53,6 +53,8 @@ export default function App() {
   const [showPresets, setShowPresets] = useState(false)
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
   const [showQueue, setShowQueue] = useState(false)
+  const [appMode, setAppMode] = useState<AppMode>('image')
+  const [videoStartFrame, setVideoStartFrame] = useState<{ base64: string; name: string } | null>(null)
   const [compareState, setCompareState] = useState<[GalleryImage, GalleryImage] | null>(null)
   const [inpaintState, setInpaintState] = useState<GalleryImage | null>(null)
   const showCanvas = useCanvasStore((s) => s.isOpen)
@@ -75,11 +77,14 @@ export default function App() {
     })
   }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces, loadPresets, loadQueue])
 
+  const falApiKey = useSettingsStore((s) => s.falApiKey)
+  const hydrated = useSettingsStore((s) => s.hydrated)
+
   useEffect(() => {
-    if (useSettingsStore.getState().hydrated && !apiKey) {
+    if (hydrated && !apiKey && !falApiKey) {
       setShowSettings(true)
     }
-  }, [apiKey])
+  }, [hydrated, apiKey, falApiKey])
 
   const handleImageClick = (images: GalleryImage[], index: number) => {
     setViewerState({ images, index })
@@ -166,6 +171,24 @@ export default function App() {
     }
   }
 
+  const handleGenerateVideo = async (imageId: string) => {
+    const images = useGalleryStore.getState().images
+    const image = images.find((img) => img.id === imageId)
+    if (!image?.filePath) return
+
+    try {
+      const result = await window.api.readImage(image.filePath)
+      if (result.success && result.base64DataUrl) {
+        const name = image.filePath.split(/[/\\]/).pop() || 'image'
+        setVideoStartFrame({ base64: result.base64DataUrl, name })
+        setAppMode('video')
+        setViewerState(null)
+      }
+    } catch {
+      // silently fail
+    }
+  }
+
   const handleCropImage = (imageId: string, filePath: string) => {
     setCropState({ imageId, filePath })
     setViewerState(null)
@@ -195,6 +218,13 @@ export default function App() {
           onQueueClick={() => setShowQueue(true)}
           queuePendingCount={queuePendingCount}
           onCanvasClick={openCanvas}
+          mode={appMode}
+          onModeChange={(m) => {
+            setAppMode(m)
+            if (m === 'image') setVideoStartFrame(null)
+          }}
+          videoStartFrame={videoStartFrame}
+          onGenerateVideo={handleGenerateVideo}
         />
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
         {showCollections && <CollectionsDialog onClose={() => setShowCollections(false)} />}

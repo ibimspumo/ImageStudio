@@ -8,12 +8,13 @@ interface ImageGalleryProps {
   onImageClick: (images: GalleryImage[], index: number) => void
   onStartChat?: (imageId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
+  onGenerateVideo?: (imageId: string) => void
 }
 
 const TARGET_ROW_HEIGHT = 240
 const GAP = 8
 
-export function ImageGallery({ images, onImageClick, onStartChat, onCropImage }: ImageGalleryProps) {
+export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, onGenerateVideo }: ImageGalleryProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
@@ -85,6 +86,7 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage }:
                   onClick={handleCardClick}
                   onStartChat={onStartChat}
                   onCropImage={onCropImage}
+                  onGenerateVideo={onGenerateVideo}
                 />
               </div>
             )

@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { Cpu, Calendar, Star, Hash } from 'lucide-react'
+import { Cpu, Calendar, Star, Hash, Film } from 'lucide-react'
 import { type GalleryImage } from '../../stores/gallery-store'
 import { useGalleryFilterStore } from '../../stores/gallery-filter-store'
-import { getModelName } from '../../types/api'
+import { getModelName, getVideoModelName } from '../../types/api'
 import { cn } from '../../lib/utils'
 
 interface SmartAlbumBarProps {
@@ -49,6 +49,18 @@ export function SmartAlbumBar({ images }: SmartAlbumBarProps) {
       })
     }
 
+    // Videos
+    const videoCount = images.filter((i) => i.type === 'video').length
+    if (videoCount > 0) {
+      result.push({
+        id: 'videos',
+        label: 'Videos',
+        icon: <Film className="w-3 h-3" />,
+        count: videoCount,
+        filter: () => setActiveSmartAlbum('videos'),
+      })
+    }
+
     // By model (top 5 with most images)
     const modelCounts = new Map<string, number>()
     for (const img of images) {
@@ -62,7 +74,7 @@ export function SmartAlbumBar({ images }: SmartAlbumBarProps) {
       if (count >= 2) {
         result.push({
           id: `model:${model}`,
-          label: getModelName(model),
+          label: getModelName(model) !== model ? getModelName(model) : getVideoModelName(model),
           icon: <Cpu className="w-3 h-3" />,
           count,
           filter: () => setActiveSmartAlbum(`model:${model}`),

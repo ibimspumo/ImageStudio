@@ -4,7 +4,9 @@ import { writeFile, mkdir, readdir, readFile, unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 
 function getBasePath(): string {
-  return join(app.getPath('userData'), 'ImageStudio')
+  const base = join(app.getPath('userData'), 'ImageStudio')
+  console.log('[ImageStore] basePath:', base, '| userData:', app.getPath('userData'))
+  return base
 }
 
 function getImagesPath(): string {
@@ -42,10 +44,25 @@ export async function saveImageBuffer(buffer: Buffer, filename: string): Promise
   return filePath
 }
 
+function getVideosPath(): string {
+  return join(getBasePath(), 'videos')
+}
+
+export async function saveVideoFile(buffer: Buffer, filename: string): Promise<string> {
+  const videosDir = getVideosPath()
+  if (!existsSync(videosDir)) {
+    await mkdir(videosDir, { recursive: true })
+  }
+  const filePath = join(videosDir, filename)
+  await writeFile(filePath, buffer)
+  return filePath
+}
+
 export async function loadHistory(): Promise<Array<{ id: string; data: string }>> {
   await ensureDirectories()
   const historyDir = getHistoryPath()
   const files = await readdir(historyDir)
+  console.log('[ImageStore] loadHistory from:', historyDir, '| files:', files)
   const sessions: Array<{ id: string; data: string }> = []
 
   for (const file of files) {
@@ -55,6 +72,7 @@ export async function loadHistory(): Promise<Array<{ id: string; data: string }>
     }
   }
 
+  console.log('[ImageStore] loaded sessions:', sessions.map(s => `${s.id} (${s.data.length} chars)`))
   return sessions
 }
 

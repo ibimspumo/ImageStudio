@@ -1,5 +1,5 @@
-import { useState, memo } from 'react'
-import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop, Star } from 'lucide-react'
+import { useState, useRef, useCallback, memo } from 'react'
+import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop, Star, Play, Film } from 'lucide-react'
 import { useGalleryStore, type GalleryImage, toDisplayUrl } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { cn } from '../../lib/utils'
@@ -10,14 +10,32 @@ interface GalleryCardProps {
   onClick: (imageId: string, filePath: string) => void
   onStartChat?: (imageId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
+  onGenerateVideo?: (imageId: string) => void
 }
 
-export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartChat, onCropImage }: GalleryCardProps) {
+export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartChat, onCropImage, onGenerateVideo }: GalleryCardProps) {
   const removeImage = useGalleryStore((s) => s.removeImage)
   const toggleFavorite = useGalleryStore((s) => s.toggleFavorite)
   const moveToWorkspace = useGalleryStore((s) => s.moveToWorkspace)
   const workspaces = useWorkspaceStore((s) => s.workspaces)
   const [showMoveMenu, setShowMoveMenu] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const isVideo = image.type === 'video'
+
+  const handleMouseEnter = useCallback(() => {
+    if (isVideo && videoRef.current) {
+      videoRef.current.currentTime = 0
+      videoRef.current.play().catch(() => {})
+    }
+  }, [isVideo])
+
+  const handleMouseLeave = useCallback(() => {
+    setShowMoveMenu(false)
+    if (isVideo && videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
+    }
+  }, [isVideo])
 
   if (image.isLoading) {
     return (
@@ -49,11 +67,14 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    // Read base64 from disk for export dialog
     try {
-      const result = await window.api.readImage(image.filePath)
-      if (result.success) {
-        await window.api.exportImage(result.base64DataUrl, `imagestudio-${image.id}.png`)
+      if (isVideo) {
+        await window.api.exportVideo(image.filePath, `imagestudio-${image.id}.mp4`)
+      } else {
+        const result = await window.api.readImage(image.filePath)
+        if (result.success) {
+          await window.api.exportImage(result.base64DataUrl, `imagestudio-${image.id}.png`)
+        }
       }
     } catch (err) { logger.error('GalleryCard', 'Operation failed', err) }
   }
@@ -103,17 +124,48 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
     <div
       className="img-card relative group rounded-2xl overflow-hidden cursor-pointer border border-border-dim/60 animate-fade-up w-full h-full"
       onClick={() => onClick(image.id, image.filePath)}
-      draggable
-      onDragStart={handleDragStart}
-      onMouseLeave={() => setShowMoveMenu(false)}
+      draggable={!isVideo}
+      onDragStart={isVideo ? undefined : handleDragStart}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
-      <img
-        src={displayUrl}
-        alt={image.prompt}
-        className="w-full h-full object-cover block"
-        loading="lazy"
-        draggable={false}
-      />
+      {isVideo ? (
+        <video
+          ref={videoRef}
+          src={displayUrl}
+          className="w-full h-full object-cover block"
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          draggable={false}
+        />
+      ) : (
+        <img
+          src={displayUrl}
+          alt={image.prompt}
+          className="w-full h-full object-cover block"
+          loading="lazy"
+          draggable={false}
+        />
+      )}
+
+      {/* Video overlay: play icon + duration badge */}
+      {isVideo && (
+        <>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border border-white/10">
+              <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+            </div>
+          </div>
+          {image.videoDuration && (
+            <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md flex items-center gap-1 z-[5]">
+              <Film className="w-2.5 h-2.5" />
+              {image.videoDuration}s
+            </div>
+          )}
+        </>
+      )}
 
       {currentWorkspace && (
         <div
@@ -135,7 +187,10 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
       <button
         onClick={handleDelete}
-        className="btn-interactive absolute top-2 right-2 z-10 p-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/5 hover:bg-danger/80 transition-colors opacity-0 group-hover:opacity-100"
+        className={cn(
+          'btn-interactive absolute right-2 z-10 p-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/5 hover:bg-danger/80 transition-colors opacity-0 group-hover:opacity-100',
+          isVideo && image.videoDuration ? 'top-10' : 'top-2'
+        )}
         title="Delete"
       >
         <Trash2 className="w-3.5 h-3.5 text-white" />
@@ -149,7 +204,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
           <button onClick={handleCopy} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Copy">
             <Copy className="w-3.5 h-3.5 text-white" />
           </button>
-          {onStartChat && (
+          {onStartChat && !isVideo && (
             <button
               onClick={(e) => { e.stopPropagation(); onStartChat(image.id) }}
               className="btn-interactive p-2 rounded-lg bg-accent-main/20 backdrop-blur-md border border-accent-main/20 hover:bg-accent-main/30 transition-colors"
@@ -158,13 +213,22 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
               <MessageSquare className="w-3.5 h-3.5 text-accent-bright" />
             </button>
           )}
-          {onCropImage && (
+          {onCropImage && !isVideo && (
             <button
               onClick={(e) => { e.stopPropagation(); onCropImage(image.id, image.filePath) }}
               className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors"
               title="Crop as reference"
             >
               <Crop className="w-3.5 h-3.5 text-white" />
+            </button>
+          )}
+          {onGenerateVideo && !isVideo && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onGenerateVideo(image.id) }}
+              className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors"
+              title="Generate video from this image"
+            >
+              <Film className="w-3.5 h-3.5 text-white" />
             </button>
           )}
           {workspaces.length > 0 && (

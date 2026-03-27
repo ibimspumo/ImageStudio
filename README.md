@@ -5,7 +5,7 @@
 <h1 align="center">ImageStudio</h1>
 
 <p align="center">
-  A beautiful, open-source desktop app for AI image generation.<br/>
+  A beautiful, open-source desktop app for AI image &amp; video generation.<br/>
   Generate, iterate, organize — all in one place.
 </p>
 
@@ -23,9 +23,9 @@
 
 ## What is ImageStudio?
 
-ImageStudio is a native desktop app for macOS and Windows that lets you generate images using the best AI models — all through a single, polished interface. No browser tabs, no subscriptions, no clutter. Just you, your prompts, and your images.
+ImageStudio is a native desktop app for macOS and Windows that lets you generate images and videos using the best AI models — all through a single, polished interface. No browser tabs, no subscriptions, no clutter. Just you, your prompts, and your creations.
 
-You bring your own [OpenRouter](https://openrouter.ai) API key and pay only for what you use. ImageStudio supports multiple models from different providers, so you can compare results side by side.
+You bring your own [OpenRouter](https://openrouter.ai) API key for images and [fal.ai](https://fal.ai) API key for videos, paying only for what you use. ImageStudio supports multiple models from different providers, so you can compare results side by side.
 
 ---
 
@@ -61,7 +61,7 @@ npm run build:win    # Build distributable .exe (Windows)
 
 ## Getting Started
 
-When you first open ImageStudio, a settings dialog appears. Paste your [OpenRouter API key](https://openrouter.ai/keys) and you're ready to go.
+When you first open ImageStudio, a settings dialog appears. Paste your [OpenRouter API key](https://openrouter.ai/keys) for image generation. For video generation, also add your [fal.ai API key](https://fal.ai/dashboard/keys). You're ready to go.
 
 <p align="center">
   <img src="docs/screenshot-settings.jpg" width="500" alt="Settings — paste your OpenRouter API key and see app info" />
@@ -146,6 +146,40 @@ Click the aspect ratio button to choose from 10 presets — each shown as a visu
 
 ---
 
+## Video Generation
+
+ImageStudio supports AI video generation via [fal.ai](https://fal.ai). Switch to video mode using the mode toggle in the top bar, then select a start frame image, write a motion prompt, and generate.
+
+### Video Models
+
+| Model | Provider | Durations | Notes |
+|---|---|---|---|
+| **Seedance 1.5 Pro** | ByteDance | 4–12s | Default. Good quality, affordable |
+| **Kling v3 Standard** | Kuaishou | 5s, 10s | Fast, reliable |
+| **Kling v3 Pro** | Kuaishou | 5s, 10s | Higher quality, supports negative prompts |
+
+### How it works
+
+1. **Add a start frame** — drag an image from the gallery onto the video prompt bar, click +, or use the file picker
+2. **Describe the motion** — write what should happen (camera movement, action, animation)
+3. **Configure** — choose model, duration, resolution, aspect ratio, and audio toggle
+4. **Generate** — press Generate or ⌘/Ctrl Enter
+
+Videos are saved as MP4 files. The gallery shows both images and videos together, filterable via the toolbar. Videos play automatically on hover in the grid view.
+
+### Video in the lightbox
+
+- Full video playback with controls
+- Details panel shows model, duration, estimated cost, and all metadata
+- Save as MP4 directly (no format conversion needed)
+- Image-specific features (chat, crop, inpaint, zoom out) are hidden for videos
+
+### Cost estimates
+
+Live cost estimates are shown in the prompt bar before generating. Costs are calculated from the model's per-second rate and your selected duration. After generation, the estimated cost is saved and displayed in the lightbox details.
+
+---
+
 ## Reference Images & Collections
 
 ### Attach reference images
@@ -171,6 +205,17 @@ Collections with more than 5 images are intelligently composited into grid layou
 ## AI Zoom Out
 
 Want to see what's beyond the edges of an image? In the lightbox, use the **Zoom Out** buttons (1.5x, 2x, 3x, 4x) to extend your image outward. ImageStudio creates a canvas with the original image centered and black borders, then sends both the canvas and the original as references — so the AI knows exactly what to fill. The result appears as a new image in your gallery.
+
+---
+
+## AI Aspect Ratio Change
+
+Change the aspect ratio of any image directly from the lightbox. Select a target ratio from the grid — each button shows a visual preview with the source ratio nested inside the target ratio, so you can see exactly how the image will be extended.
+
+- **9 target ratios** — all standard ratios excluding the current one
+- **Model selector** — defaults to the model that created the image, but switchable
+- **Same resolution** — uses the original image's resolution setting
+- The original image is sent as a reference with the new aspect ratio, and the AI extends the composition naturally
 
 ---
 
@@ -385,9 +430,10 @@ The info panel includes:
 - **Crop as Reference** — select a region of the image to use as reference
 - **Inpaint** — open the mask editor to selectively edit parts of the image
 - **Compare with Original** — slider/side-by-side comparison with the source image (available for upscaled, zoomed, inpainted, canvas-generated, or chat-edited images)
+- **Aspect Ratio Change** — regenerate the image in a different aspect ratio using AI
 - **Zoom Out** — extend the image outward by 1.5x, 2x, 3x, or 4x using AI
 - **Copy** — copy the image to your clipboard
-- **Save** — quick export as PNG (with embedded metadata), or click the dropdown arrow to choose format and quality
+- **Save** — quick export as PNG (with embedded metadata), or click the dropdown arrow to choose format and quality. Videos export directly as MP4
 - **Delete** — remove from your gallery
 
 ### Export with format & quality
@@ -455,7 +501,8 @@ Press **?** anywhere (outside a text input) to see the full shortcuts help overl
 | Styling | [Tailwind CSS v4](https://tailwindcss.com/) |
 | State | [Zustand](https://zustand.docs.pmnd.rs/) |
 | Icons | [Lucide React](https://lucide.dev/) |
-| AI | [OpenRouter API](https://openrouter.ai/) |
+| AI (Images) | [OpenRouter API](https://openrouter.ai/) |
+| AI (Videos) | [fal.ai API](https://fal.ai/) |
 
 ---
 
@@ -464,12 +511,12 @@ Press **?** anywhere (outside a text input) to see the full shortcuts help overl
 ```
 src/
 ├── main/                 # Electron main process
-│   ├── ipc/              # IPC handlers (generation, files, settings, metadata)
-│   └── services/         # OpenRouter client, image storage, prompt enhancer
+│   ├── ipc/              # IPC handlers (generation, video generation, files, settings, metadata)
+│   └── services/         # OpenRouter client, fal.ai client, image storage, prompt enhancer
 ├── preload/              # Typed context bridge (window.api)
 └── renderer/src/         # React UI
     ├── components/
-    │   ├── input/        # PromptBar, ControlsRow, selectors, SeedInput, PresetSelector
+    │   ├── input/        # PromptBar, VideoPromptBar, ControlsRow, selectors, SeedInput, PresetSelector
     │   ├── gallery/      # Justified layout (row-based masonry), cards, GalleryToolbar, SmartAlbumBar
     │   ├── canvas/       # Canvas editor: modal, workspace, toolbar, layers, color picker, expert mode
     │   ├── chat/         # Image chat modal
@@ -480,7 +527,7 @@ src/
     │   ├── tags/         # Tag input with autocomplete
     │   └── shared/       # Lightbox, CropModal, InpaintModal, ImageCompare, ExportPopover, ShortcutsHelp, Settings
     ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop, presets, queue, canvas, gallery-filter)
-    ├── hooks/            # useImageGeneration, useChatGeneration, useCanvasRenderer, useJustifiedLayout, useKeyboardShortcuts
+    ├── hooks/            # useImageGeneration, useVideoGeneration, useChatGeneration, useCanvasRenderer, useJustifiedLayout, useKeyboardShortcuts
     ├── types/            # API types, model definitions, shared interfaces
     └── lib/              # Utils, image compression, date-utils, debounce, logger
 ```
@@ -492,8 +539,8 @@ src/
 Releases are built automatically via GitHub Actions when a version tag is pushed:
 
 ```bash
-git tag v0.7.0
-git push origin v0.7.0
+git tag v0.8.0
+git push origin v0.8.0
 ```
 
 This triggers parallel builds on macOS and Windows, packages the app for both platforms (`.dmg`/`.zip` for macOS, `.exe`/`.zip` for Windows), and creates a GitHub Release with all artifacts and an auto-generated changelog.
@@ -502,9 +549,9 @@ This triggers parallel builds on macOS and Windows, packages the app for both pl
 
 ## Data & Privacy
 
-- Your API key is stored locally on your machine
-- All generated images are saved as files on disk — metadata is stored in lightweight JSON files (no base64 in memory)
-- ImageStudio never sends data anywhere except to OpenRouter for image generation
+- Your API keys are stored locally on your machine
+- All generated images and videos are saved as files on disk — metadata is stored in lightweight JSON files (no base64 in memory)
+- ImageStudio never sends data anywhere except to OpenRouter for image generation and fal.ai for video generation
 - **Optional:** If "Send images as URL" is enabled, reference images are temporarily uploaded to [litterbox.catbox.moe](https://litterbox.catbox.moe) (auto-deleted after 1 hour). This is opt-in and off by default.
 - Existing data from older versions is automatically migrated on first launch
 - No analytics, no tracking, no accounts

@@ -146,6 +146,27 @@ export function registerFileOperationHandlers(): void {
     }
   )
 
+  // Video export: copy file directly (no Canvas conversion)
+  ipcMain.handle(
+    IPC_CHANNELS.VIDEO_EXPORT,
+    async (_event, { filePath, defaultName }: { filePath: string; defaultName: string }) => {
+      try {
+        const { copyFile } = await import('fs/promises')
+        const result = await dialog.showSaveDialog({
+          defaultPath: defaultName,
+          filters: [{ name: 'Videos', extensions: ['mp4'] }]
+        })
+        if (result.canceled || !result.filePath) {
+          return { success: false, cancelled: true }
+        }
+        await copyFile(filePath, result.filePath)
+        return { success: true, filePath: result.filePath }
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Export failed' }
+      }
+    }
+  )
+
   ipcMain.on(IPC_CHANNELS.IMAGE_START_DRAG, (event, filePath: string) => {
     try {
       const icon = nativeImage.createFromPath(filePath).resize({ width: 128 })

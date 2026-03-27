@@ -47,6 +47,36 @@ export interface ElectronAPI {
 
   enhancePrompt(request: { prompt: string; apiKey: string; model?: string }): Promise<{ success: boolean; enhanced?: string; error?: string }>
   exportImageWithMetadata(base64DataUrl: string, defaultName: string, metadata?: Record<string, string>): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>
+
+  // Video generation (fal.ai)
+  generateVideo(request: {
+    model: string
+    prompt: string
+    imageUrl: string
+    duration: number
+    aspectRatio?: string
+    resolution?: string
+    negativePrompt?: string
+    generateAudio?: boolean
+    cameraFixed?: boolean
+    seed?: number
+    apiKey: string
+    requestId: string
+  }): Promise<{
+    success: boolean
+    filePath?: string
+    duration?: number
+    seed?: number
+    error?: string
+  }>
+
+  exportVideo(filePath: string, defaultName: string): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>
+
+  onVideoProgress(callback: (data: {
+    requestId: string
+    status: string
+    progress?: number
+  }) => void): () => void
 }
 
 declare global {

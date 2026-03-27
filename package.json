@@ -1,6 +1,6 @@
 {
   "name": "imagestudio",
-  "version": "0.7.1",
+  "version": "0.8.1",
   "description": "AI Image Generation Studio",
   "main": "./out/main/index.js",
   "scripts": {
@@ -27,8 +27,18 @@
     ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64"] },
-        { "target": "zip", "arch": ["arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "icon": "resources/icon.png",
       "category": "public.app-category.graphics-design",
@@ -37,8 +47,18 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "zip", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "resources/icon.png",
       "artifactName": "${productName}-${version}-win-${arch}.${ext}"
@@ -49,8 +69,16 @@
     },
     "dmg": {
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     }
   },
@@ -67,6 +95,7 @@
     "vite": "^7.3.1"
   },
   "dependencies": {
+    "@fal-ai/client": "^1.9.5",
     "@tailwindcss/vite": "^4.2.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

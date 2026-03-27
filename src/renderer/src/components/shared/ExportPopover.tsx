@@ -10,6 +10,8 @@ interface ExportPopoverProps {
   defaultName: string
   className?: string
   metadata?: Record<string, string>
+  isVideo?: boolean
+  videoFilePath?: string  // absolute file path for video export
 }
 
 const FORMAT_LABELS: Record<ExportFormat, string> = {
@@ -76,7 +78,7 @@ function convertImage(
   })
 }
 
-export function ExportPopover({ imageSrc, defaultName, className, metadata }: ExportPopoverProps) {
+export function ExportPopover({ imageSrc, defaultName, className, metadata, isVideo, videoFilePath }: ExportPopoverProps) {
   const [open, setOpen] = useState(false)
   const [format, setFormat] = useState<ExportFormat>('png')
   const [embedMetadata, setEmbedMetadata] = useState(true)
@@ -86,14 +88,14 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata }: Ex
   const [isCalculating, setIsCalculating] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
 
-  // Calculate original file size on mount
+  // Calculate original file size on mount (images only)
   useEffect(() => {
-    if (!imageSrc) return
+    if (!imageSrc || isVideo) return
     // For file:// URLs, estimate size from a PNG conversion
     convertImage(imageSrc, 'png', 100)
       .then(({ sizeBytes }) => setOriginalSize(sizeBytes))
       .catch(() => setOriginalSize(null))
-  }, [imageSrc])
+  }, [imageSrc, isVideo])
 
   // Recalculate file size when format or quality changes
   const recalculate = useCallback(() => {
@@ -119,10 +121,13 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata }: Ex
   }, [recalculate])
 
   const handleQuickSave = async () => {
-    // Convert to PNG base64 for the export dialog
     try {
-      const { dataUrl } = await convertImage(imageSrc, 'png', 100)
-      await window.api.exportImage(dataUrl, defaultName)
+      if (isVideo && videoFilePath) {
+        await window.api.exportVideo(videoFilePath, defaultName)
+      } else {
+        const { dataUrl } = await convertImage(imageSrc, 'png', 100)
+        await window.api.exportImage(dataUrl, defaultName)
+      }
     } catch (err) {
       logger.error('ExportPopover', 'Quick save failed', err)
     }
@@ -130,6 +135,11 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata }: Ex
 
   const handleExportWithOptions = async () => {
     try {
+      if (isVideo && videoFilePath) {
+        await window.api.exportVideo(videoFilePath, defaultName)
+        setOpen(false)
+        return
+      }
       const { dataUrl } = await convertImage(imageSrc, format, quality)
       const ext = format === 'jpeg' ? 'jpg' : format
       const name = defaultName.replace(/\.\w+$/, '') + '.' + ext
@@ -146,6 +156,21 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata }: Ex
 
   const showQuality = format === 'jpeg' || format === 'webp'
   const savings = originalSize && fileSize ? Math.round((1 - fileSize / originalSize) * 100) : null
+
+  // Video: simple save button, no format/quality options
+  if (isVideo) {
+    return (
+      <div className={cn('relative', className)}>
+        <button
+          onClick={handleQuickSave}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Save MP4
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className={cn('relative', className)}>

@@ -3,6 +3,7 @@ import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { IPC_CHANNELS } from '../lib/constants'
 import { registerImageGenerationHandlers } from './image-generation'
+import { registerVideoGenerationHandlers } from './video-generation'
 import { registerFileOperationHandlers } from './file-operations'
 import { loadHistory, saveSession, deleteSession } from '../services/image-store'
 import { uploadImagesToUrls } from '../services/image-upload'
@@ -17,6 +18,8 @@ const VALID_SETTINGS_KEYS = new Set([
   'defaultImageCount',
   'useImageUrls',
   'promptEnhancerModel',
+  'falApiKey',
+  'defaultVideoModel',
 ])
 
 interface AppSettings {
@@ -27,6 +30,8 @@ interface AppSettings {
   defaultImageCount: number
   useImageUrls: boolean
   promptEnhancerModel: string
+  falApiKey: string
+  defaultVideoModel: string
 }
 
 const DEFAULTS: AppSettings = {
@@ -37,6 +42,8 @@ const DEFAULTS: AppSettings = {
   defaultImageCount: 1,
   useImageUrls: false,
   promptEnhancerModel: 'google/gemini-2.0-flash-001',
+  falApiKey: '',
+  defaultVideoModel: 'fal-ai/kling-video/v3/standard/image-to-video',
 }
 
 function getSettingsPath(): string {
@@ -58,6 +65,8 @@ function loadSettings(): AppSettings {
       defaultImageCount: typeof raw.defaultImageCount === 'number' ? raw.defaultImageCount : DEFAULTS.defaultImageCount,
       useImageUrls: typeof raw.useImageUrls === 'boolean' ? raw.useImageUrls : DEFAULTS.useImageUrls,
       promptEnhancerModel: typeof raw.promptEnhancerModel === 'string' ? raw.promptEnhancerModel : DEFAULTS.promptEnhancerModel,
+      falApiKey: typeof raw.falApiKey === 'string' ? raw.falApiKey : DEFAULTS.falApiKey,
+      defaultVideoModel: typeof raw.defaultVideoModel === 'string' ? raw.defaultVideoModel : DEFAULTS.defaultVideoModel,
     }
   } catch {
     console.error('[Settings] Failed to parse settings file, using defaults')
@@ -71,6 +80,7 @@ function persistSettings(settings: AppSettings): void {
 
 export function registerAllHandlers(): void {
   registerImageGenerationHandlers()
+  registerVideoGenerationHandlers()
   registerFileOperationHandlers()
 
   let settings = loadSettings()

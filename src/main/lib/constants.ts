@@ -13,7 +13,10 @@ export const IPC_CHANNELS = {
   IMAGE_READ: 'image:read',
   IMAGE_DELETE: 'image:delete',
   MIGRATE_RUN: 'migrate:run',
-  IMAGE_UPLOAD_URLS: 'image:upload-urls'
+  IMAGE_UPLOAD_URLS: 'image:upload-urls',
+  VIDEO_GENERATE: 'video:generate',
+  VIDEO_GENERATE_PROGRESS: 'video:generate-progress',
+  VIDEO_EXPORT: 'video:export',
 } as const
 
 export const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions'

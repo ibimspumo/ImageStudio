@@ -54,6 +54,34 @@ const api = {
   // C9: Export with metadata
   exportImageWithMetadata: (base64DataUrl: string, defaultName: string, metadata?: Record<string, string>) =>
     ipcRenderer.invoke('image:export-metadata', { base64DataUrl, defaultName, metadata }),
+
+  // Video generation (fal.ai)
+  generateVideo: (request: {
+    model: string
+    prompt: string
+    imageUrl: string
+    duration: number
+    aspectRatio?: string
+    resolution?: string
+    negativePrompt?: string
+    generateAudio?: boolean
+    cameraFixed?: boolean
+    seed?: number
+    apiKey: string
+    requestId: string
+  }) => ipcRenderer.invoke('video:generate', request),
+
+  exportVideo: (filePath: string, defaultName: string) =>
+    ipcRenderer.invoke('video:export', { filePath, defaultName }),
+
+  onVideoProgress: (callback: (data: { requestId: string; status: string; progress?: number }) => void) => {
+    const handler = (_event: unknown, data: { requestId: string; status: string; progress?: number }): void =>
+      callback(data)
+    ipcRenderer.on('video:generate-progress', handler)
+    return () => {
+      ipcRenderer.removeListener('video:generate-progress', handler)
+    }
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

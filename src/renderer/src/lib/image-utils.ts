@@ -119,6 +119,65 @@ export async function createZoomOutCanvas(
 }
 
 /**
+ * Creates an aspect-ratio-change canvas: a canvas with the target aspect ratio,
+ * with the original image centered and fitted inside (preserving its content).
+ * Empty areas are filled with black for the AI to extend.
+ *
+ * @param base64DataUrl - The original image as base64
+ * @param targetRatio - Target aspect ratio string (e.g. "16:9", "1:1")
+ * @returns { canvas, reference } - canvas with image centered in new ratio, reference = compressed original
+ */
+export async function createAspectRatioCanvas(
+  base64DataUrl: string,
+  targetRatio: string
+): Promise<{ canvas: string; reference: string }> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image()
+    i.onload = () => resolve(i)
+    i.onerror = reject
+    i.src = base64DataUrl
+  })
+
+  // Parse target ratio
+  const [rw, rh] = targetRatio.split(':').map(Number)
+  const targetAR = rw / rh
+  const sourceAR = img.width / img.height
+
+  let canvasW: number
+  let canvasH: number
+
+  if (targetAR > sourceAR) {
+    // Target is wider — keep height, expand width
+    canvasH = img.height
+    canvasW = Math.round(img.height * targetAR)
+  } else {
+    // Target is taller — keep width, expand height
+    canvasW = img.width
+    canvasH = Math.round(img.width / targetAR)
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = canvasW
+  canvas.height = canvasH
+  const ctx = canvas.getContext('2d')!
+
+  // Black background (empty areas for AI to fill)
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, canvasW, canvasH)
+
+  // Center the original image
+  const offsetX = Math.round((canvasW - img.width) / 2)
+  const offsetY = Math.round((canvasH - img.height) / 2)
+  ctx.drawImage(img, offsetX, offsetY)
+
+  // Compress both to max 1000px JPEG
+  const canvasCompressed = await compressImage(canvas.toDataURL('image/png'))
+  const reference = await compressImage(base64DataUrl)
+
+  return { canvas: canvasCompressed, reference }
+}
+
+/**
  * Creates a grid composite from multiple base64 images.
  * @param images - Array of base64 data URL images
  * @param gridSize - Number of images per row/column (default 2 = 2x2 grid)

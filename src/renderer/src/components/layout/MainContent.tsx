@@ -1,14 +1,18 @@
 import { useMemo } from 'react'
 import { ImageGallery } from '../gallery/ImageGallery'
 import { PromptBar } from '../input/PromptBar'
+import { VideoPromptBar } from '../input/VideoPromptBar'
 import { WorkspaceBar } from '../workspace/WorkspaceBar'
 import { useGalleryStore, type GalleryImage } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useGalleryFilterStore } from '../../stores/gallery-filter-store'
 import { GalleryToolbar } from '../gallery/GalleryToolbar'
 import { SmartAlbumBar } from '../gallery/SmartAlbumBar'
-import { Sparkles, SearchX } from 'lucide-react'
+import { Sparkles, SearchX, ImageIcon, Film } from 'lucide-react'
+import { cn } from '../../lib/utils'
 
+
+export type AppMode = 'image' | 'video'
 
 interface MainContentProps {
   onImageClick: (images: GalleryImage[], index: number) => void
@@ -20,9 +24,13 @@ interface MainContentProps {
   onQueueClick?: () => void
   queuePendingCount?: number
   onCanvasClick?: () => void
+  mode: AppMode
+  onModeChange: (mode: AppMode) => void
+  videoStartFrame?: { base64: string; name: string } | null
+  onGenerateVideo?: (imageId: string) => void
 }
 
-export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage, onPresetsManage, onQueueClick, queuePendingCount, onCanvasClick }: MainContentProps) {
+export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage, onPresetsManage, onQueueClick, queuePendingCount, onCanvasClick, mode, onModeChange, videoStartFrame, onGenerateVideo }: MainContentProps) {
   const allImages = useGalleryStore((s) => s.images)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   const searchQuery = useGalleryFilterStore((s) => s.searchQuery)
@@ -32,6 +40,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   const sortBy = useGalleryFilterStore((s) => s.sortBy)
   const favoritesOnly = useGalleryFilterStore((s) => s.favoritesOnly)
   const filterTags = useGalleryFilterStore((s) => s.filterTags)
+  const filterType = useGalleryFilterStore((s) => s.filterType)
   const activeSmartAlbum = useGalleryFilterStore((s) => s.activeSmartAlbum)
   const clearFilters = useGalleryFilterStore((s) => s.clearFilters)
 
@@ -46,6 +55,8 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
         const todayStart = new Date()
         todayStart.setHours(0, 0, 0, 0)
         filtered = filtered.filter((img) => img.timestamp >= todayStart.getTime())
+      } else if (activeSmartAlbum === 'videos') {
+        filtered = filtered.filter((img) => img.type === 'video')
       } else if (activeSmartAlbum.startsWith('model:')) {
         const model = activeSmartAlbum.slice(6)
         filtered = filtered.filter((img) => img.model === model)
@@ -96,6 +107,13 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
       filtered = filtered.filter((img) => img.tags?.some((t) => filterTags.includes(t)))
     }
 
+    // Type filter (images / videos / all)
+    if (filterType === 'images') {
+      filtered = filtered.filter((img) => img.type !== 'video')
+    } else if (filterType === 'videos') {
+      filtered = filtered.filter((img) => img.type === 'video')
+    }
+
     // Sort
     if (sortBy === 'oldest') {
       filtered = [...filtered].sort((a, b) => a.timestamp - b.timestamp)
@@ -103,9 +121,9 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
     // default 'newest' is already the store order (newest first)
 
     return filtered
-  }, [allImages, activeWorkspaceId, activeSmartAlbum, searchQuery, filterModels, filterAspectRatios, filterDateRange, sortBy, favoritesOnly, filterTags])
+  }, [allImages, activeWorkspaceId, activeSmartAlbum, searchQuery, filterModels, filterAspectRatios, filterDateRange, sortBy, favoritesOnly, filterTags, filterType])
 
-  const hasActiveFilters = searchQuery || filterModels.length > 0 || filterAspectRatios.length > 0 || filterDateRange || favoritesOnly || filterTags.length > 0 || activeSmartAlbum
+  const hasActiveFilters = searchQuery || filterModels.length > 0 || filterAspectRatios.length > 0 || filterDateRange || favoritesOnly || filterTags.length > 0 || activeSmartAlbum || filterType !== 'all'
 
   // Collect all tags for toolbar autocomplete
   const allTags = useMemo(() => {
@@ -124,7 +142,36 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
         <div className="ambient-orb-2 absolute w-[400px] h-[400px] rounded-full blur-[100px] opacity-[0.025] bg-blue-500 bottom-20 -left-40" />
       </div>
 
-      {/* Workspace bar */}
+      {/* Mode toggle + Workspace bar */}
+      <div className="flex items-center gap-2 px-4 pt-1">
+        <div className="flex gap-0.5 bg-surface-2 rounded-lg p-0.5 border border-border-dim">
+          <button
+            onClick={() => onModeChange('image')}
+            className={cn(
+              'no-drag flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium transition-all',
+              mode === 'image'
+                ? 'bg-surface-4 text-text-primary shadow-sm'
+                : 'text-text-muted hover:text-text-secondary'
+            )}
+          >
+            <ImageIcon className="w-3 h-3" />
+            Image
+          </button>
+          <button
+            onClick={() => onModeChange('video')}
+            className={cn(
+              'no-drag flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium transition-all',
+              mode === 'video'
+                ? 'bg-surface-4 text-text-primary shadow-sm'
+                : 'text-text-muted hover:text-text-secondary'
+            )}
+          >
+            <Film className="w-3 h-3" />
+            Video
+          </button>
+        </div>
+      </div>
+
       <WorkspaceBar />
 
       {/* Gallery toolbar & smart albums — only when gallery has images */}
@@ -184,19 +231,26 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
           </button>
         </div>
       ) : (
-        <ImageGallery images={images} onImageClick={onImageClick} onStartChat={onStartChat} onCropImage={onCropImage} />
+        <ImageGallery images={images} onImageClick={onImageClick} onStartChat={onStartChat} onCropImage={onCropImage} onGenerateVideo={onGenerateVideo} />
       )}
 
       <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-gradient-to-t from-surface-0 via-surface-0/80 to-transparent pt-12">
         <div className="pointer-events-auto">
-          <PromptBar
-            onSettingsClick={onSettingsClick}
-            onCollectionsClick={onCollectionsClick}
-            onPresetsManage={onPresetsManage}
-            onQueueClick={onQueueClick}
-            queuePendingCount={queuePendingCount}
-            onCanvasClick={onCanvasClick}
-          />
+          {mode === 'video' ? (
+            <VideoPromptBar
+              onSettingsClick={onSettingsClick}
+              initialStartFrame={videoStartFrame}
+            />
+          ) : (
+            <PromptBar
+              onSettingsClick={onSettingsClick}
+              onCollectionsClick={onCollectionsClick}
+              onPresetsManage={onPresetsManage}
+              onQueueClick={onQueueClick}
+              queuePendingCount={queuePendingCount}
+              onCanvasClick={onCanvasClick}
+            />
+          )}
         </div>
       </div>
     </main>

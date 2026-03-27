@@ -27,12 +27,12 @@ import type { GalleryImage } from '../../stores/gallery-store'
 import { useGalleryStore, toDisplayUrl } from '../../stores/gallery-store'
 import { useChatStore } from '../../stores/chat-store'
 import { useSettingsStore } from '../../stores/settings-store'
-import { AVAILABLE_MODELS, getModelName } from '../../types/api'
+import { AVAILABLE_MODELS, getModelName, getVideoModelName } from '../../types/api'
 import { compressImage, getResolutionLabel } from '../../lib/image-utils'
 import { ExportPopover } from './ExportPopover'
 import { TagInput } from '../tags/TagInput'
 import { cn } from '../../lib/utils'
-import { createZoomOutCanvas, upscaleForApi } from '../../lib/image-utils'
+import { createZoomOutCanvas, createAspectRatioCanvas, upscaleForApi } from '../../lib/image-utils'
 import { formatDuration, formatDate } from '../../lib/date-utils'
 import { logger } from '../../lib/logger'
 
@@ -50,6 +50,46 @@ interface ImageViewerProps {
 }
 
 const ZOOM_LEVELS = [1.5, 2, 3, 4] as const
+
+/** Shows outer rect = target ratio, inner filled rect = source ratio */
+function AspectRatioIcon({ sourceRatio, targetRatio, active }: { sourceRatio: string; targetRatio: string; active?: boolean }) {
+  const parse = (r: string) => { const [w, h] = r.split(':').map(Number); return w / h }
+  const srcAR = parse(sourceRatio)
+  const tgtAR = parse(targetRatio)
+
+  // Outer rect fits target ratio inside 18x18 viewBox area (1..19)
+  const maxW = 18, maxH = 18
+  let outerW: number, outerH: number
+  if (tgtAR > 1) { outerW = maxW; outerH = maxW / tgtAR }
+  else { outerH = maxH; outerW = maxH * tgtAR }
+
+  // Inner rect fits source ratio inside outer rect, centered
+  let innerW: number, innerH: number
+  if (srcAR > tgtAR) {
+    // Source is wider relative to target — source fills width, shorter in height
+    innerW = outerW * 0.7
+    innerH = innerW / srcAR
+  } else {
+    // Source is taller relative to target — source fills height, narrower in width
+    innerH = outerH * 0.7
+    innerW = innerH * srcAR
+  }
+
+  const outerX = 1 + (maxW - outerW) / 2
+  const outerY = 1 + (maxH - outerH) / 2
+  const innerX = outerX + (outerW - innerW) / 2
+  const innerY = outerY + (outerH - innerH) / 2
+
+  return (
+    <svg viewBox="0 0 20 20" className="w-4 h-4" fill="none">
+      <rect x={outerX} y={outerY} width={outerW} height={outerH} rx="1.5"
+        stroke={active ? '#a78bfa' : '#505060'} strokeWidth="1.2" strokeDasharray={active ? undefined : '2 2'} />
+      <rect x={innerX} y={innerY} width={innerW} height={innerH} rx="1"
+        fill={active ? '#a78bfa' : '#9898a4'} opacity={active ? 0.35 : 0.2}
+        stroke={active ? '#a78bfa' : '#9898a4'} strokeWidth="0.8" />
+    </svg>
+  )
+}
 
 function ZoomIcon({ factor, active }: { factor: number; active?: boolean }) {
   const inner = Math.round(100 / factor)
@@ -82,6 +122,9 @@ export function ImageViewer({
   const [upscaleGenerating, setUpscaleGenerating] = useState<string | null>(null)
   const [upscaleModel, setUpscaleModel] = useState('google/gemini-3-pro-image-preview')
   const [showUpscaleModelPicker, setShowUpscaleModelPicker] = useState(false)
+  const [aspectRatioGenerating, setAspectRatioGenerating] = useState<string | null>(null)
+  const [aspectRatioModel, setAspectRatioModel] = useState<string | null>(null)
+  const [showAspectRatioModelPicker, setShowAspectRatioModelPicker] = useState(false)
   const removeImage = useGalleryStore((s) => s.removeImage)
   const addPlaceholder = useGalleryStore((s) => s.addPlaceholder)
   const updateStatus = useGalleryStore((s) => s.updateStatus)
@@ -354,6 +397,88 @@ export function ImageViewer({
     }
   }, [image, apiKey, useImageUrls, upscaleGenerating, upscaleModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
 
+  const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9'] as const
+  const availableRatios = image ? ASPECT_RATIOS.filter((r) => r !== image.aspectRatio) : []
+  const effectiveAspectRatioModel = aspectRatioModel ?? image?.model ?? 'google/gemini-3-pro-image-preview'
+
+  // Change aspect ratio / outpaint to new ratio
+  const handleAspectRatioChange = useCallback(async (targetRatio: string) => {
+    if (!image || !image.filePath || !apiKey || aspectRatioGenerating) return
+    setAspectRatioGenerating(targetRatio)
+    try {
+      const readResult = await window.api.readImage(image.filePath)
+      if (!readResult.success) throw new Error('Failed to read image')
+
+      const { canvas, reference } = await createAspectRatioCanvas(readResult.base64DataUrl, targetRatio)
+
+      const prompt = `I have placed the original image centered on a larger canvas with ${targetRatio} aspect ratio. Fill in the black/empty areas naturally, seamlessly extending the scene outward. Keep the original image exactly as-is — do not alter, crop, or re-interpret it. Continue the environment, lighting, colors, perspective, and composition from the edges outward. Original description: "${image.prompt}"`
+
+      const selectedModel = effectiveAspectRatioModel
+      const placeholderId = addPlaceholder(
+        `Aspect ${targetRatio}: ${image.prompt}`,
+        targetRatio,
+        image.resolution,
+        selectedModel,
+        [image.filePath],
+        image.workspaceId
+      )
+      onClose()
+
+      let resolvedAttachments = [canvas, reference]
+      let resolvedLabeled: { label: string; images: string[] }[] = [
+        { label: `Canvas layout (${targetRatio}) — fill the black areas around the centered image`, images: [canvas] },
+        { label: 'Original image (high quality reference)', images: [reference] },
+      ]
+
+      if (useImageUrls) {
+        updateStatus(placeholderId, 'Uploading images...')
+        try {
+          const uploadResult = await window.api.uploadToUrls([canvas, reference])
+          if (uploadResult.success) {
+            resolvedAttachments = uploadResult.urls
+            resolvedLabeled = [
+              { label: `Canvas layout (${targetRatio}) — fill the black areas around the centered image`, images: [uploadResult.urls[0]] },
+              { label: 'Original image (high quality reference)', images: [uploadResult.urls[1]] },
+            ]
+          }
+        } catch (err) {
+          logger.warn('ImageViewer', 'Upload failed, falling back to base64', err)
+        }
+        updateStatus(placeholderId, undefined)
+      }
+
+      const startTime = Date.now()
+      const response = await window.api.generateImage({
+        prompt,
+        model: selectedModel,
+        apiKey,
+        aspectRatio: targetRatio,
+        resolution: image.resolution,
+        count: 1,
+        requestId: crypto.randomUUID(),
+        attachments: resolvedAttachments,
+        labeledAttachments: resolvedLabeled,
+      })
+
+      const durationMs = Date.now() - startTime
+      if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
+        const filename = `${placeholderId}.png`
+        const saveResult = await window.api.saveImage(response.results[0].result.imageBase64, filename)
+        if (saveResult.success && saveResult.filePath) {
+          completeImage(placeholderId, saveResult.filePath, durationMs, response.results[0].result.cost)
+        } else {
+          failImage(placeholderId, 'Failed to save image')
+        }
+      } else {
+        failImage(placeholderId, response.error || response.results?.[0]?.error || 'Aspect ratio change failed')
+      }
+    } catch (err) {
+      logger.error('ImageViewer', 'Aspect ratio change failed', err)
+    } finally {
+      setAspectRatioGenerating(null)
+    }
+  }, [image, apiKey, useImageUrls, aspectRatioGenerating, effectiveAspectRatioModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
+
   // Available upscale targets based on original resolution
   const upscaleTargets = image
     ? image.resolution === '1K' ? ['2K', '4K']
@@ -389,7 +514,17 @@ export function ImageViewer({
       )}
 
       <div className="w-[70%] h-full flex items-center justify-center p-12" onClick={onClose}>
-        <img src={displayUrl} alt="Full size" className="max-w-[75vw] max-h-[75vh] object-contain rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.4)]" onClick={(e) => e.stopPropagation()} />
+        {image?.type === 'video' ? (
+          <video
+            src={displayUrl}
+            controls
+            autoPlay
+            className="max-w-[75vw] max-h-[75vh] object-contain rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.4)]"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <img src={displayUrl} alt="Full size" className="max-w-[75vw] max-h-[75vh] object-contain rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.4)]" onClick={(e) => e.stopPropagation()} />
+        )}
       </div>
 
       <div className="no-drag w-[30%] h-full bg-surface-2 border-l border-border-dim overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -457,15 +592,17 @@ export function ImageViewer({
             <button onClick={() => onReusePrompt(image)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-dim text-accent-main hover:bg-accent-main/20 transition-colors text-[13px] font-medium">
               <RotateCcw className="w-3.5 h-3.5" /> Reuse Prompt
             </button>
-            <button onClick={() => onStartChat(image.id)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium">
-              <MessageSquare className="w-3.5 h-3.5" /> {linkedChat ? 'Continue Chat' : 'Start Chat'}
-            </button>
-            {onCropImage && (
+            {image.type !== 'video' && (
+              <button onClick={() => onStartChat(image.id)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium">
+                <MessageSquare className="w-3.5 h-3.5" /> {linkedChat ? 'Continue Chat' : 'Start Chat'}
+              </button>
+            )}
+            {onCropImage && image.type !== 'video' && (
               <button onClick={() => onCropImage(image.id, image.filePath)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium">
                 <Crop className="w-3.5 h-3.5" /> Crop as Reference
               </button>
             )}
-            {onInpaint && (
+            {onInpaint && image.type !== 'video' && (
               <button onClick={() => onInpaint(image.id, image.filePath)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium">
                 <Paintbrush className="w-3.5 h-3.5" /> Inpaint
               </button>
@@ -477,6 +614,7 @@ export function ImageViewer({
             )}
           </div>
 
+          {image.type !== 'video' && (
           <div className="flex flex-col gap-2">
             <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Zoom Out</span>
             <div className="flex gap-1.5">
@@ -496,9 +634,70 @@ export function ImageViewer({
             </div>
             {zoomGenerating && <p className="text-[10px] text-accent-main/70 text-center animate-pulse">Extending image {zoomGenerating}x...</p>}
           </div>
+          )}
+
+          {/* Aspect Ratio */}
+          {image.type !== 'video' && availableRatios.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Aspect Ratio</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {availableRatios.map((ratio) => {
+                  const isGenerating = aspectRatioGenerating === ratio
+                  return (
+                    <button key={ratio} onClick={() => handleAspectRatioChange(ratio)} disabled={!!aspectRatioGenerating || !!zoomGenerating || !apiKey}
+                      className={cn('flex items-center justify-center gap-1 py-2 rounded-lg border text-[11px] font-medium transition-all',
+                        isGenerating ? 'bg-accent-dim border-accent-main/30 text-accent-main'
+                          : aspectRatioGenerating ? 'bg-surface-3/50 border-border-dim text-text-muted cursor-not-allowed opacity-50'
+                          : 'bg-surface-3 border-border-dim text-text-secondary hover:bg-surface-4 hover:border-border-base hover:text-text-primary')}>
+                      {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AspectRatioIcon sourceRatio={image.aspectRatio} targetRatio={ratio} />}
+                      <span>{ratio}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {/* Model picker */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowAspectRatioModelPicker(!showAspectRatioModelPicker)}
+                  className={cn(
+                    'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-[11px] transition-colors',
+                    showAspectRatioModelPicker
+                      ? 'bg-surface-4 border-border-base text-text-primary'
+                      : 'bg-surface-3 border-border-dim text-text-muted hover:text-text-secondary hover:border-border-base'
+                  )}
+                >
+                  <span>{getModelName(effectiveAspectRatioModel)}</span>
+                  <ChevronDown className={cn('w-3 h-3 transition-transform', showAspectRatioModelPicker && 'rotate-180')} />
+                </button>
+                {showAspectRatioModelPicker && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setShowAspectRatioModelPicker(false)} />
+                    <div className="absolute bottom-full left-0 right-0 mb-1 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 z-30 animate-scale-in max-h-[200px] overflow-y-auto">
+                      {AVAILABLE_MODELS.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => { setAspectRatioModel(m.id); setShowAspectRatioModelPicker(false) }}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
+                            effectiveAspectRatioModel === m.id
+                              ? 'bg-surface-4 text-text-primary font-medium'
+                              : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
+                          )}
+                        >
+                          <span className="flex-1">{m.name}</span>
+                          <span className="text-[9px] text-text-muted">{m.provider}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              {aspectRatioGenerating && <p className="text-[10px] text-accent-main/70 text-center animate-pulse">Changing to {aspectRatioGenerating}...</p>}
+            </div>
+          )}
 
           {/* Upscale */}
-          {upscaleTargets.length > 0 && (
+          {image.type !== 'video' && upscaleTargets.length > 0 && (
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Upscale</span>
               <div className="flex gap-1.5">
@@ -575,7 +774,7 @@ export function ImageViewer({
             <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Details</span>
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-text-muted w-20 shrink-0">Model</span>
-              <span className="text-[12px] text-text-secondary truncate" title={image.model}>{getModelName(image.model)}</span>
+              <span className="text-[12px] text-text-secondary truncate" title={image.model}>{image.type === 'video' ? getVideoModelName(image.model) : getModelName(image.model)}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-text-muted w-20 shrink-0">Size</span>
@@ -650,7 +849,14 @@ export function ImageViewer({
               <button onClick={handleCopy} className={cn('flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg', 'bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium')}>
                 <Copy className="w-3.5 h-3.5" /> Copy
               </button>
-              <ExportPopover imageSrc={displayUrl ?? ''} defaultName={`imagestudio-${Date.now()}.png`} className="flex-1" metadata={{ prompt: image.prompt, model: image.model, aspectRatio: image.aspectRatio, resolution: image.resolution, ...(image.seed != null ? { seed: String(image.seed) } : {}), ...(image.negativePrompt ? { negativePrompt: image.negativePrompt } : {}), timestamp: new Date(image.timestamp).toISOString() }} />
+              <ExportPopover
+                imageSrc={displayUrl ?? ''}
+                defaultName={`imagestudio-${Date.now()}.${image.type === 'video' ? 'mp4' : 'png'}`}
+                className="flex-1"
+                isVideo={image.type === 'video'}
+                videoFilePath={image.type === 'video' ? image.filePath : undefined}
+                metadata={image.type !== 'video' ? { prompt: image.prompt, model: image.model, aspectRatio: image.aspectRatio, resolution: image.resolution, ...(image.seed != null ? { seed: String(image.seed) } : {}), ...(image.negativePrompt ? { negativePrompt: image.negativePrompt } : {}), timestamp: new Date(image.timestamp).toISOString() } : undefined}
+              />
             </div>
             <button onClick={handleDelete} className={cn('flex items-center justify-center gap-2 px-3 py-2 rounded-lg', 'bg-surface-3 text-danger hover:bg-danger/10 transition-colors text-[13px] font-medium')}>
               <Trash2 className="w-3.5 h-3.5" /> Delete

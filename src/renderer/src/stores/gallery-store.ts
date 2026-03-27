@@ -27,6 +27,10 @@ export interface GalleryImage {
   tags?: string[]               // A4: tags
   inpaintSourceId?: string      // D12: inpainting source
   canvasSketchPath?: string     // file path of the canvas sketch used to generate this image
+  type?: 'image' | 'video'     // default 'image' for backwards compat
+  videoDuration?: number        // video length in seconds
+  videoThumbnailPath?: string   // path to extracted first-frame JPEG
+  falRequestId?: string         // fal.ai queue tracking
 }
 
 /** Convert a file path to a displayable URL (handles spaces, special chars, and Windows backslashes) */
@@ -47,7 +51,9 @@ export function toDisplayUrl(filePath: string): string {
 interface GalleryStore {
   images: GalleryImage[]
   addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string; canvasSketchPath?: string }) => string
+  addVideoPlaceholder: (prompt: string, aspectRatio: string, model: string, attachments?: string[], workspaceId?: string) => string
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
+  completeVideo: (id: string, filePath: string, durationMs: number, videoDuration: number, thumbnailPath?: string, cost?: number) => void
   updateStatus: (id: string, statusText: string | undefined) => void
   failImage: (id: string, error: string) => void
   removeImage: (id: string) => void
@@ -91,6 +97,41 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
       ],
     }))
     return id
+  },
+
+  addVideoPlaceholder: (prompt, aspectRatio, model, attachments, workspaceId) => {
+    const id = nanoid()
+    set((state) => ({
+      images: [
+        {
+          id,
+          filePath: '',
+          prompt,
+          aspectRatio,
+          resolution: '720p',
+          timestamp: Date.now(),
+          isLoading: true,
+          model,
+          attachments,
+          workspaceId,
+          type: 'video',
+          statusText: 'Queued...',
+        },
+        ...state.images,
+      ],
+    }))
+    return id
+  },
+
+  completeVideo: (id, filePath, durationMs, videoDuration, thumbnailPath, cost) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === id
+          ? { ...img, filePath, isLoading: false, durationMs, videoDuration, videoThumbnailPath: thumbnailPath, statusText: undefined, ...(cost != null ? { cost } : {}) }
+          : img
+      ),
+    }))
+    debouncedPersist(get().persistToDisk)
   },
 
   updateStatus: (id, statusText) => {

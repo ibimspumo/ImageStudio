@@ -158,6 +158,18 @@ export async function generateImage(
 
   const data = await response.json()
 
+  console.log('[OpenRouter] Raw response keys:', JSON.stringify({
+    id: data.id,
+    model: data.model,
+    choicesCount: data.choices?.length,
+    firstChoice: data.choices?.[0] ? {
+      finishReason: data.choices[0].finish_reason,
+      messageKeys: Object.keys(data.choices[0].message || {}),
+      contentType: typeof data.choices[0].message?.content,
+      imagesCount: data.choices[0].message?.images?.length,
+    } : 'none',
+  }))
+
   const choice = data.choices?.[0]
   if (!choice) {
     throw new Error('No response from model')
@@ -166,6 +178,11 @@ export async function generateImage(
   const message = choice.message
   let text: string | undefined
   let imageBase64: string | undefined
+
+  // Check for model refusal
+  if (message?.refusal) {
+    throw new Error(message.refusal)
+  }
 
   // Text can be in message.content (string or array)
   const messageContent = message?.content
@@ -253,6 +270,15 @@ export async function generateImage(
         dimensionWarning = `Resolution mismatch: requested ${request.resolution} but got ${imageDims}. This is an API-side issue — try again.`
         console.warn('[OpenRouter]', dimensionWarning)
       }
+    }
+  }
+
+  // If no image was returned, surface model text as an error
+  if (!imageBase64 && text) {
+    return {
+      id: generationId || crypto.randomUUID(),
+      error: text,
+      cost
     }
   }
 

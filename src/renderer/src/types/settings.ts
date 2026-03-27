@@ -5,4 +5,6 @@ export interface AppSettings {
   defaultResolution: string
   defaultImageCount: number
   useImageUrls: boolean
+  falApiKey: string
+  defaultVideoModel: string
 }

@@ -15,6 +15,8 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   defaultResolution: '2K',
   defaultImageCount: 1,
   useImageUrls: false,
+  falApiKey: '',
+  defaultVideoModel: 'fal-ai/kling-video/v3/standard/image-to-video',
   hydrated: false,
 
   hydrate: async () => {
