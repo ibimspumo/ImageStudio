@@ -29,14 +29,19 @@ export interface GalleryImage {
   canvasSketchPath?: string     // file path of the canvas sketch used to generate this image
 }
 
-/** Convert a file path to a displayable URL (handles spaces and special chars) */
+/** Convert a file path to a displayable URL (handles spaces, special chars, and Windows backslashes) */
 export function toDisplayUrl(filePath: string): string {
   if (!filePath) return ''
   if (filePath.startsWith('data:')) return filePath // legacy base64 fallback
   if (filePath.startsWith('file://')) return filePath
-  // Encode path components but keep slashes
-  const encoded = filePath.split('/').map(part => encodeURIComponent(part)).join('/')
-  return `file://${encoded}`
+  // Normalize backslashes to forward slashes (Windows paths)
+  const normalized = filePath.replace(/\\/g, '/')
+  // Encode path components but keep slashes and drive colon (C:)
+  const encoded = normalized.split('/').map(part => encodeURIComponent(part)).join('/')
+    .replace(/^([A-Za-z])%3A/, '$1:') // restore drive letter colon (C%3A → C:)
+  // file:///C:/... requires triple slash for absolute paths
+  const prefix = encoded.match(/^[A-Za-z]:/) ? 'file:///' : 'file://'
+  return `${prefix}${encoded}`
 }
 
 interface GalleryStore {
@@ -199,8 +204,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
                   updateResolution(img.id, actualRes)
                 }
               }
-              const encoded = img.filePath.split('/').map(part => encodeURIComponent(part)).join('/')
-              imgEl.src = `file://${encoded}`
+              imgEl.src = toDisplayUrl(img.filePath)
             }
           }, 2000) // Delay to not block initial render
         }
