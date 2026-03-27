@@ -76,7 +76,7 @@ In Settings, you can enable **"Send images as URL"**. When active, reference ima
 
 ## Generating Images
 
-Type your prompt into the prompt bar at the bottom. Press **⌘ Enter** to generate.
+Type your prompt into the floating prompt bar at the bottom. It overlays the gallery so your images get maximum screen space. Press **⌘ Enter** to generate.
 
 <p align="center">
   <img src="docs/screenshot-prompt.jpg" width="800" alt="Type a prompt and generate" />

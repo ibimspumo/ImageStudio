@@ -18,8 +18,13 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   hydrated: false,
 
   hydrate: async () => {
-    const settings = await window.api.getSettings()
-    set({ ...(settings as AppSettings), hydrated: true })
+    try {
+      const settings = await window.api.getSettings()
+      set({ ...(settings as AppSettings), hydrated: true })
+    } catch {
+      // Even if loading fails, mark as hydrated so the UI can show the correct state
+      set({ hydrated: true })
+    }
   },
 
   setApiKey: async (key: string) => {

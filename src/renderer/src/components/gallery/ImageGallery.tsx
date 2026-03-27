@@ -63,7 +63,7 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage }:
   )
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-4">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-40">
       <div ref={containerRef} className="max-w-6xl mx-auto relative" style={{ height: totalHeight }}>
         {rows.flatMap((row) =>
           row.items.map((item) => {

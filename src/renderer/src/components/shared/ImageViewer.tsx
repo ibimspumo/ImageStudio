@@ -76,6 +76,7 @@ export function ImageViewer({
 }: ImageViewerProps) {
   const [hovered, setHovered] = useState(false)
   const [promptCopied, setPromptCopied] = useState(false)
+  const [promptExpanded, setPromptExpanded] = useState(false)
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null)
   const [zoomGenerating, setZoomGenerating] = useState<number | null>(null)
   const [upscaleGenerating, setUpscaleGenerating] = useState<string | null>(null)
@@ -129,6 +130,7 @@ export function ImageViewer({
     }
     img.onerror = () => setImageDims(null)
     img.src = displayUrl
+    setPromptExpanded(false)
     return () => { img.onload = null; img.onerror = null }
   }, [displayUrl])
 
@@ -417,7 +419,26 @@ export function ImageViewer({
           <div className="flex flex-col gap-2">
             <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Prompt</span>
             <div className="relative group">
-              <p className="text-[13px] text-text-primary leading-relaxed bg-surface-3 rounded-lg p-3 pr-9">{image.prompt}</p>
+              <p className={cn(
+                'text-[13px] text-text-primary leading-relaxed bg-surface-3 rounded-lg p-3 pr-9',
+                !promptExpanded && 'line-clamp-4'
+              )}>{image.prompt}</p>
+              {!promptExpanded && image.prompt.length > 200 && (
+                <button
+                  onClick={() => setPromptExpanded(true)}
+                  className="w-full text-center text-[11px] text-accent-main hover:text-accent-bright transition-colors mt-1"
+                >
+                  Show more
+                </button>
+              )}
+              {promptExpanded && image.prompt.length > 200 && (
+                <button
+                  onClick={() => setPromptExpanded(false)}
+                  className="w-full text-center text-[11px] text-accent-main hover:text-accent-bright transition-colors mt-1"
+                >
+                  Show less
+                </button>
+              )}
               <button onClick={handleCopyPrompt} className="absolute top-2 right-2 p-1.5 rounded-md text-text-muted hover:text-text-secondary hover:bg-surface-4 transition-colors opacity-0 group-hover:opacity-100" title="Copy prompt">
                 <Clipboard className="w-3.5 h-3.5" />
               </button>

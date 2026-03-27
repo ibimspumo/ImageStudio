@@ -64,6 +64,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
 
   const { generate } = useImageGeneration()
   const apiKey = useSettingsStore((s) => s.apiKey)
+  const hydrated = useSettingsStore((s) => s.hydrated)
   const collections = useCollectionsStore((s) => s.collections)
   const presets = usePresetsStore((s) => s.presets)
 
@@ -773,8 +774,10 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         {!isEmbeddedMode && (
           <div className="flex justify-center mt-2.5">
             <p className="text-[11px] text-text-muted/70">
-              {!apiKey ? (
-                <span className="text-danger/80">API key missing — open Settings</span>
+              {hydrated && !apiKey ? (
+                <button onClick={onSettingsClick} className="text-danger/80 hover:text-danger transition-colors cursor-pointer">
+                  API key missing — click to open Settings
+                </button>
               ) : (
                 <>
                   <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mr-0.5">&#x2318;</kbd>

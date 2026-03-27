@@ -187,14 +187,18 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
         <ImageGallery images={images} onImageClick={onImageClick} onStartChat={onStartChat} onCropImage={onCropImage} />
       )}
 
-      <PromptBar
-        onSettingsClick={onSettingsClick}
-        onCollectionsClick={onCollectionsClick}
-        onPresetsManage={onPresetsManage}
-        onQueueClick={onQueueClick}
-        queuePendingCount={queuePendingCount}
-        onCanvasClick={onCanvasClick}
-      />
+      <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-gradient-to-t from-surface-0 via-surface-0/80 to-transparent pt-12">
+        <div className="pointer-events-auto">
+          <PromptBar
+            onSettingsClick={onSettingsClick}
+            onCollectionsClick={onCollectionsClick}
+            onPresetsManage={onPresetsManage}
+            onQueueClick={onQueueClick}
+            queuePendingCount={queuePendingCount}
+            onCanvasClick={onCanvasClick}
+          />
+        </div>
+      </div>
     </main>
   )
 }
