@@ -464,7 +464,7 @@ src/
 └── renderer/src/         # React UI
     ├── components/
     │   ├── input/        # PromptBar, ControlsRow, selectors, SeedInput, PresetSelector
-    │   ├── gallery/      # Grid layout, cards, GalleryToolbar, SmartAlbumBar
+    │   ├── gallery/      # Justified layout (row-based masonry), cards, GalleryToolbar, SmartAlbumBar
     │   ├── canvas/       # Canvas editor: modal, workspace, toolbar, layers, color picker, expert mode
     │   ├── chat/         # Image chat modal
     │   ├── workspace/    # Workspace tabs and management
@@ -474,7 +474,7 @@ src/
     │   ├── tags/         # Tag input with autocomplete
     │   └── shared/       # Lightbox, CropModal, InpaintModal, ImageCompare, ExportPopover, ShortcutsHelp, Settings
     ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop, presets, queue, canvas, gallery-filter)
-    ├── hooks/            # useImageGeneration, useChatGeneration, useCanvasRenderer, useKeyboardShortcuts
+    ├── hooks/            # useImageGeneration, useChatGeneration, useCanvasRenderer, useJustifiedLayout, useKeyboardShortcuts
     ├── types/            # API types, model definitions, shared interfaces
     └── lib/              # Utils, image compression, date-utils, debounce, logger
 ```

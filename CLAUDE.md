@@ -17,10 +17,10 @@ npx electron-vite build    # Build check only (no Electron)
 - `src/preload/` — Typed context bridge (`window.api`)
 - `src/renderer/src/` — React UI
   - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop (all with debounced persistence via `lib/debounce.ts`)
-  - `hooks/` — useImageGeneration, useChatGeneration, useImageRefs (shared image attachment logic)
+  - `hooks/` — useImageGeneration, useChatGeneration, useImageRefs (shared image attachment logic), useJustifiedLayout (row-based masonry)
   - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, getModelName, ImageRef, LabeledAttachment
   - `components/input/` — PromptBar (orchestrator), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (model/aspect/resolution/count/buttons), ModelSelector, AspectRatioSelector, ResolutionSelector, ImageCountSelector
-  - `components/gallery/` — Masonry grid, GalleryCard with hover actions (save, copy, chat, move-to-workspace)
+  - `components/gallery/` — Justified layout (row-based masonry, left-to-right fill), GalleryCard with hover actions (save, copy, chat, move-to-workspace)
   - `components/chat/` — ChatView (iterative editing with per-message model selection)
   - `components/workspace/` — WorkspaceBar (pill tabs, create, rename, delete, filter gallery)
   - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog

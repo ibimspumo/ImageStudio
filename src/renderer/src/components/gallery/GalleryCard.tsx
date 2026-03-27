@@ -21,7 +21,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   if (image.isLoading) {
     return (
-      <div className="skeleton aspect-square rounded-2xl relative">
+      <div className="skeleton w-full h-full rounded-2xl relative">
         {image.statusText && (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-[11px] font-medium text-text-muted/80 bg-surface-1/60 backdrop-blur-sm px-3 py-1.5 rounded-lg">
@@ -35,7 +35,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   if (image.error) {
     return (
-      <div className="rounded-xl bg-surface-2 border border-border-base flex items-center gap-2.5 px-3 py-3 relative group">
+      <div className="w-full h-full rounded-xl bg-surface-2 border border-border-base flex items-center gap-2.5 px-3 py-3 relative group">
         <AlertCircle className="w-4 h-4 text-danger shrink-0" />
         <p className="text-[11px] text-danger leading-tight flex-1 line-clamp-2">{image.error}</p>
         <button onClick={() => removeImage(image.id)} className="p-1 text-text-muted hover:text-danger transition-colors shrink-0 opacity-0 group-hover:opacity-100">
@@ -101,7 +101,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   return (
     <div
-      className="img-card relative group rounded-2xl overflow-hidden cursor-pointer border border-border-dim/60 animate-fade-up"
+      className="img-card relative group rounded-2xl overflow-hidden cursor-pointer border border-border-dim/60 animate-fade-up w-full h-full"
       onClick={() => onClick(image.id, image.filePath)}
       draggable
       onDragStart={handleDragStart}
@@ -110,7 +110,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
       <img
         src={displayUrl}
         alt={image.prompt}
-        className="w-full block"
+        className="w-full h-full object-cover block"
         loading="lazy"
         draggable={false}
       />
