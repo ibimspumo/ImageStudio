@@ -120,7 +120,7 @@ export function ImageViewer({
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null)
   const [zoomGenerating, setZoomGenerating] = useState<number | null>(null)
   const [upscaleGenerating, setUpscaleGenerating] = useState<string | null>(null)
-  const [upscaleModel, setUpscaleModel] = useState('google/gemini-3-pro-image-preview')
+  const [upscaleModel, setUpscaleModel] = useState('openai/gpt-5.4-image-2')
   const [showUpscaleModelPicker, setShowUpscaleModelPicker] = useState(false)
   const [aspectRatioGenerating, setAspectRatioGenerating] = useState<string | null>(null)
   const [aspectRatioModel, setAspectRatioModel] = useState<string | null>(null)
@@ -399,7 +399,7 @@ export function ImageViewer({
 
   const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9'] as const
   const availableRatios = image ? ASPECT_RATIOS.filter((r) => r !== image.aspectRatio) : []
-  const effectiveAspectRatioModel = aspectRatioModel ?? image?.model ?? 'google/gemini-3-pro-image-preview'
+  const effectiveAspectRatioModel = aspectRatioModel ?? image?.model ?? 'openai/gpt-5.4-image-2'
 
   // Change aspect ratio / outpaint to new ratio
   const handleAspectRatioChange = useCallback(async (targetRatio: string) => {

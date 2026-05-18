@@ -20,7 +20,7 @@ export const IPC_CHANNELS = {
 } as const
 
 export const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions'
-export const DEFAULT_MODEL = 'google/gemini-3-pro-image-preview'
+export const DEFAULT_MODEL = 'openai/gpt-5.4-image-2'
 
 export const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '2:3', '3:2', '5:4', '4:5', '21:9'] as const
 export const RESOLUTIONS = ['1K', '2K', '4K'] as const

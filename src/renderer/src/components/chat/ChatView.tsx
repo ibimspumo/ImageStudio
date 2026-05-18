@@ -134,7 +134,7 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
   const [customRatio, setCustomRatio] = useState<string>('4:3')
   const [resolution, setResolution] = useState<Resolution>('2K')
-  const [selectedModels, setSelectedModels] = useState<string[]>([initialModel || 'google/gemini-3-pro-image-preview'])
+  const [selectedModels, setSelectedModels] = useState<string[]>([initialModel || 'openai/gpt-5.4-image-2'])
   const [imageRefs, setImageRefs] = useState<Array<{ id: string; base64: string }>>([])
   const [negativePrompt, setNegativePrompt] = useState('')
   const [showNegativePrompt, setShowNegativePrompt] = useState(false)

@@ -93,7 +93,7 @@ export function useImageGeneration() {
     (options: GenerateOptions) => {
       if (!apiKey) return
 
-      const models = options.models.length > 0 ? options.models : ['google/gemini-3-pro-image-preview']
+      const models = options.models.length > 0 ? options.models : ['openai/gpt-5.4-image-2']
       const activeWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId ?? undefined
 
       // Create ALL placeholders upfront (across all models)

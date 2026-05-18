@@ -8,6 +8,7 @@ export interface ModelOption {
 }
 
 export const AVAILABLE_MODELS: ModelOption[] = [
+  { id: 'openai/gpt-5.4-image-2', name: 'GPT-5.4 Image 2', provider: 'OpenAI' },
   { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro', provider: 'Google' },
   { id: 'google/gemini-3.1-flash-image-preview', name: 'Nano Banana 2', provider: 'Google' },
   { id: 'sourceful/riverflow-v2-pro', name: 'Riverflow 2 Pro', provider: 'Sourceful' },

@@ -10,7 +10,7 @@ interface SettingsStore extends AppSettings {
 
 export const useSettingsStore = create<SettingsStore>((set) => ({
   apiKey: '',
-  defaultModel: 'google/gemini-3-pro-image-preview',
+  defaultModel: 'openai/gpt-5.4-image-2',
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
   defaultImageCount: 1,

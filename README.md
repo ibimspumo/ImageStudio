@@ -118,7 +118,8 @@ ImageStudio supports 7 models from different providers. Click the model selector
 
 | Model | Provider | Notes |
 |---|---|---|
-| **Nano Banana Pro** | Google | Default. Fast, high quality. (Gemini 3.0 Pro) |
+| **GPT-5.4 Image 2** | OpenAI | Default. State-of-the-art image generation. |
+| **Nano Banana Pro** | Google | Fast, high quality. (Gemini 3.0 Pro) |
 | **Nano Banana 2** | Google | Gemini 3.1 Flash — faster variant |
 | **Riverflow 2 Pro** | Sourceful | Creative, artistic style |
 | **Seedream 4.5** | ByteDance | Strong at photorealism |
@@ -227,7 +228,7 @@ Upscale any image to a higher resolution directly from the lightbox. Available o
 - **2K images** → Upscale to 4K
 - **4K images** → Already at max resolution
 
-Choose which AI model to use for upscaling via the dropdown (defaults to Nano Banana Pro). The original image is sent as a reference with instructions to recreate it at the target resolution while preserving every detail.
+Choose which AI model to use for upscaling via the dropdown (defaults to GPT-5.4 Image 2). The original image is sent as a reference with instructions to recreate it at the target resolution while preserving every detail.
 
 > **Note:** Resolution output depends on the AI model. If the API returns a smaller image than requested, ImageStudio automatically detects the actual dimensions and corrects the resolution label in your gallery metadata.
 

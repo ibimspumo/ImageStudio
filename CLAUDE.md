@@ -34,7 +34,7 @@ npx electron-vite build    # Build check only (no Electron)
 
 ## Models
 ### Image Models (OpenRouter)
-Defined in `types/api.ts` as `AVAILABLE_MODELS`. Default: `google/gemini-3-pro-image-preview` (Nano Banana Pro).
+Defined in `types/api.ts` as `AVAILABLE_MODELS`. Default: `openai/gpt-5.4-image-2` (GPT-5.4 Image 2).
 Multi-model generation: PromptBar allows selecting multiple models; `useImageGeneration` fires one request per model × imageCount.
 Chat uses single model per message, selectable via ModelSelector.
 
