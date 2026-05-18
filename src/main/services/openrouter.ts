@@ -84,6 +84,9 @@ export async function generateImage(
     !request.model.includes('seedream') &&
     !request.model.includes('riverflow')
 
+  // Some models reject the image_config parameter (e.g. GPT-5.4 Image 2) — aspect/size must be expressed in the prompt
+  const supportsImageConfig = !request.model.includes('gpt-5.4-image')
+
   const body: Record<string, unknown> = {
     model: request.model,
     messages: [
@@ -91,8 +94,11 @@ export async function generateImage(
         role: 'user',
         content
       }
-    ],
-    image_config: {
+    ]
+  }
+
+  if (supportsImageConfig) {
+    body.image_config = {
       aspect_ratio: request.aspectRatio,
       image_size: request.resolution
     }
