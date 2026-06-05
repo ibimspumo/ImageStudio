@@ -45,7 +45,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   const [customRatio, setCustomRatio] = useState<string>('4:3')
   const [resolution, setResolution] = useState<Resolution>('2K')
   const [imageCount, setImageCount] = useState(1)
-  const [selectedModels, setSelectedModels] = useState<string[]>(initialModels || ['openai/gpt-5.4-image-2'])
+  const [selectedModels, setSelectedModels] = useState<string[]>(initialModels || ['google/gemini-3.1-flash-image-preview'])
   const [imageRefs, setImageRefs] = useState<ImageRef[]>([])
   const [collectionRefs, setCollectionRefs] = useState<CollectionRef[]>([])
   const [isDragOver, setIsDragOver] = useState(false)

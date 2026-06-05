@@ -8,9 +8,9 @@ export interface ModelOption {
 }
 
 export const AVAILABLE_MODELS: ModelOption[] = [
-  { id: 'openai/gpt-5.4-image-2', name: 'GPT-5.4 Image 2', provider: 'OpenAI' },
-  { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro', provider: 'Google' },
   { id: 'google/gemini-3.1-flash-image-preview', name: 'Nano Banana 2', provider: 'Google' },
+  { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro', provider: 'Google' },
+  { id: 'openai/gpt-5.4-image-2', name: 'GPT-5.4 Image 2', provider: 'OpenAI' },
   { id: 'sourceful/riverflow-v2-pro', name: 'Riverflow 2 Pro', provider: 'Sourceful' },
   { id: 'bytedance-seed/seedream-4.5', name: 'Seedream 4.5', provider: 'ByteDance' },
   { id: 'openai/gpt-5-image-mini', name: 'GPT 5 Image mini', provider: 'OpenAI' },

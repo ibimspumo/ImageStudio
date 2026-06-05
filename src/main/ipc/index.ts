@@ -36,7 +36,7 @@ interface AppSettings {
 
 const DEFAULTS: AppSettings = {
   apiKey: '',
-  defaultModel: 'openai/gpt-5.4-image-2',
+  defaultModel: 'google/gemini-3.1-flash-image-preview',
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
   defaultImageCount: 1,

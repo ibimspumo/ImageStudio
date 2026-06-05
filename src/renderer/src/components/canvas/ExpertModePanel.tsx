@@ -24,7 +24,7 @@ export function ExpertModePanel() {
   const customRatio = useCanvasStore((s) => s.customRatio)
   const close = useCanvasStore((s) => s.close)
 
-  const [selectedModels, setSelectedModels] = useState<string[]>(['openai/gpt-5.4-image-2'])
+  const [selectedModels, setSelectedModels] = useState<string[]>(['google/gemini-3.1-flash-image-preview'])
   const [resolution, setResolution] = useState<Resolution>('2K')
   const [imageCount, setImageCount] = useState(1)
   const [generalAttachments, setGeneralAttachments] = useState<string[]>([])
