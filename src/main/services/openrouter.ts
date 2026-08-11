@@ -87,6 +87,9 @@ export async function generateImage(
   // Some models reject the image_config parameter (e.g. GPT-5.4 Image 2) — aspect/size must be expressed in the prompt
   const supportsImageConfig = !request.model.includes('gpt-5.4-image')
 
+  // Nano Banana 2 Lite only outputs 1K — larger sizes are rejected with INVALID_ARGUMENT
+  const only1K = request.model.includes('flash-lite-image')
+
   const body: Record<string, unknown> = {
     model: request.model,
     messages: [
@@ -100,7 +103,7 @@ export async function generateImage(
   if (supportsImageConfig) {
     body.image_config = {
       aspect_ratio: request.aspectRatio,
-      image_size: request.resolution
+      image_size: only1K ? '1K' : request.resolution
     }
   }
 

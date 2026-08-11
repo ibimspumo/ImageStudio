@@ -110,7 +110,7 @@ Everything is non-blocking. You can fire off multiple generations and keep promp
 
 ## Choosing a Model
 
-ImageStudio supports 7 models from different providers. Click the model selector in the prompt bar to switch between them:
+ImageStudio supports 10 models from different providers. Click the model selector in the prompt bar to switch between them:
 
 <p align="center">
   <img src="docs/screenshot-models.jpg" width="800" alt="Model selector with 7 AI models" />
@@ -119,8 +119,10 @@ ImageStudio supports 7 models from different providers. Click the model selector
 | Model | Provider | Notes |
 |---|---|---|
 | **Nano Banana 2** | Google | Default. Gemini 3.1 Flash — fast, high quality. |
+| **Nano Banana 2 Lite** | Google | Gemini 3.1 Flash Lite — fastest generation (~4s). 1K output only. |
 | **Nano Banana Pro** | Google | High quality. (Gemini 3.0 Pro) |
 | **GPT-5.4 Image 2** | OpenAI | State-of-the-art image generation. |
+| **GPT Image 2** | OpenAI | High-fidelity generation and editing. |
 | **Riverflow 2 Pro** | Sourceful | Creative, artistic style |
 | **Seedream 4.5** | ByteDance | Strong at photorealism |
 | **GPT 5 Image mini** | OpenAI | Compact, fast |
