@@ -4,11 +4,13 @@ import { cn } from '../../lib/utils'
 interface ImageCountSelectorProps {
   value: number
   onChange: (value: number) => void
+  /** Upper bound of the selected model(s) — 4 for every current fal.ai model */
+  max?: number
 }
 
-export function ImageCountSelector({ value, onChange }: ImageCountSelectorProps) {
+export function ImageCountSelector({ value, onChange, max = 4 }: ImageCountSelectorProps) {
   const decrement = () => onChange(Math.max(1, value - 1))
-  const increment = () => onChange(Math.min(4, value + 1))
+  const increment = () => onChange(Math.min(max, value + 1))
 
   return (
     <div className="no-drag flex items-center h-8 rounded-lg bg-surface-3 border border-border-base overflow-hidden">
@@ -28,10 +30,10 @@ export function ImageCountSelector({ value, onChange }: ImageCountSelectorProps)
       </span>
       <button
         onClick={increment}
-        disabled={value >= 4}
+        disabled={value >= max}
         className={cn(
           'flex items-center justify-center w-7 h-full text-[14px] font-medium transition-all',
-          value >= 4 ? 'text-text-muted cursor-not-allowed' : 'text-text-secondary hover:text-text-primary hover:bg-surface-4'
+          value >= max ? 'text-text-muted cursor-not-allowed' : 'text-text-secondary hover:text-text-primary hover:bg-surface-4'
         )}
       >
         +

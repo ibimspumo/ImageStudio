@@ -1,28 +1,58 @@
-export type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '2:3' | '3:2' | '5:4' | '4:5' | '21:9' | 'custom'
-export type Resolution = '1K' | '2K' | '4K'
+export {
+  AVAILABLE_MODELS,
+  DEFAULT_MODEL,
+  getModel,
+  getModelName,
+  normalizeModelId,
+  resolveAspectRatio,
+  resolveResolution,
+  parseRatio,
+  toGptImageSize,
+  getCombinedCapabilities,
+  getThumbnailModels,
+  isThumbnailModel,
+  DEFAULT_THUMBNAIL_MODEL,
+} from '../../../shared/image-models'
 
-export interface ModelOption {
-  id: string
-  name: string
-  provider: string
-}
+export {
+  THUMBNAIL_STYLES,
+  THUMBNAIL_ASPECT_RATIO,
+  THUMBNAIL_RESOLUTION,
+  THUMBNAIL_EXPORT_SIZE,
+  THUMBNAIL_GPT_IMAGE_SIZE,
+  buildThumbnailSystemPrompt,
+} from '../../../shared/thumbnail-prompt'
 
-export const AVAILABLE_MODELS: ModelOption[] = [
-  { id: 'google/gemini-3.1-flash-image-preview', name: 'Nano Banana 2', provider: 'Google' },
-  { id: 'google/gemini-3.1-flash-lite-image', name: 'Nano Banana 2 Lite', provider: 'Google' },
-  { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro', provider: 'Google' },
-  { id: 'openai/gpt-5.4-image-2', name: 'GPT-5.4 Image 2', provider: 'OpenAI' },
-  { id: 'openai/gpt-image-2', name: 'GPT Image 2', provider: 'OpenAI' },
-  { id: 'sourceful/riverflow-v2-pro', name: 'Riverflow 2 Pro', provider: 'Sourceful' },
-  { id: 'bytedance-seed/seedream-4.5', name: 'Seedream 4.5', provider: 'ByteDance' },
-  { id: 'openai/gpt-5-image-mini', name: 'GPT 5 Image mini', provider: 'OpenAI' },
-  { id: 'openai/gpt-5-image', name: 'GPT 5 Image', provider: 'OpenAI' },
-  { id: 'black-forest-labs/flux.2-max', name: 'FLUX.2 Max', provider: 'Black Forest Labs' },
-]
+export type { ThumbnailStyle, ThumbnailStyleOption } from '../../../shared/thumbnail-prompt'
 
-export function getModelName(modelId: string): string {
-  return AVAILABLE_MODELS.find((m) => m.id === modelId)?.name || modelId
-}
+export type {
+  ImageModelOption,
+  FalAspectRatio,
+  FalResolution,
+  GptImageQuality,
+  OutputFormat,
+} from '../../../shared/image-models'
+
+/** UI-level aspect ratio; `custom` is resolved to a real ratio before the request. */
+export type AspectRatio =
+  | 'auto'
+  | '1:1'
+  | '16:9'
+  | '9:16'
+  | '4:3'
+  | '3:4'
+  | '2:3'
+  | '3:2'
+  | '5:4'
+  | '4:5'
+  | '21:9'
+  | '4:1'
+  | '1:4'
+  | '8:1'
+  | '1:8'
+  | 'custom'
+
+export type Resolution = '0.5K' | '1K' | '2K' | '4K'
 
 export interface GenerationConfig {
   model: string

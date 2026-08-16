@@ -5,7 +5,8 @@ import { useSharedCanvasRenderer } from './CanvasRendererContext'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useSettingsStore } from '../../stores/settings-store'
 import { nanoid } from 'nanoid'
-import { compressImage, prepareCollectionImages } from '../../lib/image-utils'
+import { compressImage, collectionImagesAsBase64 } from '../../lib/image-utils'
+import { getCombinedCapabilities, DEFAULT_MODEL } from '../../types/api'
 import { ColorFieldEditor, type CollectionMention } from './ColorFieldEditor'
 import { ModelSelector } from '../input/ModelSelector'
 import { ResolutionSelector } from '../input/ResolutionSelector'
@@ -24,7 +25,7 @@ export function ExpertModePanel() {
   const customRatio = useCanvasStore((s) => s.customRatio)
   const close = useCanvasStore((s) => s.close)
 
-  const [selectedModels, setSelectedModels] = useState<string[]>(['google/gemini-3.1-flash-image-preview'])
+  const [selectedModels, setSelectedModels] = useState<string[]>([DEFAULT_MODEL])
   const [resolution, setResolution] = useState<Resolution>('2K')
   const [imageCount, setImageCount] = useState(1)
   const [generalAttachments, setGeneralAttachments] = useState<string[]>([])
@@ -34,7 +35,8 @@ export function ExpertModePanel() {
 
   const { detectColors, exportComposite } = useSharedCanvasRenderer()
   const { generate } = useImageGeneration()
-  const apiKey = useSettingsStore((s) => s.apiKey)
+  const falApiKey = useSettingsStore((s) => s.falApiKey)
+  const caps = getCombinedCapabilities(selectedModels)
 
   const handleDetectColors = useCallback(() => {
     const colors = detectColors(12)
@@ -48,7 +50,7 @@ export function ExpertModePanel() {
   }, [])
 
   const handleSubmit = useCallback(async () => {
-    if (!apiKey) return
+    if (!falApiKey) return
 
     const canvasBase64 = exportComposite()
     if (!canvasBase64) return
@@ -138,25 +140,12 @@ export function ExpertModePanel() {
 
     // Process unique collections and add as labeled attachments (each collection only once)
     for (const { mention, context } of uniqueCollections) {
-      const processed = await prepareCollectionImages(mention.images)
-      attachments.push(...processed)
-
-      if (mention.images.length <= 5) {
-        labeledAttachments.push({
-          label: `Collection "${mention.name}" (${mention.images.length} images) — ${context}`,
-          images: processed,
-        })
-      } else {
-        const imagesPerGrid = 4
-        for (let i = 0; i < processed.length; i++) {
-          const startIdx = i * imagesPerGrid + 1
-          const endIdx = Math.min(startIdx + imagesPerGrid - 1, mention.images.length)
-          labeledAttachments.push({
-            label: `Collection "${mention.name}" — grid ${i + 1}/${processed.length} (images ${startIdx}–${endIdx}) — ${context}`,
-            images: [processed[i]],
-          })
-        }
-      }
+      const images = await collectionImagesAsBase64(mention.images)
+      attachments.push(...images)
+      labeledAttachments.push({
+        label: `Collection "@${mention.name}" (${images.length} image${images.length === 1 ? '' : 's'}) — ${context}`,
+        images,
+      })
     }
 
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
@@ -174,10 +163,10 @@ export function ExpertModePanel() {
     })
 
     close()
-  }, [apiKey, exportComposite, colorMappings, generalPrompt, generalAttachments, aspectRatio, customRatio, resolution, imageCount, selectedModels, generate, close])
+  }, [falApiKey, exportComposite, colorMappings, generalPrompt, generalAttachments, aspectRatio, customRatio, resolution, imageCount, selectedModels, generate, close])
 
   const hasColorDescriptions = colorMappings.some((m) => m.description.trim())
-  const canSend = !!apiKey && (!!generalPrompt.trim() || hasColorDescriptions)
+  const canSend = !!falApiKey && (!!generalPrompt.trim() || hasColorDescriptions)
 
   return (
     <div className="w-[300px] bg-surface-1 border-l border-border-dim flex flex-col shrink-0 h-full">
@@ -246,9 +235,9 @@ export function ExpertModePanel() {
         <div className="flex items-center gap-1 flex-wrap">
           <ModelSelector selectedModels={selectedModels} onChange={setSelectedModels} compact />
           <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-          <ResolutionSelector value={resolution} onChange={setResolution} />
+          <ResolutionSelector value={resolution} onChange={setResolution} available={caps.resolutions} notes={caps.notes} />
           <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-          <ImageCountSelector value={imageCount} onChange={setImageCount} />
+          <ImageCountSelector value={imageCount} onChange={setImageCount} max={caps.maxImagesPerRequest} />
         </div>
 
         <button

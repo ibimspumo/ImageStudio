@@ -3,7 +3,7 @@ import { Plus, Send, XCircle, Settings, ImageIcon, Volume2, VolumeX, Lock, Unloc
 import { useVideoGeneration } from '../../hooks/useVideoGeneration'
 import { useSettingsStore } from '../../stores/settings-store'
 import { AVAILABLE_VIDEO_MODELS, DEFAULT_VIDEO_MODEL, estimateVideoCost } from '../../types/api'
-import type { AspectRatio } from '../../types/api'
+import type { AspectRatio, FalAspectRatio } from '../../types/api'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
 import { compressImage } from '../../lib/image-utils'
@@ -37,6 +37,8 @@ export function VideoPromptBar({ onSettingsClick, initialStartFrame }: VideoProm
   const durationOptions = modelConfig?.durations ?? [5, 10]
 
   const resolutionOptions = modelConfig?.resolutions ?? ['720p']
+  // Video models accept a narrower set of ratios than the image models do
+  const aspectRatioOptions = (modelConfig?.aspectRatios ?? ['16:9', '9:16', '1:1']) as FalAspectRatio[]
 
   // Clamp duration and resolution if model changes
   useEffect(() => {
@@ -239,6 +241,7 @@ export function VideoPromptBar({ onSettingsClick, initialStartFrame }: VideoProm
           onChange={setAspectRatio}
           customRatio={customRatio}
           onCustomRatioChange={setCustomRatio}
+          available={aspectRatioOptions}
         />
 
         <div className="w-px h-4 bg-border-dim/40 mx-0.5" />

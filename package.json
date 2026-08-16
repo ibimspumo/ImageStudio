@@ -1,6 +1,6 @@
 {
   "name": "imagestudio",
-  "version": "0.8.5",
+  "version": "1.0.0",
   "description": "AI Image Generation Studio",
   "main": "./out/main/index.js",
   "scripts": {
@@ -42,8 +42,8 @@
       ],
       "icon": "resources/icon.png",
       "category": "public.app-category.graphics-design",
-      "identity": null,
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "identity": null
     },
     "win": {
       "target": [
@@ -80,7 +80,15 @@
           "path": "/Applications"
         }
       ]
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ibimspumo",
+        "repo": "ImageStudio"
+      }
+    ],
+    "afterSign": "scripts/adhoc-sign.cjs"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
@@ -99,6 +107,7 @@
     "@tailwindcss/vite": "^4.2.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.577.0",
     "nanoid": "^5.1.7",
     "react": "^19.2.4",

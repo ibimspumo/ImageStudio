@@ -1,12 +1,14 @@
-import { Send, XCircle, Settings, MinusCircle, Palette } from 'lucide-react'
+import { Send, XCircle, Settings, Palette } from 'lucide-react'
 import { AspectRatioSelector } from './AspectRatioSelector'
 import { ResolutionSelector } from './ResolutionSelector'
 import { ImageCountSelector } from './ImageCountSelector'
+import { QualitySelector } from './QualitySelector'
 import { ModelSelector } from './ModelSelector'
 import { SeedInput } from './SeedInput'
 import { PresetSelector } from './PresetSelector'
 import { QueueButton } from '../queue/QueueButton'
-import type { AspectRatio, Resolution } from '../../types/api'
+import { getCombinedCapabilities } from '../../types/api'
+import type { AspectRatio, Resolution, GptImageQuality } from '../../types/api'
 import { cn } from '../../lib/utils'
 
 interface ControlsRowProps {
@@ -20,21 +22,18 @@ interface ControlsRowProps {
   onResolutionChange: (v: Resolution) => void
   imageCount: number
   onImageCountChange: (v: number) => void
+  quality?: GptImageQuality
+  onQualityChange?: (v: GptImageQuality) => void
   canSend: boolean
   hasContent: boolean
   onSubmit: () => void
   onClear: () => void
   onSettingsClick?: () => void
   onCollectionsClick?: () => void
-  negativePromptActive?: boolean
-  onNegativePromptToggle?: () => void
   seed?: number | undefined
   onSeedChange?: (seed: number | undefined) => void
-  activePresetId?: string | null
-  onPresetChange?: (presetId: string | null) => void
   onPresetsManage?: () => void
   onQueueClick?: () => void
-  queuePendingCount?: number
   onCanvasClick?: () => void
 }
 
@@ -49,58 +48,67 @@ export function ControlsRow({
   onResolutionChange,
   imageCount,
   onImageCountChange,
+  quality,
+  onQualityChange,
   canSend,
   hasContent,
   onSubmit,
   onClear,
   onSettingsClick,
   onCollectionsClick,
-  negativePromptActive,
-  onNegativePromptToggle,
   seed,
   onSeedChange,
-  activePresetId = null,
-  onPresetChange,
   onPresetsManage,
   onQueueClick,
-  queuePendingCount = 0,
   onCanvasClick,
 }: ControlsRowProps) {
+  // Every control below reflects what the selected model(s) actually accept.
+  const caps = getCombinedCapabilities(selectedModels)
+
   return (
     <div className="flex items-center gap-1 px-4 py-3">
       <ModelSelector selectedModels={selectedModels} onChange={onModelsChange} />
       <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-      <AspectRatioSelector value={aspectRatio} onChange={onAspectRatioChange} customRatio={customRatio} onCustomRatioChange={onCustomRatioChange} />
+      <AspectRatioSelector
+        value={aspectRatio}
+        onChange={onAspectRatioChange}
+        customRatio={customRatio}
+        onCustomRatioChange={onCustomRatioChange}
+        available={caps.aspectRatios}
+      />
       <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-      <ResolutionSelector value={resolution} onChange={onResolutionChange} />
+      <ResolutionSelector
+        value={resolution}
+        onChange={onResolutionChange}
+        available={caps.resolutions}
+        notes={caps.notes}
+      />
       <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-      <ImageCountSelector value={imageCount} onChange={onImageCountChange} />
+      <ImageCountSelector value={imageCount} onChange={onImageCountChange} max={caps.maxImagesPerRequest} />
+
+      {/* Quality only exists on GPT Image 2 */}
+      {caps.qualities && onQualityChange && (
+        <>
+          <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+          <QualitySelector
+            value={quality ?? 'high'}
+            onChange={onQualityChange}
+            available={caps.qualities}
+          />
+        </>
+      )}
+
+      {/* Seed: GPT Image 2 has no seed parameter */}
+      {onSeedChange && caps.supportsSeed && (
+        <>
+          <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+          <SeedInput seed={seed} onChange={onSeedChange} />
+        </>
+      )}
+
       <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
 
-      {onSeedChange && (
-        <SeedInput value={seed} onChange={onSeedChange} />
-      )}
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-
-      {onNegativePromptToggle && (
-        <button
-          onClick={onNegativePromptToggle}
-          className={cn(
-            'no-drag flex items-center justify-center w-8 h-8 rounded-lg border transition-all',
-            negativePromptActive
-              ? 'bg-accent-main/20 border-accent-main/30 text-accent-bright'
-              : 'bg-surface-3 hover:bg-surface-4 border-border-base text-text-secondary hover:text-text-primary'
-          )}
-          title="Negative prompt"
-        >
-          <MinusCircle className="w-3.5 h-3.5" />
-        </button>
-      )}
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
-
-      {onPresetChange && (
-        <PresetSelector activePresetId={activePresetId} onPresetChange={onPresetChange} onManage={onPresetsManage} />
-      )}
+      <PresetSelector onManageClick={onPresetsManage} />
 
       {onCollectionsClick && (
         <button
@@ -130,7 +138,7 @@ export function ControlsRow({
         </button>
       )}
 
-      {onQueueClick && <QueueButton pendingCount={queuePendingCount ?? 0} onClick={onQueueClick} />}
+      {onQueueClick && <QueueButton onClick={onQueueClick} />}
 
       <div className="flex-1" />
 

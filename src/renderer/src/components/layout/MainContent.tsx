@@ -3,16 +3,18 @@ import { ImageGallery } from '../gallery/ImageGallery'
 import { PromptBar } from '../input/PromptBar'
 import { VideoPromptBar } from '../input/VideoPromptBar'
 import { WorkspaceBar } from '../workspace/WorkspaceBar'
-import { useGalleryStore, type GalleryImage } from '../../stores/gallery-store'
+import { useGalleryStore, isThumbnailImage, type GalleryImage } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useGalleryFilterStore } from '../../stores/gallery-filter-store'
 import { GalleryToolbar } from '../gallery/GalleryToolbar'
 import { SmartAlbumBar } from '../gallery/SmartAlbumBar'
-import { Sparkles, SearchX, ImageIcon, Film } from 'lucide-react'
+import { ProjectBar } from '../thumbnail/ProjectBar'
+import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
+import { Sparkles, SearchX, ImageIcon, Film, Youtube } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 
-export type AppMode = 'image' | 'video'
+export type AppMode = 'image' | 'video' | 'thumbnail'
 
 interface MainContentProps {
   onImageClick: (images: GalleryImage[], index: number) => void
@@ -28,11 +30,13 @@ interface MainContentProps {
   onModeChange: (mode: AppMode) => void
   videoStartFrame?: { base64: string; name: string } | null
   onGenerateVideo?: (imageId: string) => void
+  onPreviewThumbnail?: (images: GalleryImage[], index: number) => void
 }
 
-export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage, onPresetsManage, onQueueClick, queuePendingCount, onCanvasClick, mode, onModeChange, videoStartFrame, onGenerateVideo }: MainContentProps) {
+export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick, onStartChat, onCropImage, onPresetsManage, onQueueClick, queuePendingCount, onCanvasClick, mode, onModeChange, videoStartFrame, onGenerateVideo, onPreviewThumbnail }: MainContentProps) {
   const allImages = useGalleryStore((s) => s.images)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
+  const activeProjectId = useThumbnailProjectsStore((s) => s.activeProjectId)
   const searchQuery = useGalleryFilterStore((s) => s.searchQuery)
   const filterModels = useGalleryFilterStore((s) => s.filterModels)
   const filterAspectRatios = useGalleryFilterStore((s) => s.filterAspectRatios)
@@ -44,7 +48,22 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   const activeSmartAlbum = useGalleryFilterStore((s) => s.activeSmartAlbum)
   const clearFilters = useGalleryFilterStore((s) => s.clearFilters)
 
+  const thumbnailCount = useMemo(() => allImages.filter(isThumbnailImage).length, [allImages])
+
   const images = useMemo(() => {
+    // Thumbnail mode runs on its own axis: projects instead of workspaces.
+    if (mode === 'thumbnail') {
+      let thumbs = allImages.filter(isThumbnailImage)
+      if (activeProjectId !== null) thumbs = thumbs.filter((img) => img.projectId === activeProjectId)
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase()
+        thumbs = thumbs.filter((img) => img.prompt.toLowerCase().includes(q))
+      }
+      if (favoritesOnly) thumbs = thumbs.filter((img) => img.isFavorite)
+      if (sortBy === 'oldest') thumbs = [...thumbs].sort((a, b) => a.timestamp - b.timestamp)
+      return thumbs
+    }
+
     let filtered = activeWorkspaceId === null ? allImages : allImages.filter((img) => img.workspaceId === activeWorkspaceId)
 
     // Smart album filter (takes priority — these are predefined filter shortcuts)
@@ -121,7 +140,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
     // default 'newest' is already the store order (newest first)
 
     return filtered
-  }, [allImages, activeWorkspaceId, activeSmartAlbum, searchQuery, filterModels, filterAspectRatios, filterDateRange, sortBy, favoritesOnly, filterTags, filterType])
+  }, [allImages, activeWorkspaceId, activeSmartAlbum, searchQuery, filterModels, filterAspectRatios, filterDateRange, sortBy, favoritesOnly, filterTags, filterType, mode, activeProjectId])
 
   const hasActiveFilters = searchQuery || filterModels.length > 0 || filterAspectRatios.length > 0 || filterDateRange || favoritesOnly || filterTags.length > 0 || activeSmartAlbum || filterType !== 'all'
 
@@ -169,20 +188,61 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
             <Film className="w-3 h-3" />
             Video
           </button>
+          <button
+            onClick={() => onModeChange('thumbnail')}
+            className={cn(
+              'no-drag flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium transition-all',
+              mode === 'thumbnail'
+                ? 'bg-danger/15 text-danger shadow-sm'
+                : 'text-text-muted hover:text-text-secondary'
+            )}
+          >
+            <Youtube className="w-3 h-3" />
+            Thumbnail
+          </button>
         </div>
       </div>
 
-      <WorkspaceBar />
+      {mode === 'thumbnail' ? <ProjectBar /> : <WorkspaceBar />}
 
-      {/* Gallery toolbar & smart albums — only when gallery has images */}
-      {allImages.length > 0 && (
+      {/* Gallery toolbar & smart albums — only when gallery has images.
+          Thumbnail mode keeps search and sorting but drops the smart albums,
+          which filter on axes (videos, models) that mean nothing here. */}
+      {mode === 'thumbnail' ? (
+        thumbnailCount > 0 && (
+          <GalleryToolbar allTags={allTags} totalCount={thumbnailCount} filteredCount={images.length} />
+        )
+      ) : allImages.length > 0 ? (
         <>
           <GalleryToolbar allTags={allTags} totalCount={allImages.length} filteredCount={images.length} />
           <SmartAlbumBar images={allImages} />
         </>
-      )}
+      ) : null}
 
-      {allImages.length === 0 ? (
+      {mode === 'thumbnail' ? (
+        images.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center px-8">
+            <div className="w-14 h-14 rounded-2xl bg-danger/10 border border-danger/20 flex items-center justify-center mb-5">
+              <Youtube className="w-6 h-6 text-danger" />
+            </div>
+            <h2 className="text-[18px] font-semibold text-text-primary mb-2">
+              {activeProjectId ? 'Noch kein Thumbnail für dieses Video' : 'Noch keine Thumbnails'}
+            </h2>
+            <p className="text-text-muted text-[13px] max-w-sm text-center leading-relaxed">
+              16:9 und 2K sind gesetzt, die Thumbnail-Regeln laufen automatisch mit.
+              Beschreibe die eine Idee — Motiv, Emotion, Situation.
+            </p>
+          </div>
+        ) : (
+          <ImageGallery
+            images={images}
+            onImageClick={onImageClick}
+            onStartChat={onStartChat}
+            onCropImage={onCropImage}
+            onPreviewThumbnail={onPreviewThumbnail}
+          />
+        )
+      ) : allImages.length === 0 ? (
         /* Empty state with aurora atmosphere — only when truly empty */
         <div className="aurora-bg flex-1 flex flex-col items-center justify-center px-8">
           {/* Floating orb */}
@@ -196,7 +256,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
             What will you create?
           </h1>
           <p className="text-text-muted text-[14px] max-w-md text-center leading-relaxed mb-8">
-            Describe your vision, attach references, and generate with Gemini.
+            Describe your vision, attach references, and generate with Nano Banana or GPT Image.
           </p>
           {/* Suggestion chips */}
           <div className="flex gap-2 flex-wrap justify-center max-w-lg">
@@ -241,13 +301,21 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
               onSettingsClick={onSettingsClick}
               initialStartFrame={videoStartFrame}
             />
+          ) : mode === 'thumbnail' ? (
+            <PromptBar
+              key="thumbnail-prompt"
+              thumbnailMode
+              onSettingsClick={onSettingsClick}
+              onCollectionsClick={onCollectionsClick}
+              onQueueClick={onQueueClick}
+            />
           ) : (
             <PromptBar
+              key="image-prompt"
               onSettingsClick={onSettingsClick}
               onCollectionsClick={onCollectionsClick}
               onPresetsManage={onPresetsManage}
               onQueueClick={onQueueClick}
-              queuePendingCount={queuePendingCount}
               onCanvasClick={onCanvasClick}
             />
           )}

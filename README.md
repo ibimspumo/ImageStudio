@@ -25,7 +25,7 @@
 
 ImageStudio is a native desktop app for macOS and Windows that lets you generate images and videos using the best AI models — all through a single, polished interface. No browser tabs, no subscriptions, no clutter. Just you, your prompts, and your creations.
 
-You bring your own [OpenRouter](https://openrouter.ai) API key for images and [fal.ai](https://fal.ai) API key for videos, paying only for what you use. ImageStudio supports multiple models from different providers, so you can compare results side by side.
+You bring your own [fal.ai](https://fal.ai) API key — one key for images and video — paying only for what you use. ImageStudio supports four image models, so you can compare results side by side.
 
 ---
 
@@ -61,22 +61,34 @@ npm run build:win    # Build distributable .exe (Windows)
 
 ## Getting Started
 
-When you first open ImageStudio, a settings dialog appears. Paste your [OpenRouter API key](https://openrouter.ai/keys) for image generation. For video generation, also add your [fal.ai API key](https://fal.ai/dashboard/keys). You're ready to go.
+When you first open ImageStudio, a settings dialog appears. Paste your [fal.ai API key](https://fal.ai/dashboard/keys) — it covers image generation, video generation and reference uploads. You're ready to go.
 
 <p align="center">
-  <img src="docs/screenshot-settings.jpg" width="500" alt="Settings — paste your OpenRouter API key and see app info" />
+  <img src="docs/screenshot-settings.jpg" width="500" alt="Settings — paste your fal.ai API key, check for updates, see app info" />
 </p>
 
-### Send images as URL (optional)
+### How reference images are sent
 
-In Settings, you can enable **"Send images as URL"**. When active, reference images are uploaded to a free temporary host ([litterbox.catbox.moe](https://litterbox.catbox.moe)) and sent as HTTPS links instead of base64. This can improve how some models handle your prompts.
+fal.ai's image endpoints only accept URLs, so every reference image is uploaded to fal.ai storage before
+the request goes out. This is automatic — there is nothing to configure.
 
-- Images auto-delete after 1 hour
-- Identical images are cached and only uploaded once (important for multi-model generation)
-- Upload status is shown on loading placeholders ("Uploading images...")
-- If upload fails, ImageStudio silently falls back to base64
+- Uploads are cached by content hash: the same image is transferred once, no matter how many models
+  or how many images of a batch reference it
+- Upload status is shown on the loading placeholders ("Uploading references…")
+- The cache is cleared when you change your API key
 - Works across all features: generation, chat, zoom out, collections
-- Default: **off** (standard base64 encoding)
+
+### Updates
+
+Settings has an **Updates** panel wired to this repository's GitHub Releases:
+
+- **Check now** — asks GitHub whether a newer version exists (also runs quietly ~8s after launch, which
+  you can turn off)
+- **Download** — fetches the installer with a live progress bar and transfer rate. Downloads never start
+  on their own
+- **Install** — on Windows the app restarts into the new version; on macOS the disk image opens so you can
+  drag the new build into Applications. macOS builds are unsigned, and macOS refuses to let an unsigned
+  app replace itself, so that last step is manual
 
 ---
 
@@ -92,13 +104,12 @@ The prompt bar gives you full control over your generation:
 
 - **+** button — attach reference images (moves above the text when images are attached)
 - **Model selector** — choose which AI model to use (select multiple to compare)
-- **Aspect ratio** — pick from 10 visual presets or define a custom ratio
-- **Resolution** — 1K, 2K, or 4K output
+- **Aspect ratio** — the ratios the selected model actually supports; a custom ratio is mapped to the closest one each model can produce
+- **Resolution** — the output sizes the selected model offers (hidden for models with a fixed size)
 - **Image count** — generate up to 4 images at once
-- **Seed** — lock a seed for reproducible results (dice icon)
-- **Negative prompt** — toggle to describe what to avoid (minus icon)
+- **Quality** — GPT Image 2's quality tier (only shown for that model)
+- **Seed** — lock a seed for reproducible results (hidden for GPT Image 2, which has no seed)
 - **Style preset** — append predefined style suffixes to your prompt
-- **Prompt enhancer** — AI-powered prompt improvement (wand icon)
 - **@** button — open your asset collections
 - **Queue** — batch processing queue status
 - **Clear** (⊗) — clear the current prompt, attachments, and collection references
@@ -110,24 +121,23 @@ Everything is non-blocking. You can fire off multiple generations and keep promp
 
 ## Choosing a Model
 
-ImageStudio supports 10 models from different providers. Click the model selector in the prompt bar to switch between them:
+ImageStudio runs four image models, all through fal.ai. Click the model selector in the prompt bar to switch between them:
 
 <p align="center">
-  <img src="docs/screenshot-models.jpg" width="800" alt="Model selector with 7 AI models" />
+  <img src="docs/screenshot-models.jpg" width="800" alt="Model selector with the four fal.ai image models" />
 </p>
 
-| Model | Provider | Notes |
-|---|---|---|
-| **Nano Banana 2** | Google | Default. Gemini 3.1 Flash — fast, high quality. |
-| **Nano Banana 2 Lite** | Google | Gemini 3.1 Flash Lite — fastest generation (~4s). 1K output only. |
-| **Nano Banana Pro** | Google | High quality. (Gemini 3.0 Pro) |
-| **GPT-5.4 Image 2** | OpenAI | State-of-the-art image generation. |
-| **GPT Image 2** | OpenAI | High-fidelity generation and editing. |
-| **Riverflow 2 Pro** | Sourceful | Creative, artistic style |
-| **Seedream 4.5** | ByteDance | Strong at photorealism |
-| **GPT 5 Image mini** | OpenAI | Compact, fast |
-| **GPT 5 Image** | OpenAI | Full-size, highest detail |
-| **FLUX.2 Max** | Black Forest Labs | Excellent prompt following |
+| Model | Provider | Aspect ratios | Resolution | Reference images | Seed |
+|---|---|---|---|---|---|
+| **Nano Banana 2** | Google | 15, incl. 4:1 and 8:1 | 0.5K–4K | up to 14 | yes |
+| **Nano Banana 2 Lite** | Google | 15, incl. 4:1 and 8:1 | fixed 1K | up to 14 | yes |
+| **Nano Banana Pro** | Google | 11 standard ratios | 1K–4K | up to 14 | yes |
+| **GPT Image 2** | OpenAI | 11 standard ratios | 1K–4K, quality-tiered | up to 16 | no |
+
+Every control in the prompt bar reflects what the selected model genuinely accepts — options a model
+does not have are hidden rather than silently ignored. None of the four support a negative prompt, so
+that control does not exist for images. Pick several models at once and the strictest limits apply,
+while values a given model cannot take are mapped to its nearest supported one.
 
 ### Compare models side by side
 
@@ -180,6 +190,48 @@ Videos are saved as MP4 files. The gallery shows both images and videos together
 ### Cost estimates
 
 Live cost estimates are shown in the prompt bar before generating. Costs are calculated from the model's per-second rate and your selected duration. After generation, the estimated cost is saved and displayed in the lightbox details.
+
+---
+
+## Thumbnail Mode
+
+The third mode, next to Image and Video, is built for one job: YouTube thumbnails. It removes decisions instead of adding them — what a thumbnail technically has to be is no longer a setting.
+
+### What is locked
+
+| | |
+|---|---|
+| **Aspect ratio** | 16:9, no selector |
+| **Generated at** | 2K (Gemini) / 1920 × 1088 px (GPT Image 2) |
+| **Exported at** | exactly 1920 × 1080 JPEG, under 2 MB |
+| **Models** | Nano Banana 2, Nano Banana Pro, GPT Image 2 — Nano Banana 2 Lite drops out (fixed 1K) |
+
+No model produces exactly 1920 × 1080: the Gemini endpoints return 2752 × 1536 (ratio 1.792) and fal.ai snaps GPT Image 2 to multiples of 16, so a requested 1080 comes back as 1072. Thumbnail mode therefore asks GPT Image 2 for 1920 × 1088 and normalises every export to a centre-cropped 1920 × 1080, stepping JPEG quality down until the file fits YouTube's 2 MB limit.
+
+### The system prompt
+
+Every generation carries a thumbnail ruleset the user never has to retype: format and safe zones, the one-idea rule, faces and emotion, contrast and the 60/30/10 split, text limits, and click psychology. It ships as `system_prompt` on the Gemini models and is prepended to the prompt on GPT Image 2, which has no such field.
+
+- **Style** — `Automatisch` is the default and adds no style instruction at all, leaving the prompt in charge. The three explicit steps are `Clean` (editorial, typography-led, no arrows), `Balanced` (clear emotion, one accent colour) and `MrBeast` (expression at the limit, red arrow, outlined text, hyper-saturation)
+- **Faces true** — with reference images attached, an identity-preservation block is added: facial geometry, skin tone, hairline, glasses stay exactly as in the reference; expression and lighting may change, the identity may not. Faces are rendered large, unobstructed and never covered by text
+- **Video title** — goes in as context with the explicit rule that any text in the image must not repeat it
+
+Text in the image is not a separate control — write it into the prompt (`Text: "30 TAGE"`) and the rules take care of the rest: 4 words maximum, spelled exactly as given, never across a face, never in the outer 5 %.
+
+### Projects
+
+A project is a video: a title, optionally an angle, a colour. Thumbnails generated in the mode are filed under the active project automatically, and can be moved later by dragging them onto a project pill or via the card's move menu. Projects are a separate axis from workspaces — they only exist inside thumbnail mode, so eight videos in progress never leak into normal image work. Collections, @-mentions, drag & drop, the queue and export all behave exactly as elsewhere.
+
+### YouTube preview
+
+The preview (the ▶ button on a thumbnail card) renders the image in the surfaces it will actually appear in — search result, feed between two other thumbnails, home grid, "up next" sidebar, and mobile — in YouTube's light and dark themes, with an editable video title so title and thumbnail can be judged together. Four checks can be layered on top:
+
+- **Safe zones** — the outer 5 % that some surfaces crop, and the corner the duration badge covers
+- **Thirds** — rule-of-thirds guides
+- **Grayscale** — does the image separate without colour?
+- **Squint** — blurred: does it survive the fast scroll?
+
+Below that the same image is shown at 120 × 68, 88 × 50 and 64 × 36 px. What is unreadable there does not exist in the feed. The export button writes exactly 1920 × 1080 and reports the resulting file size.
 
 ---
 
@@ -294,7 +346,7 @@ Canvas-generated images support the **Compare with Original** feature. Your sket
 Select any image in the lightbox and click **Inpaint** to open the mask editor. Paint over the area you want to change, then describe what should appear there using the full prompt bar at the bottom.
 
 - **Brush tool** — adjustable size (5–100px), with undo and clear
-- **Full prompt bar** — same prompt bar as the main app, with attachments, @-mentions, negative prompt, seed, presets, and multi-model support
+- **Full prompt bar** — same prompt bar as the main app, with attachments, @-mentions, seed, presets, and multi-model support
 - **Reference images** — attach additional images as visual guidance (e.g. "Replace jacket with @image1")
 - **Green overlay** — the masked area is sent as a green highlight on the original, so the AI can visually see exactly what to edit
 - **Lineage tracking** — inpainted images link back to their source, visible in the detail panel and usable for comparison
@@ -368,14 +420,6 @@ Add generations to a queue for sequential processing. The generate button includ
 - **Persistent** — queue survives app restarts
 - **Cancel & clear** — cancel individual items or clear completed ones
 
----
-
-## Prompt Enhancer
-
-Click the wand icon (✨) next to the prompt editor to have AI improve your prompt. The enhancer adds specific visual details, lighting, composition, and style keywords to make your prompt more effective. The enhanced text replaces your current prompt while preserving any attached images and @-mentions.
-
----
-
 ## EXIF Metadata in Exports
 
 When exporting images, metadata is embedded directly in the file:
@@ -383,6 +427,37 @@ When exporting images, metadata is embedded directly in the file:
 - **PNG** — custom `tEXt` chunks with prompt, model, seed, aspect ratio, resolution, and timestamp
 - Toggle **"Embed metadata"** in the export popover (on by default)
 - Metadata is readable by standard tools like `exiftool` or file property viewers
+
+The option disappears while **Anti-Detection Processing** is on — embedding the prompt would put
+back exactly what that step strips out.
+
+---
+
+## Anti-Detection Processing
+
+Detectors for synthetic images key on the traces a generator leaves in the pixels: the periodic
+residue of its upsampling stack, an unnaturally clean frequency spectrum, PNG output that never
+went through a lossy encoder. Every generated image and thumbnail therefore runs through a short
+pipeline before it is written to disk — videos are never touched:
+
+1. **JPEG at 95 %** — quantises every 8×8 block, so no pixel keeps its exact generator value.
+2. **1 % squeeze per axis** — the image is resampled down on X, then on Y, each pass on its own axis.
+3. **Back to the original size** and a closing JPEG round.
+
+The result has the exact dimensions that were generated. Measured over 1000×1000, 1920×1088 and
+2752×1536: roughly 86 % of all pixels change, at an average difference of 1.5 of 255 — invisible —
+and the whole pass costs 60–290 ms.
+
+Because the pipeline runs before storage, everything downstream hands out the processed file:
+gallery, export, copy to clipboard and drag & drop. Exported file names become neutral
+(`IMG_4831.jpg`) instead of `imagestudio-<uuid>.png`; a thumbnail project keeps its own title,
+which is your wording and gives nothing away.
+
+Toggle it under **⚙ → Anti-detection processing** (on by default). With it off, images are stored
+as PNG exactly as the model returned them.
+
+Note: this changes the file, not the facts. Platforms that require you to disclose synthetic
+content — YouTube among them — expect that disclosure regardless of what a detector sees.
 
 ---
 
@@ -416,10 +491,8 @@ The info panel includes:
 - **Prompt** — with a copy button
 - **Model** — which AI model was used (shown as a readable name)
 - **Size** — aspect ratio, resolution, and pixel dimensions (resolution auto-corrected to match actual image)
-- **Negative prompt** — if one was used
 - **Seed** — with a copy button for reproducibility
 - **Duration** — how long the generation took
-- **Cost** — how much the API call cost (fetched from OpenRouter)
 - **Date** — when the image was created
 - **Tags** — add/remove custom tags with autocomplete
 - **Chat origin** — if the image came from a chat, click to reopen it
@@ -428,7 +501,7 @@ The info panel includes:
 ### Actions
 
 - **Favorite** — star/unstar the image
-- **Reuse Prompt** — restore the prompt, negative prompt, seed, @-collection mentions, and image references back into the prompt bar
+- **Reuse Prompt** — restore the prompt, seed, @-collection mentions, and image references back into the prompt bar
 - **Start Chat / Continue Chat** — open an editing conversation from this image
 - **Crop as Reference** — select a region of the image to use as reference
 - **Inpaint** — open the mask editor to selectively edit parts of the image
@@ -504,8 +577,8 @@ Press **?** anywhere (outside a text input) to see the full shortcuts help overl
 | Styling | [Tailwind CSS v4](https://tailwindcss.com/) |
 | State | [Zustand](https://zustand.docs.pmnd.rs/) |
 | Icons | [Lucide React](https://lucide.dev/) |
-| AI (Images) | [OpenRouter API](https://openrouter.ai/) |
-| AI (Videos) | [fal.ai API](https://fal.ai/) |
+| AI (Images & Videos) | [fal.ai API](https://fal.ai/) |
+| Updates | [electron-updater](https://www.electron.build/auto-update) + GitHub Releases |
 
 ---
 
@@ -515,7 +588,7 @@ Press **?** anywhere (outside a text input) to see the full shortcuts help overl
 src/
 ├── main/                 # Electron main process
 │   ├── ipc/              # IPC handlers (generation, video generation, files, settings, metadata)
-│   └── services/         # OpenRouter client, fal.ai client, image storage, prompt enhancer
+│   └── services/         # fal.ai image client, fal.ai video client, storage upload, image storage, updater
 ├── preload/              # Typed context bridge (window.api)
 └── renderer/src/         # React UI
     ├── components/
@@ -532,7 +605,7 @@ src/
     ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop, presets, queue, canvas, gallery-filter)
     ├── hooks/            # useImageGeneration, useVideoGeneration, useChatGeneration, useCanvasRenderer, useJustifiedLayout, useKeyboardShortcuts
     ├── types/            # API types, model definitions, shared interfaces
-    └── lib/              # Utils, image compression, date-utils, debounce, logger
+    └── lib/              # Utils, image compression, anti-detection, date-utils, debounce, logger
 ```
 
 ---
@@ -554,8 +627,9 @@ This triggers parallel builds on macOS and Windows, packages the app for both pl
 
 - Your API keys are stored locally on your machine
 - All generated images and videos are saved as files on disk — metadata is stored in lightweight JSON files (no base64 in memory)
-- ImageStudio never sends data anywhere except to OpenRouter for image generation and fal.ai for video generation
-- **Optional:** If "Send images as URL" is enabled, reference images are temporarily uploaded to [litterbox.catbox.moe](https://litterbox.catbox.moe) (auto-deleted after 1 hour). This is opt-in and off by default.
+- Generated images pass through the anti-detection pipeline before storage, which also drops any metadata the model's encoder wrote into the file
+- ImageStudio never sends data anywhere except to fal.ai for generation, and to GitHub when checking for updates
+- Reference images are uploaded to fal.ai storage because the image endpoints only accept URLs. Uploads are cached by content hash, so the same image is sent once.
 - Existing data from older versions is automatically migrated on first launch
 - No analytics, no tracking, no accounts
 

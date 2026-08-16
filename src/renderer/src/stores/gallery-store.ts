@@ -27,10 +27,22 @@ export interface GalleryImage {
   tags?: string[]               // A4: tags
   inpaintSourceId?: string      // D12: inpainting source
   canvasSketchPath?: string     // file path of the canvas sketch used to generate this image
+  projectId?: string            // thumbnail mode: the video this belongs to
+  thumbnailStyle?: string       // thumbnail mode: 'clean' | 'balanced' | 'bold'
+  faceFidelity?: boolean        // thumbnail mode: identity-preservation was on
   type?: 'image' | 'video'     // default 'image' for backwards compat
   videoDuration?: number        // video length in seconds
   videoThumbnailPath?: string   // path to extracted first-frame JPEG
   falRequestId?: string         // fal.ai queue tracking
+}
+
+/**
+ * A thumbnail is what thumbnail mode produced, plus anything filed under a
+ * video. Everything else in the gallery is a normal image and must stay out of
+ * the thumbnail views and their counts.
+ */
+export function isThumbnailImage(image: GalleryImage): boolean {
+  return image.thumbnailStyle != null || image.projectId != null
 }
 
 /** Convert a file path to a displayable URL (handles spaces, special chars, and Windows backslashes) */
@@ -50,7 +62,7 @@ export function toDisplayUrl(filePath: string): string {
 
 interface GalleryStore {
   images: GalleryImage[]
-  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string; canvasSketchPath?: string }) => string
+  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string; canvasSketchPath?: string; projectId?: string; thumbnailStyle?: string; faceFidelity?: boolean }) => string
   addVideoPlaceholder: (prompt: string, aspectRatio: string, model: string, attachments?: string[], workspaceId?: string) => string
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
   completeVideo: (id: string, filePath: string, durationMs: number, videoDuration: number, thumbnailPath?: string, cost?: number) => void
@@ -58,6 +70,7 @@ interface GalleryStore {
   failImage: (id: string, error: string) => void
   removeImage: (id: string) => void
   moveToWorkspace: (imageId: string, workspaceId: string | undefined) => void
+  moveToProject: (imageId: string, projectId: string | undefined) => void
   toggleFavorite: (id: string) => void
   updateTags: (id: string, tags: string[]) => void
   updateResolution: (id: string, resolution: string) => void
@@ -92,6 +105,9 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           seed: extra?.seed,
           inpaintSourceId: extra?.inpaintSourceId,
           canvasSketchPath: extra?.canvasSketchPath,
+          projectId: extra?.projectId,
+          thumbnailStyle: extra?.thumbnailStyle,
+          faceFidelity: extra?.faceFidelity,
         },
         ...state.images,
       ],
@@ -176,6 +192,15 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     set((state) => ({
       images: state.images.map((img) =>
         img.id === imageId ? { ...img, workspaceId } : img
+      ),
+    }))
+    debouncedPersist(get().persistToDisk)
+  },
+
+  moveToProject: (imageId, projectId) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === imageId ? { ...img, projectId } : img
       ),
     }))
     debouncedPersist(get().persistToDisk)

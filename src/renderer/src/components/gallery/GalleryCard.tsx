@@ -1,9 +1,12 @@
 import { useState, useRef, useCallback, memo } from 'react'
-import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop, Star, Play, Film } from 'lucide-react'
+import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop, Star, Play, Film, Youtube } from 'lucide-react'
 import { useGalleryStore, type GalleryImage, toDisplayUrl } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
+import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
+import { useSettingsStore } from '../../stores/settings-store'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
+import { neutralImageName } from '../../lib/anti-detection'
 
 interface GalleryCardProps {
   image: GalleryImage
@@ -11,13 +14,19 @@ interface GalleryCardProps {
   onStartChat?: (imageId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
   onGenerateVideo?: (imageId: string) => void
+  /** Thumbnail mode: open the YouTube preview instead of the plain lightbox. */
+  onPreviewThumbnail?: (imageId: string) => void
 }
 
-export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartChat, onCropImage, onGenerateVideo }: GalleryCardProps) {
+export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartChat, onCropImage, onGenerateVideo, onPreviewThumbnail }: GalleryCardProps) {
   const removeImage = useGalleryStore((s) => s.removeImage)
   const toggleFavorite = useGalleryStore((s) => s.toggleFavorite)
   const moveToWorkspace = useGalleryStore((s) => s.moveToWorkspace)
+  const moveToProject = useGalleryStore((s) => s.moveToProject)
   const workspaces = useWorkspaceStore((s) => s.workspaces)
+  const projects = useThumbnailProjectsStore((s) => s.projects)
+  const antiDetection = useSettingsStore((s) => s.antiDetection)
+  const isThumbnailMode = !!onPreviewThumbnail
   const [showMoveMenu, setShowMoveMenu] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const isVideo = image.type === 'video'
@@ -69,11 +78,15 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
     e.stopPropagation()
     try {
       if (isVideo) {
-        await window.api.exportVideo(image.filePath, `imagestudio-${image.id}.mp4`)
+        const name = antiDetection ? neutralImageName('mp4') : `imagestudio-${image.id}.mp4`
+        await window.api.exportVideo(image.filePath, name)
       } else {
         const result = await window.api.readImage(image.filePath)
         if (result.success) {
-          await window.api.exportImage(result.base64DataUrl, `imagestudio-${image.id}.png`)
+          // Keep the stored file's extension — with anti-detection on it is a JPEG.
+          const ext = image.filePath.split('.').pop()?.toLowerCase() || 'png'
+          const name = antiDetection ? neutralImageName(ext) : `imagestudio-${image.id}.png`
+          await window.api.exportImage(result.base64DataUrl, name)
         }
       }
     } catch (err) { logger.error('GalleryCard', 'Operation failed', err) }
@@ -110,15 +123,24 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
     setShowMoveMenu(!showMoveMenu)
   }
 
-  const handleMove = (e: React.MouseEvent, workspaceId: string | undefined) => {
+  // In thumbnail mode the same control files the image under a video instead.
+  const handleMove = (e: React.MouseEvent, targetId: string | undefined) => {
     e.stopPropagation()
-    moveToWorkspace(image.id, workspaceId)
+    if (isThumbnailMode) moveToProject(image.id, targetId)
+    else moveToWorkspace(image.id, targetId)
     setShowMoveMenu(false)
   }
 
-  const currentWorkspace = image.workspaceId
-    ? workspaces.find((w) => w.id === image.workspaceId)
-    : null
+  const moveTargets = isThumbnailMode
+    ? projects.map((p) => ({ id: p.id, name: p.title, color: p.color }))
+    : workspaces.map((w) => ({ id: w.id, name: w.name, color: w.color }))
+  const currentTargetId = isThumbnailMode ? image.projectId : image.workspaceId
+
+  const currentWorkspace = isThumbnailMode
+    ? projects.find((p) => p.id === image.projectId) ?? null
+    : image.workspaceId
+      ? workspaces.find((w) => w.id === image.workspaceId)
+      : null
 
   return (
     <div
@@ -231,7 +253,16 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
               <Film className="w-3.5 h-3.5 text-white" />
             </button>
           )}
-          {workspaces.length > 0 && (
+          {onPreviewThumbnail && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onPreviewThumbnail(image.id) }}
+              className="btn-interactive p-2 rounded-lg bg-danger/25 backdrop-blur-md border border-danger/25 hover:bg-danger/40 transition-colors"
+              title="YouTube-Vorschau"
+            >
+              <Youtube className="w-3.5 h-3.5 text-white" />
+            </button>
+          )}
+          {moveTargets.length > 0 && (
             <div className="relative">
               <button
                 onClick={handleMoveClick}
@@ -241,7 +272,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
                     ? 'bg-white/20 border-white/10'
                     : 'bg-white/10 border-white/5 hover:bg-white/20'
                 )}
-                title="Move to workspace"
+                title={isThumbnailMode ? 'In Video verschieben' : 'Move to workspace'}
               >
                 <FolderInput className="w-3.5 h-3.5 text-white" />
               </button>
@@ -251,30 +282,30 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
                     onClick={(e) => handleMove(e, undefined)}
                     className={cn(
                       'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
-                      !image.workspaceId
+                      !currentTargetId
                         ? 'bg-surface-4 text-text-primary font-medium'
                         : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
                     )}
                   >
                     <div className="w-2 h-2 rounded-full bg-text-muted/40 shrink-0" />
-                    None
+                    {isThumbnailMode ? 'Kein Video' : 'None'}
                   </button>
-                  {workspaces.map((ws) => (
+                  {moveTargets.map((target) => (
                     <button
-                      key={ws.id}
-                      onClick={(e) => handleMove(e, ws.id)}
+                      key={target.id}
+                      onClick={(e) => handleMove(e, target.id)}
                       className={cn(
                         'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
-                        image.workspaceId === ws.id
+                        currentTargetId === target.id
                           ? 'bg-surface-4 text-text-primary font-medium'
                           : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
                       )}
                     >
                       <div
                         className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: ws.color }}
+                        style={{ backgroundColor: target.color }}
                       />
-                      {ws.name}
+                      <span className="truncate">{target.name}</span>
                     </button>
                   ))}
                 </div>

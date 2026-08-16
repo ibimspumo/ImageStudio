@@ -1,13 +1,26 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Plus, Wand2, MinusCircle } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useSettingsStore } from '../../stores/settings-store'
 import { useCollectionsStore, type AssetCollection } from '../../stores/collections-store'
-import type { AspectRatio, Resolution, ImageRef } from '../../types/api'
+import type { AspectRatio, Resolution, ImageRef, GptImageQuality, ThumbnailStyle } from '../../types/api'
+import {
+  DEFAULT_MODEL,
+  DEFAULT_THUMBNAIL_MODEL,
+  getCombinedCapabilities,
+  normalizeModelId,
+  isThumbnailModel,
+  buildThumbnailSystemPrompt,
+  THUMBNAIL_ASPECT_RATIO,
+  THUMBNAIL_RESOLUTION,
+  THUMBNAIL_GPT_IMAGE_SIZE,
+} from '../../types/api'
+import { ThumbnailControls } from '../thumbnail/ThumbnailControls'
+import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
 import { nanoid } from 'nanoid'
-import { prepareCollectionImages, compressImage } from '../../lib/image-utils'
+import { collectionImagesAsBase64, compressImage } from '../../lib/image-utils'
 import { useCropStore } from '../../stores/crop-store'
 import { toDisplayUrl } from '../../stores/gallery-store'
 import { AttachmentStrip, type CollectionRef } from './AttachmentStrip'
@@ -33,29 +46,41 @@ interface PromptBarProps {
   onCollectionsClick?: () => void
   onPresetsManage?: () => void
   onQueueClick?: () => void
-  queuePendingCount?: number
   inpaintContext?: InpaintContext
   canvasContext?: CanvasContext
   initialModels?: string[]
   onCanvasClick?: () => void
+  /**
+   * Thumbnail mode: format is locked to 16:9 / 2K, the model list is filtered,
+   * and the thumbnail system prompt rides along with every request. Everything
+   * else — references, @-mentions, drag & drop, collections — stays identical.
+   */
+  thumbnailMode?: boolean
 }
 
-export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, queuePendingCount, inpaintContext, canvasContext, initialModels, onCanvasClick }: PromptBarProps = {}) {
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
+export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, inpaintContext, canvasContext, initialModels, onCanvasClick, thumbnailMode }: PromptBarProps = {}) {
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(thumbnailMode ? '16:9' : '1:1')
   const [customRatio, setCustomRatio] = useState<string>('4:3')
   const [resolution, setResolution] = useState<Resolution>('2K')
   const [imageCount, setImageCount] = useState(1)
-  const [selectedModels, setSelectedModels] = useState<string[]>(initialModels || ['google/gemini-3.1-flash-image-preview'])
+  const [selectedModels, setSelectedModels] = useState<string[]>(() => {
+    const requested = (initialModels ?? [thumbnailMode ? DEFAULT_THUMBNAIL_MODEL : DEFAULT_MODEL])
+      .map(normalizeModelId)
+    if (!thumbnailMode) return requested
+    // A model that cannot do 2K has no place here — fall back rather than fail.
+    const usable = requested.filter(isThumbnailModel)
+    return usable.length > 0 ? usable : [DEFAULT_THUMBNAIL_MODEL]
+  })
+  const [thumbnailStyle, setThumbnailStyle] = useState<ThumbnailStyle>('auto')
+  const [faceFidelity, setFaceFidelity] = useState(true)
   const [imageRefs, setImageRefs] = useState<ImageRef[]>([])
   const [collectionRefs, setCollectionRefs] = useState<CollectionRef[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [showMentionPopup, setShowMentionPopup] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
-  const [negativePrompt, setNegativePrompt] = useState('')
-  const [showNegativePrompt, setShowNegativePrompt] = useState(false)
+  const [quality, setQuality] = useState<GptImageQuality>('high')
   const [seed, setSeed] = useState<number | undefined>(undefined)
   const [activePresetId, setActivePresetId] = useState<string | null>(null)
-  const [isEnhancing, setIsEnhancing] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -63,10 +88,15 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   const nextImageNum = useRef(1)
 
   const { generate } = useImageGeneration()
-  const apiKey = useSettingsStore((s) => s.apiKey)
+  const falApiKey = useSettingsStore((s) => s.falApiKey)
   const hydrated = useSettingsStore((s) => s.hydrated)
   const collections = useCollectionsStore((s) => s.collections)
   const presets = usePresetsStore((s) => s.presets)
+  const activeProjectId = useThumbnailProjectsStore((s) => s.activeProjectId)
+  const projects = useThumbnailProjectsStore((s) => s.projects)
+  const activeProject = thumbnailMode && activeProjectId
+    ? projects.find((p) => p.id === activeProjectId) ?? null
+    : null
 
   // ── Image ref management ──────────────────────────────────────────
 
@@ -165,10 +195,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       }
 
       // Restore negative prompt and seed if available
-      if (reuse.negativePrompt) {
-        setNegativePrompt(reuse.negativePrompt)
-        setShowNegativePrompt(true)
-      }
       if (reuse.seed != null) {
         setSeed(reuse.seed)
       }
@@ -328,7 +354,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
 
   const handleSubmit = useCallback(async () => {
     const text = getPromptText()
-    if (!text || !apiKey) return
+    if (!text || !falApiKey) return
 
     const attachments: string[] = []
     const labeledAttachments: { label: string; images: string[] }[] = []
@@ -338,26 +364,15 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       labeledAttachments.push({ label: ref.name, images: [ref.base64] })
     }
 
+    // Collections go out whole. Fitting them to each model's reference limit —
+    // by collaging when there are too many — happens per model in useImageGeneration.
     for (const cRef of collectionRefs) {
-      const processed = await prepareCollectionImages(cRef.images)
-      attachments.push(...processed)
-
-      if (cRef.images.length <= 5) {
-        labeledAttachments.push({
-          label: `Collection "${cRef.name}" (${cRef.images.length} images)`,
-          images: processed,
-        })
-      } else {
-        const imagesPerGrid = 4
-        for (let i = 0; i < processed.length; i++) {
-          const startIdx = i * imagesPerGrid + 1
-          const endIdx = Math.min(startIdx + imagesPerGrid - 1, cRef.images.length)
-          labeledAttachments.push({
-            label: `Collection "${cRef.name}" — grid composite ${i + 1}/${processed.length} (images ${startIdx}–${endIdx} of ${cRef.images.length})`,
-            images: [processed[i]],
-          })
-        }
-      }
+      const images = await collectionImagesAsBase64(cRef.images)
+      attachments.push(...images)
+      labeledAttachments.push({
+        label: `Collection "@${cRef.name}" (${images.length} image${images.length === 1 ? '' : 's'})`,
+        images,
+      })
     }
 
     // Inject inpaint context if present
@@ -434,19 +449,38 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     }
 
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
+
+    // Thumbnail mode adds the rules the user should not have to retype, and
+    // pins the format YouTube needs.
+    const project = thumbnailMode ? useThumbnailProjectsStore.getState().getActiveProject() : null
+    const hasRefs = imageRefs.length > 0 || collectionRefs.length > 0
+    const thumbnailSystemPrompt = thumbnailMode
+      ? buildThumbnailSystemPrompt({
+          style: thumbnailStyle,
+          faceFidelity: faceFidelity && hasRefs,
+          videoTitle: project?.title,
+          videoAngle: project?.angle,
+        })
+      : undefined
+
     generate({
       prompt: inpaintContext ? `Inpaint: ${text}` : canvasContext ? `Canvas: ${text}` : finalPrompt,
       apiPrompt: apiPromptText || undefined,
-      aspectRatio: resolvedAspectRatio,
-      resolution,
+      aspectRatio: thumbnailMode ? THUMBNAIL_ASPECT_RATIO : resolvedAspectRatio,
+      resolution: thumbnailMode ? THUMBNAIL_RESOLUTION : resolution,
       imageCount,
       attachments: attachments.length > 0 ? attachments : undefined,
       labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
       models: selectedModels,
-      negativePrompt: negativePrompt || undefined,
       seed,
+      quality,
       inpaintSourceId: inpaintContext?.imageId,
       canvasSketchPath,
+      systemPrompt: thumbnailSystemPrompt,
+      imageSize: thumbnailMode ? { ...THUMBNAIL_GPT_IMAGE_SIZE } : undefined,
+      projectId: thumbnailMode ? (project?.id ?? undefined) : undefined,
+      thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined,
+      faceFidelity: thumbnailMode ? faceFidelity && hasRefs : undefined,
     })
 
     // Close inpaint modal after generating
@@ -458,7 +492,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     if (canvasContext) {
       canvasContext.onClose()
     }
-  }, [getPromptText, apiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, negativePrompt, seed, activePresetId, presets, inpaintContext, canvasContext])
+  }, [getPromptText, falApiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, inpaintContext, canvasContext, thumbnailMode, thumbnailStyle, faceFidelity])
 
   // ── Mention items ─────────────────────────────────────────────────
 
@@ -610,32 +644,21 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     setImageRefs([])
     setCollectionRefs([])
     if (editorRef.current) editorRef.current.innerHTML = ''
-    setNegativePrompt('')
-    setShowNegativePrompt(false)
     setSeed(undefined)
   }, [])
-
-  const handleEnhancePrompt = useCallback(async () => {
-    const text = getPromptText()
-    if (!text || !apiKey || isEnhancing) return
-    setIsEnhancing(true)
-    try {
-      const result = await window.api.enhancePrompt({ prompt: text, apiKey })
-      if (result.success && result.enhanced && editorRef.current) {
-        editorRef.current.textContent = result.enhanced
-      }
-    } catch (err) {
-      logger.error('PromptBar', 'Prompt enhancement failed', err)
-    } finally {
-      setIsEnhancing(false)
-    }
-  }, [getPromptText, apiKey, isEnhancing])
 
   // ── Render ────────────────────────────────────────────────────────
 
   const promptText = getPromptText()
   const hasContent = promptText || imageRefs.length > 0 || collectionRefs.length > 0
-  const canSend = !!promptText && !!apiKey
+  const canSend = !!promptText && !!falApiKey
+
+  // Warn when references exceed the strictest selected model's limit — they are
+  // collaged rather than dropped, but it changes how the model sees them.
+  const totalRefImages =
+    imageRefs.length + collectionRefs.reduce((sum, c) => sum + c.images.length, 0)
+  const refLimit = getCombinedCapabilities(selectedModels).minReferenceLimit
+  const willCollage = totalRefImages > refLimit
   const isInpaintMode = !!inpaintContext
   const isCanvasMode = !!canvasContext
   const isEmbeddedMode = isInpaintMode || isCanvasMode
@@ -663,6 +686,28 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
                 <Plus className="w-6 h-6 text-accent-main" />
                 <span className="text-[13px] font-medium text-accent-main">Drop as reference</span>
               </div>
+            </div>
+          )}
+
+          {/* Which video are we working on? */}
+          {thumbnailMode && (
+            <div className="flex items-center gap-2 px-4 pt-2.5 -mb-1">
+              {activeProject ? (
+                <>
+                  <div
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: activeProject.color }}
+                  />
+                  <span className="text-[11px] text-text-secondary truncate">{activeProject.title}</span>
+                  <span className="text-[10px] text-text-muted/70 shrink-0">
+                    — Titel geht als Kontext mit, der Bildtext wiederholt ihn nicht
+                  </span>
+                </>
+              ) : (
+                <span className="text-[11px] text-text-muted/70">
+                  Kein Video gewählt — landet unter „Alle Thumbnails"
+                </span>
+              )}
             </div>
           )}
 
@@ -694,38 +739,11 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
               suppressContentEditableWarning
               onInput={handleEditorInput}
               onKeyDown={handleEditorKeyDown}
-              data-placeholder={isInpaintMode ? "Describe what should appear in the masked area..." : isCanvasMode ? "Describe what to generate from your sketch..." : "Describe your image..."}
+              data-placeholder={isInpaintMode ? "Describe what should appear in the masked area..." : isCanvasMode ? "Describe what to generate from your sketch..." : thumbnailMode ? "Die eine Idee: Motiv, Emotion, Situation…" : "Describe your image..."}
               className="prompt-editor flex-1 min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none pt-1"
             />
-            <button
-              onClick={handleEnhancePrompt}
-              disabled={isEnhancing || !getPromptText()}
-              className={cn(
-                'no-drag shrink-0 mt-1 w-7 h-7 rounded-lg flex items-center justify-center transition-all',
-                isEnhancing
-                  ? 'text-accent-main animate-pulse'
-                  : getPromptText()
-                    ? 'text-text-muted hover:text-accent-main hover:bg-surface-3'
-                    : 'text-text-muted/30 cursor-not-allowed'
-              )}
-              title="Enhance prompt"
-            >
-              <Wand2 className="w-3.5 h-3.5" />
-            </button>
           </div>
 
-          {/* Negative prompt (collapsible) */}
-          {showNegativePrompt && (
-            <div className="px-5 pb-3">
-              <textarea
-                value={negativePrompt}
-                onChange={(e) => setNegativePrompt(e.target.value)}
-                placeholder="Negative prompt — what to avoid..."
-                className="w-full min-h-[36px] max-h-[80px] bg-surface-3 border border-border-dim rounded-lg px-3 py-2 text-[13px] text-text-secondary leading-relaxed outline-none resize-none placeholder:text-text-muted/50 focus:border-border-base transition-colors"
-                rows={1}
-              />
-            </div>
-          )}
 
           {/* Separator */}
           <div className="mx-4 h-px bg-border-dim/60" />
@@ -740,6 +758,26 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           )}
 
           {/* Controls */}
+          {thumbnailMode ? (
+            <ThumbnailControls
+              selectedModels={selectedModels}
+              onModelsChange={setSelectedModels}
+              style={thumbnailStyle}
+              onStyleChange={setThumbnailStyle}
+              faceFidelity={faceFidelity}
+              onFaceFidelityChange={setFaceFidelity}
+              hasReferences={imageRefs.length > 0 || collectionRefs.length > 0}
+              imageCount={imageCount}
+              onImageCountChange={setImageCount}
+              canSend={canSend}
+              hasContent={!!hasContent}
+              onSubmit={handleSubmit}
+              onClear={clearPrompt}
+              onSettingsClick={onSettingsClick}
+              onCollectionsClick={onCollectionsClick}
+              onQueueClick={onQueueClick}
+            />
+          ) : (
           <ControlsRow
             selectedModels={selectedModels}
             onModelsChange={setSelectedModels}
@@ -757,26 +795,24 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
             onClear={clearPrompt}
             onSettingsClick={isEmbeddedMode ? undefined : onSettingsClick}
             onCollectionsClick={isEmbeddedMode ? undefined : onCollectionsClick}
-            negativePromptActive={showNegativePrompt}
-            onNegativePromptToggle={() => setShowNegativePrompt(!showNegativePrompt)}
+            quality={quality}
+            onQualityChange={setQuality}
             seed={seed}
             onSeedChange={setSeed}
-            activePresetId={activePresetId}
-            onPresetChange={setActivePresetId}
             onPresetsManage={isEmbeddedMode ? undefined : onPresetsManage}
             onQueueClick={isEmbeddedMode ? undefined : onQueueClick}
-            queuePendingCount={isEmbeddedMode ? undefined : queuePendingCount}
             onCanvasClick={isEmbeddedMode ? undefined : onCanvasClick}
           />
+          )}
         </div>
 
         {/* Hint - only show when not in embedded mode */}
         {!isEmbeddedMode && (
           <div className="flex justify-center mt-2.5">
             <p className="text-[11px] text-text-muted/70">
-              {hydrated && !apiKey ? (
+              {hydrated && !falApiKey ? (
                 <button onClick={onSettingsClick} className="text-danger/80 hover:text-danger transition-colors cursor-pointer">
-                  API key missing — click to open Settings
+                  fal.ai API key missing — click to open Settings
                 </button>
               ) : (
                 <>
@@ -787,6 +823,14 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
                       {'  \u00B7  '}
                       <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">@</kbd>
                       {' references'}
+                    </>
+                  )}
+                  {willCollage && (
+                    <>
+                      {'  \u00B7  '}
+                      <span className="text-accent-main/80">
+                        {totalRefImages} references &gt; {refLimit} \u2014 extras are merged into numbered collages
+                      </span>
                     </>
                   )}
                 </>

@@ -1,7 +1,8 @@
 import { app, BrowserWindow, shell, nativeImage } from 'electron'
 import { join } from 'path'
-import { registerAllHandlers } from './ipc'
+import { registerAllHandlers, shouldAutoCheckUpdates } from './ipc'
 import { ensureDirectories } from './services/image-store'
+import { checkForUpdatesOnStartup } from './services/updater'
 
 function createWindow(): void {
   const isMac = process.platform === 'darwin'
@@ -58,6 +59,10 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+
+  if (shouldAutoCheckUpdates()) {
+    checkForUpdatesOnStartup()
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

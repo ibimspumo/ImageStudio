@@ -178,77 +178,50 @@ export async function createAspectRatioCanvas(
 }
 
 /**
- * Creates a grid composite from multiple base64 images.
- * @param images - Array of base64 data URL images
- * @param gridSize - Number of images per row/column (default 2 = 2x2 grid)
- * @returns A base64 data URL of the composited grid image
+ * Render an image to exactly 1920 x 1080 — the format YouTube ingests.
+ *
+ * No model hits that exactly: the Gemini endpoints return 2752 x 1536 (ratio
+ * 1.792) and GPT Image 2 snaps to multiples of 16. So the source is centre-
+ * cropped to 16:9 and scaled down, which keeps the composition and never
+ * upscales.
+ *
+ * @returns JPEG data URL plus its byte size (YouTube rejects files over 2 MB).
  */
-export async function createGridComposite(
-  images: string[],
-  gridSize: number = 2
-): Promise<string> {
-  const cellCount = gridSize * gridSize
-  const subset = images.slice(0, cellCount)
-
-  // Load all images
-  const loaded = await Promise.all(
-    subset.map(
-      (src) =>
-        new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image()
-          img.onload = () => resolve(img)
-          img.onerror = reject
-          img.src = src
-        })
-    )
-  )
-
-  // Determine cell size: use the max dimension among all images, capped at 512
-  const maxDim = Math.min(
-    512,
-    Math.max(...loaded.map((img) => Math.max(img.width, img.height)))
-  )
-  const cellSize = maxDim
-  const canvasSize = cellSize * gridSize
-
-  const canvas = document.createElement('canvas')
-  canvas.width = canvasSize
-  canvas.height = canvasSize
-  const ctx = canvas.getContext('2d')!
-
-  // Fill background
-  ctx.fillStyle = '#000'
-  ctx.fillRect(0, 0, canvasSize, canvasSize)
-
-  // Draw each image in its grid cell, centered/cropped
-  loaded.forEach((img, i) => {
-    const col = i % gridSize
-    const row = Math.floor(i / gridSize)
-    const x = col * cellSize
-    const y = row * cellSize
-
-    // Cover-fit: scale image to fill the cell
-    const scale = Math.max(cellSize / img.width, cellSize / img.height)
-    const sw = cellSize / scale
-    const sh = cellSize / scale
-    const sx = (img.width - sw) / 2
-    const sy = (img.height - sh) / 2
-
-    ctx.drawImage(img, sx, sy, sw, sh, x, y, cellSize, cellSize)
+export async function renderYouTubeThumbnail(
+  base64DataUrl: string,
+  quality: number = 0.92
+): Promise<{ dataUrl: string; bytes: number; sourceWidth: number; sourceHeight: number }> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image()
+    i.onload = () => resolve(i)
+    i.onerror = reject
+    i.src = base64DataUrl
   })
 
-  return canvas.toDataURL('image/png')
+  const W = 1920
+  const H = 1080
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')!
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+
+  // Cover fit: fill the frame, crop the surplus edge evenly.
+  const scale = Math.max(W / img.width, H / img.height)
+  const drawW = img.width * scale
+  const drawH = img.height * scale
+  ctx.drawImage(img, (W - drawW) / 2, (H - drawH) / 2, drawW, drawH)
+
+  const dataUrl = canvas.toDataURL('image/jpeg', quality)
+  // base64 payload → bytes, minus padding
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+  const bytes = Math.floor((base64.length * 3) / 4) - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0)
+
+  return { dataUrl, bytes, sourceWidth: img.width, sourceHeight: img.height }
 }
 
-/**
- * Prepares collection images for API submission.
- * - <=5 images: send all individually
- * - >5 images: create 2x2 grid composites (max 5 composites = 20 images)
- */
-/**
- * Determines resolution label (1K/2K/4K) from actual image dimensions.
- * Based on the max dimension of the image.
- */
+/** Determines resolution label (1K/2K/4K) from actual image dimensions. */
 export function getResolutionLabel(width: number, height: number): string {
   const maxDim = Math.max(width, height)
   if (maxDim >= 3072) return '4K'   // 4K threshold
@@ -256,39 +229,21 @@ export function getResolutionLabel(width: number, height: number): string {
   return '1K'
 }
 
-export async function prepareCollectionImages(images: string[]): Promise<string[]> {
-  // Convert file paths to base64 for API submission
-  const asBase64 = await Promise.all(images.map(async (img) => {
-    if (img.startsWith('data:')) return img // already base64
+/**
+ * Read a collection's stored images (file paths or base64) as base64 data URLs.
+ *
+ * No size reduction happens here: how many references a model accepts differs
+ * per model, so collaging is done later, per model, in `reference-packing.ts`.
+ */
+export async function collectionImagesAsBase64(images: string[]): Promise<string[]> {
+  const results = await Promise.all(images.map(async (img) => {
+    if (img.startsWith('data:')) return img
     try {
       const result = await window.api.readImage(img)
-      return result.success ? result.base64DataUrl : img
+      return result.success && result.base64DataUrl ? result.base64DataUrl : null
     } catch {
-      // File path that can't be read — return as-is for graceful degradation
-      return img
+      return null
     }
   }))
-
-  if (asBase64.length <= 5) {
-    return asBase64
-  }
-
-  // Create 2x2 grid composites
-  const gridSize = 2
-  const imagesPerGrid = gridSize * gridSize
-  const maxComposites = 5
-  const maxImages = maxComposites * imagesPerGrid
-
-  const toProcess = asBase64.slice(0, maxImages)
-  const composites: string[] = []
-
-  for (let i = 0; i < toProcess.length; i += imagesPerGrid) {
-    const chunk = toProcess.slice(i, i + imagesPerGrid)
-    if (chunk.length > 0) {
-      const composite = await createGridComposite(chunk, gridSize)
-      composites.push(composite)
-    }
-  }
-
-  return composites
+  return results.filter((img): img is string => img !== null)
 }

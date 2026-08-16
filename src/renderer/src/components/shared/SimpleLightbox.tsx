@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Download, Copy, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useSettingsStore } from '../../stores/settings-store'
 import { logger } from '../../lib/logger'
+import { neutralImageName } from '../../lib/anti-detection'
 
 interface SimpleLightboxProps {
   images: string[]
@@ -11,6 +13,7 @@ interface SimpleLightboxProps {
 
 export function SimpleLightbox({ images, currentIndex, onClose, onNavigate }: SimpleLightboxProps) {
   const [hovered, setHovered] = useState(false)
+  const antiDetection = useSettingsStore((s) => s.antiDetection)
   const src = images[currentIndex]
 
   const canGoLeft = currentIndex > 0
@@ -35,7 +38,7 @@ export function SimpleLightbox({ images, currentIndex, onClose, onNavigate }: Si
   }, [onClose, goLeft, goRight])
 
   const handleSave = async () => {
-    await window.api.exportImage(src, `imagestudio-${Date.now()}.png`)
+    await window.api.exportImage(src, antiDetection ? neutralImageName('jpg') : `imagestudio-${Date.now()}.png`)
   }
 
   const handleCopy = async () => {

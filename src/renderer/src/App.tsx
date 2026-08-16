@@ -23,6 +23,8 @@ import { InpaintModal } from './components/shared/InpaintModal'
 import { QueuePanel } from './components/queue/QueuePanel'
 import { CanvasModal } from './components/canvas/CanvasModal'
 import { useCanvasStore } from './stores/canvas-store'
+import { ThumbnailPreviewModal } from './components/thumbnail/ThumbnailPreviewModal'
+import { useThumbnailProjectsStore } from './stores/thumbnail-projects-store'
 
 interface ViewerState {
   images: GalleryImage[]
@@ -42,8 +44,8 @@ export default function App() {
   const loadWorkspaces = useWorkspaceStore((s) => s.loadFromDisk)
   const loadPresets = usePresetsStore((s) => s.loadFromDisk)
   const loadQueue = useQueueStore((s) => s.loadFromDisk)
+  const loadThumbnailProjects = useThumbnailProjectsStore((s) => s.loadFromDisk)
   const queuePendingCount = useQueueStore((s) => s.items.filter(i => i.status === 'pending').length)
-  const apiKey = useSettingsStore((s) => s.apiKey)
   const [showSettings, setShowSettings] = useState(false)
   const [showCollections, setShowCollections] = useState(false)
   const [viewerState, setViewerState] = useState<ViewerState | null>(null)
@@ -57,6 +59,7 @@ export default function App() {
   const [videoStartFrame, setVideoStartFrame] = useState<{ base64: string; name: string } | null>(null)
   const [compareState, setCompareState] = useState<[GalleryImage, GalleryImage] | null>(null)
   const [inpaintState, setInpaintState] = useState<GalleryImage | null>(null)
+  const [thumbnailPreview, setThumbnailPreview] = useState<ViewerState | null>(null)
   const showCanvas = useCanvasStore((s) => s.isOpen)
   const openCanvas = useCanvasStore((s) => s.open)
 
@@ -74,17 +77,18 @@ export default function App() {
       loadWorkspaces()
       loadPresets()
       loadQueue()
+      loadThumbnailProjects()
     })
-  }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces, loadPresets, loadQueue])
+  }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces, loadPresets, loadQueue, loadThumbnailProjects])
 
   const falApiKey = useSettingsStore((s) => s.falApiKey)
   const hydrated = useSettingsStore((s) => s.hydrated)
 
   useEffect(() => {
-    if (hydrated && !apiKey && !falApiKey) {
+    if (hydrated && !falApiKey) {
       setShowSettings(true)
     }
-  }, [hydrated, apiKey, falApiKey])
+  }, [hydrated, falApiKey])
 
   const handleImageClick = (images: GalleryImage[], index: number) => {
     setViewerState({ images, index })
@@ -225,6 +229,7 @@ export default function App() {
           }}
           videoStartFrame={videoStartFrame}
           onGenerateVideo={handleGenerateVideo}
+          onPreviewThumbnail={(images, index) => setThumbnailPreview({ images, index })}
         />
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
         {showCollections && <CollectionsDialog onClose={() => setShowCollections(false)} />}
@@ -284,6 +289,14 @@ export default function App() {
         )}
         {showQueue && (
           <QueuePanel onClose={() => setShowQueue(false)} />
+        )}
+        {thumbnailPreview && (
+          <ThumbnailPreviewModal
+            images={thumbnailPreview.images}
+            index={thumbnailPreview.index}
+            onNavigate={(index) => setThumbnailPreview((prev) => prev ? { ...prev, index } : null)}
+            onClose={() => setThumbnailPreview(null)}
+          />
         )}
         {showCanvas && <CanvasModal />}
       </div>

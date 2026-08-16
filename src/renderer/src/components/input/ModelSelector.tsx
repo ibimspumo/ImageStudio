@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { Cpu, Check, Layers } from 'lucide-react'
-import { AVAILABLE_MODELS, getModelName } from '../../types/api'
+import { AVAILABLE_MODELS, getModelName, type ImageModelOption } from '../../types/api'
 import { cn } from '../../lib/utils'
 
 interface ModelSelectorProps {
   selectedModels: string[]
   onChange: (models: string[]) => void
   compact?: boolean
+  /** Restrict the list — thumbnail mode only offers models that reach 2K. */
+  available?: ImageModelOption[]
 }
 
-export function ModelSelector({ selectedModels, onChange, compact }: ModelSelectorProps) {
+export function ModelSelector({ selectedModels, onChange, compact, available }: ModelSelectorProps) {
   const [open, setOpen] = useState(false)
+  const models = available ?? AVAILABLE_MODELS
 
   const toggleModel = (modelId: string) => {
     if (selectedModels.includes(modelId)) {
@@ -57,7 +60,7 @@ export function ModelSelector({ selectedModels, onChange, compact }: ModelSelect
               <span className="text-[10px] text-text-muted">select multiple to compare</span>
             </div>
 
-            {AVAILABLE_MODELS.map((model) => {
+            {models.map((model) => {
               const isSelected = selectedModels.includes(model.id)
               return (
                 <button

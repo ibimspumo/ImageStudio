@@ -27,13 +27,14 @@ import type { GalleryImage } from '../../stores/gallery-store'
 import { useGalleryStore, toDisplayUrl } from '../../stores/gallery-store'
 import { useChatStore } from '../../stores/chat-store'
 import { useSettingsStore } from '../../stores/settings-store'
-import { AVAILABLE_MODELS, getModelName, getVideoModelName } from '../../types/api'
+import { AVAILABLE_MODELS, DEFAULT_MODEL, getModelName, getVideoModelName, normalizeModelId } from '../../types/api'
 import { compressImage, getResolutionLabel } from '../../lib/image-utils'
 import { ExportPopover } from './ExportPopover'
 import { TagInput } from '../tags/TagInput'
 import { cn } from '../../lib/utils'
 import { createZoomOutCanvas, createAspectRatioCanvas, upscaleForApi } from '../../lib/image-utils'
 import { formatDuration, formatDate } from '../../lib/date-utils'
+import { prepareForStorage, neutralImageName } from '../../lib/anti-detection'
 import { logger } from '../../lib/logger'
 
 interface ImageViewerProps {
@@ -120,7 +121,7 @@ export function ImageViewer({
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null)
   const [zoomGenerating, setZoomGenerating] = useState<number | null>(null)
   const [upscaleGenerating, setUpscaleGenerating] = useState<string | null>(null)
-  const [upscaleModel, setUpscaleModel] = useState('google/gemini-3.1-flash-image-preview')
+  const [upscaleModel, setUpscaleModel] = useState(DEFAULT_MODEL)
   const [showUpscaleModelPicker, setShowUpscaleModelPicker] = useState(false)
   const [aspectRatioGenerating, setAspectRatioGenerating] = useState<string | null>(null)
   const [aspectRatioModel, setAspectRatioModel] = useState<string | null>(null)
@@ -134,8 +135,8 @@ export function ImageViewer({
   const updateTags = useGalleryStore((s) => s.updateTags)
   const allImages = useGalleryStore((s) => s.images)
   const chats = useChatStore((s) => s.chats)
-  const apiKey = useSettingsStore((s) => s.apiKey)
-  const useImageUrls = useSettingsStore((s) => s.useImageUrls)
+  const falApiKey = useSettingsStore((s) => s.falApiKey)
+  const antiDetection = useSettingsStore((s) => s.antiDetection)
   const snapshotImage = images[currentIndex]
   // Read live image from store so toggleFavorite/updateTags reflect immediately
   const image = allImages.find((img) => img.id === snapshotImage?.id) ?? snapshotImage
@@ -238,7 +239,7 @@ export function ImageViewer({
 
   // Zoom out / outpaint
   const handleZoomOut = useCallback(async (factor: number) => {
-    if (!image || !image.filePath || !apiKey || zoomGenerating) return
+    if (!image || !image.filePath || !falApiKey || zoomGenerating) return
     setZoomGenerating(factor)
     try {
       // Load base64 from disk
@@ -267,29 +268,12 @@ export function ImageViewer({
         { label: 'Original image (high quality reference)', images: [reference] },
       ]
 
-      // Upload to temp URLs if enabled
-      if (useImageUrls) {
-        updateStatus(placeholderId, 'Uploading images...')
-        try {
-          const uploadResult = await window.api.uploadToUrls([canvas, reference])
-          if (uploadResult.success) {
-            resolvedAttachments = uploadResult.urls
-            resolvedLabeled = [
-              { label: 'Canvas layout — fill the black areas around the centered image', images: [uploadResult.urls[0]] },
-              { label: 'Original image (high quality reference)', images: [uploadResult.urls[1]] },
-            ]
-          }
-        } catch (err) {
-          logger.warn('ImageViewer', 'Upload failed, falling back to base64', err)
-        }
-        updateStatus(placeholderId, undefined)
-      }
 
       const startTime = Date.now()
       const response = await window.api.generateImage({
         prompt,
-        model: image.model,
-        apiKey,
+        model: normalizeModelId(image.model),
+        apiKey: falApiKey,
         aspectRatio: image.aspectRatio,
         resolution: image.resolution,
         count: 1,
@@ -300,8 +284,8 @@ export function ImageViewer({
 
       const durationMs = Date.now() - startTime
       if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
-        const filename = `${placeholderId}.png`
-        const saveResult = await window.api.saveImage(response.results[0].result.imageBase64, filename)
+        const stored = await prepareForStorage(response.results[0].result.imageBase64, antiDetection)
+        const saveResult = await window.api.saveImage(stored.dataUrl, `${placeholderId}.${stored.extension}`)
         if (saveResult.success && saveResult.filePath) {
           completeImage(placeholderId, saveResult.filePath, durationMs, response.results[0].result.cost)
         } else {
@@ -315,11 +299,11 @@ export function ImageViewer({
     } finally {
       setZoomGenerating(null)
     }
-  }, [image, apiKey, useImageUrls, zoomGenerating, addPlaceholder, updateStatus, completeImage, failImage, onClose])
+  }, [image, falApiKey, antiDetection, zoomGenerating, addPlaceholder, updateStatus, completeImage, failImage, onClose])
 
   // Upscale
   const handleUpscale = useCallback(async (targetResolution: string) => {
-    if (!image || !image.filePath || !apiKey || upscaleGenerating) return
+    if (!image || !image.filePath || !falApiKey || upscaleGenerating) return
     setUpscaleGenerating(targetResolution)
     try {
       const readResult = await window.api.readImage(image.filePath)
@@ -344,32 +328,16 @@ export function ImageViewer({
       )
       onClose()
 
-      let resolvedAttachments = [compressed]
-      let resolvedLabeled = [
+      const resolvedAttachments = [compressed]
+      const resolvedLabeled = [
         { label: 'Original image — recreate this exactly at higher resolution', images: [compressed] },
       ]
-
-      if (useImageUrls) {
-        updateStatus(placeholderId, 'Uploading image...')
-        try {
-          const uploadResult = await window.api.uploadToUrls([compressed])
-          if (uploadResult.success) {
-            resolvedAttachments = uploadResult.urls
-            resolvedLabeled = [
-              { label: 'Original image — recreate this exactly at higher resolution', images: [uploadResult.urls[0]] },
-            ]
-          }
-        } catch (err) {
-          logger.warn('ImageViewer', 'Upload failed, falling back to base64', err)
-        }
-        updateStatus(placeholderId, undefined)
-      }
 
       const startTime = Date.now()
       const response = await window.api.generateImage({
         prompt,
         model: upscaleModel,
-        apiKey,
+        apiKey: falApiKey,
         aspectRatio: image.aspectRatio,
         resolution: targetResolution,
         count: 1,
@@ -380,8 +348,8 @@ export function ImageViewer({
 
       const durationMs = Date.now() - startTime
       if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
-        const filename = `${placeholderId}.png`
-        const saveResult = await window.api.saveImage(response.results[0].result.imageBase64, filename)
+        const stored = await prepareForStorage(response.results[0].result.imageBase64, antiDetection)
+        const saveResult = await window.api.saveImage(stored.dataUrl, `${placeholderId}.${stored.extension}`)
         if (saveResult.success && saveResult.filePath) {
           completeImage(placeholderId, saveResult.filePath, durationMs, response.results[0].result.cost)
         } else {
@@ -395,15 +363,15 @@ export function ImageViewer({
     } finally {
       setUpscaleGenerating(null)
     }
-  }, [image, apiKey, useImageUrls, upscaleGenerating, upscaleModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
+  }, [image, falApiKey, antiDetection, upscaleGenerating, upscaleModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
 
   const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9'] as const
   const availableRatios = image ? ASPECT_RATIOS.filter((r) => r !== image.aspectRatio) : []
-  const effectiveAspectRatioModel = aspectRatioModel ?? image?.model ?? 'google/gemini-3.1-flash-image-preview'
+  const effectiveAspectRatioModel = aspectRatioModel ?? normalizeModelId(image?.model)
 
   // Change aspect ratio / outpaint to new ratio
   const handleAspectRatioChange = useCallback(async (targetRatio: string) => {
-    if (!image || !image.filePath || !apiKey || aspectRatioGenerating) return
+    if (!image || !image.filePath || !falApiKey || aspectRatioGenerating) return
     setAspectRatioGenerating(targetRatio)
     try {
       const readResult = await window.api.readImage(image.filePath)
@@ -424,34 +392,17 @@ export function ImageViewer({
       )
       onClose()
 
-      let resolvedAttachments = [canvas, reference]
-      let resolvedLabeled: { label: string; images: string[] }[] = [
+      const resolvedAttachments = [canvas, reference]
+      const resolvedLabeled: { label: string; images: string[] }[] = [
         { label: `Canvas layout (${targetRatio}) — fill the black areas around the centered image`, images: [canvas] },
         { label: 'Original image (high quality reference)', images: [reference] },
       ]
-
-      if (useImageUrls) {
-        updateStatus(placeholderId, 'Uploading images...')
-        try {
-          const uploadResult = await window.api.uploadToUrls([canvas, reference])
-          if (uploadResult.success) {
-            resolvedAttachments = uploadResult.urls
-            resolvedLabeled = [
-              { label: `Canvas layout (${targetRatio}) — fill the black areas around the centered image`, images: [uploadResult.urls[0]] },
-              { label: 'Original image (high quality reference)', images: [uploadResult.urls[1]] },
-            ]
-          }
-        } catch (err) {
-          logger.warn('ImageViewer', 'Upload failed, falling back to base64', err)
-        }
-        updateStatus(placeholderId, undefined)
-      }
 
       const startTime = Date.now()
       const response = await window.api.generateImage({
         prompt,
         model: selectedModel,
-        apiKey,
+        apiKey: falApiKey,
         aspectRatio: targetRatio,
         resolution: image.resolution,
         count: 1,
@@ -462,8 +413,8 @@ export function ImageViewer({
 
       const durationMs = Date.now() - startTime
       if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
-        const filename = `${placeholderId}.png`
-        const saveResult = await window.api.saveImage(response.results[0].result.imageBase64, filename)
+        const stored = await prepareForStorage(response.results[0].result.imageBase64, antiDetection)
+        const saveResult = await window.api.saveImage(stored.dataUrl, `${placeholderId}.${stored.extension}`)
         if (saveResult.success && saveResult.filePath) {
           completeImage(placeholderId, saveResult.filePath, durationMs, response.results[0].result.cost)
         } else {
@@ -477,7 +428,7 @@ export function ImageViewer({
     } finally {
       setAspectRatioGenerating(null)
     }
-  }, [image, apiKey, useImageUrls, aspectRatioGenerating, effectiveAspectRatioModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
+  }, [image, falApiKey, antiDetection, aspectRatioGenerating, effectiveAspectRatioModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
 
   // Available upscale targets based on original resolution
   const upscaleTargets = image
@@ -621,7 +572,7 @@ export function ImageViewer({
               {ZOOM_LEVELS.map((level) => {
                 const isGenerating = zoomGenerating === level
                 return (
-                  <button key={level} onClick={() => handleZoomOut(level)} disabled={!!zoomGenerating || !apiKey}
+                  <button key={level} onClick={() => handleZoomOut(level)} disabled={!!zoomGenerating || !falApiKey}
                     className={cn('flex-1 flex flex-col items-center gap-1 py-2 rounded-lg border text-[11px] font-medium transition-all',
                       isGenerating ? 'bg-accent-dim border-accent-main/30 text-accent-main'
                         : zoomGenerating ? 'bg-surface-3/50 border-border-dim text-text-muted cursor-not-allowed opacity-50'
@@ -644,7 +595,7 @@ export function ImageViewer({
                 {availableRatios.map((ratio) => {
                   const isGenerating = aspectRatioGenerating === ratio
                   return (
-                    <button key={ratio} onClick={() => handleAspectRatioChange(ratio)} disabled={!!aspectRatioGenerating || !!zoomGenerating || !apiKey}
+                    <button key={ratio} onClick={() => handleAspectRatioChange(ratio)} disabled={!!aspectRatioGenerating || !!zoomGenerating || !falApiKey}
                       className={cn('flex items-center justify-center gap-1 py-2 rounded-lg border text-[11px] font-medium transition-all',
                         isGenerating ? 'bg-accent-dim border-accent-main/30 text-accent-main'
                           : aspectRatioGenerating ? 'bg-surface-3/50 border-border-dim text-text-muted cursor-not-allowed opacity-50'
@@ -704,7 +655,7 @@ export function ImageViewer({
                 {upscaleTargets.map((res) => {
                   const isGenerating = upscaleGenerating === res
                   return (
-                    <button key={res} onClick={() => handleUpscale(res)} disabled={!!upscaleGenerating || !!zoomGenerating || !apiKey}
+                    <button key={res} onClick={() => handleUpscale(res)} disabled={!!upscaleGenerating || !!zoomGenerating || !falApiKey}
                       className={cn('flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-[11px] font-medium transition-all',
                         isGenerating ? 'bg-accent-dim border-accent-main/30 text-accent-main'
                           : upscaleGenerating ? 'bg-surface-3/50 border-border-dim text-text-muted cursor-not-allowed opacity-50'
@@ -733,7 +684,8 @@ export function ImageViewer({
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setShowUpscaleModelPicker(false)} />
                     <div className="absolute bottom-full left-0 right-0 mb-1 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 z-30 animate-scale-in max-h-[200px] overflow-y-auto">
-                      {AVAILABLE_MODELS.map((m) => (
+                      {/* Only models with a resolution parameter can upscale */}
+                      {AVAILABLE_MODELS.filter((m) => m.resolutions).map((m) => (
                         <button
                           key={m.id}
                           onClick={() => { setUpscaleModel(m.id); setShowUpscaleModelPicker(false) }}
@@ -851,11 +803,17 @@ export function ImageViewer({
               </button>
               <ExportPopover
                 imageSrc={displayUrl ?? ''}
-                defaultName={`imagestudio-${Date.now()}.${image.type === 'video' ? 'mp4' : 'png'}`}
+                defaultName={
+                  antiDetection
+                    ? neutralImageName(image.type === 'video' ? 'mp4' : image.filePath.split('.').pop()?.toLowerCase() || 'jpg')
+                    : `imagestudio-${Date.now()}.${image.type === 'video' ? 'mp4' : 'png'}`
+                }
                 className="flex-1"
                 isVideo={image.type === 'video'}
                 videoFilePath={image.type === 'video' ? image.filePath : undefined}
-                metadata={image.type !== 'video' ? { prompt: image.prompt, model: image.model, aspectRatio: image.aspectRatio, resolution: image.resolution, ...(image.seed != null ? { seed: String(image.seed) } : {}), ...(image.negativePrompt ? { negativePrompt: image.negativePrompt } : {}), timestamp: new Date(image.timestamp).toISOString() } : undefined}
+                // Embedding prompt and model would put back exactly what the
+                // anti-detection step removes, so it is not offered while it is on.
+                metadata={image.type !== 'video' && !antiDetection ? { prompt: image.prompt, model: image.model, aspectRatio: image.aspectRatio, resolution: image.resolution, ...(image.seed != null ? { seed: String(image.seed) } : {}), ...(image.negativePrompt ? { negativePrompt: image.negativePrompt } : {}), timestamp: new Date(image.timestamp).toISOString() } : undefined}
               />
             </div>
             <button onClick={handleDelete} className={cn('flex items-center justify-center gap-2 px-3 py-2 rounded-lg', 'bg-surface-3 text-danger hover:bg-danger/10 transition-colors text-[13px] font-medium')}>

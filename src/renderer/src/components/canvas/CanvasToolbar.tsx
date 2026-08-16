@@ -1,5 +1,6 @@
 import { Paintbrush, Eraser, Square, Circle, Minus, Undo2, Redo2, Trash2, X, Layers } from 'lucide-react'
 import { useCanvasStore, type CanvasTool } from '../../stores/canvas-store'
+import { getCombinedCapabilities } from '../../types/api'
 import { AspectRatioSelector } from '../input/AspectRatioSelector'
 import { ColorPicker } from './ColorPicker'
 import { cn } from '../../lib/utils'
@@ -140,6 +141,7 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
         onChange={(v) => setAspectRatio(v)}
         customRatio={customRatio}
         onCustomRatioChange={(v) => setAspectRatio('custom', v)}
+        available={getCombinedCapabilities([]).aspectRatios}
       />
 
       {/* Layer panel toggle */}

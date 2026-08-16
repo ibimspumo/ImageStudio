@@ -14,15 +14,21 @@ jobs:
           - os: macos-latest
             platform: mac
             artifact-name: ImageStudio-macOS
+            # latest-mac.yml and the blockmaps are what electron-updater reads —
+            # without them in the release, in-app updates cannot find anything.
             artifact-glob: |
               dist/*.dmg
               dist/*.zip
+              dist/*.blockmap
+              dist/latest-mac.yml
           - os: windows-latest
             platform: win
             artifact-name: ImageStudio-Windows
             artifact-glob: |
               dist/*.exe
               dist/*.zip
+              dist/*.blockmap
+              dist/latest.yml
 
     runs-on: ${{ matrix.os }}
     permissions:
@@ -87,6 +93,8 @@ jobs:
             |---|---|
             | **Windows** | `.exe` installer or `.zip` portable |
             | **macOS** | `.dmg` disk image or `.zip` |
+
+            Already running ImageStudio? Settings → Updates → Check now.
 
             ### macOS note
             The app is unsigned. Before opening it for the first time, run:

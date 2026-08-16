@@ -9,12 +9,14 @@ interface ImageGalleryProps {
   onStartChat?: (imageId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
   onGenerateVideo?: (imageId: string) => void
+  /** Thumbnail mode: open the YouTube preview for this image. */
+  onPreviewThumbnail?: (images: GalleryImage[], index: number) => void
 }
 
 const TARGET_ROW_HEIGHT = 240
 const GAP = 8
 
-export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, onGenerateVideo }: ImageGalleryProps) {
+export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, onGenerateVideo, onPreviewThumbnail }: ImageGalleryProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
@@ -63,6 +65,15 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, o
     [completedImages, onImageClick]
   )
 
+  const handlePreview = useCallback(
+    (imageId: string) => {
+      if (!onPreviewThumbnail) return
+      const idx = completedImages.findIndex((img) => img.id === imageId)
+      onPreviewThumbnail(completedImages, idx >= 0 ? idx : 0)
+    },
+    [completedImages, onPreviewThumbnail]
+  )
+
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-40">
       <div ref={containerRef} className="max-w-6xl mx-auto relative" style={{ height: totalHeight }}>
@@ -87,6 +98,7 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, o
                   onStartChat={onStartChat}
                   onCropImage={onCropImage}
                   onGenerateVideo={onGenerateVideo}
+                  onPreviewThumbnail={onPreviewThumbnail ? handlePreview : undefined}
                 />
               </div>
             )

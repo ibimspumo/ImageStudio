@@ -1,18 +1,19 @@
 /**
- * Temporary image upload service using litterbox.catbox.moe.
- * Uploads base64 images and returns short-lived HTTPS URLs (auto-deleted after 1h).
- * Free, no API key required, anonymous.
+ * Reference-image upload via fal.ai storage.
  *
- * Includes a content-hash cache so the same image is only uploaded once
- * (important for multi-model generation with shared references).
+ * The fal.ai image endpoints only accept URLs, so every base64 reference has to
+ * be uploaded first. Uploads are cached by content hash: the same image is sent
+ * once no matter how many models or how many images of a batch reference it.
+ *
+ * fal CDN URLs are long-lived, but the cache is deliberately short so a stale
+ * entry can never outlive the URL it points at.
  */
 
 import { createHash } from 'crypto'
+import { fal } from '@fal-ai/client'
 
-const LITTERBOX_API = 'https://litterbox.catbox.moe/resources/internals/api.php'
-const EXPIRY = '1h' // 1h | 12h | 24h | 72h
-const CACHE_TTL_MS = 50 * 60 * 1000 // 50 minutes (just under 1h expiry)
-const MAX_CACHE_SIZE = 50 // evict oldest entries when exceeded
+const CACHE_TTL_MS = 30 * 60 * 1000 // 30 minutes
+const MAX_CACHE_SIZE = 200
 
 interface CacheEntry {
   url: string
@@ -20,146 +21,92 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>()
+/** In-flight uploads, so concurrent requests for one image share a single upload. */
+const inFlight = new Map<string, Promise<string>>()
 
-/** Create a short hash key from base64 content (avoids storing huge keys) */
-function hashBase64(base64DataUrl: string): string {
-  return createHash('sha256').update(base64DataUrl).digest('hex').slice(0, 24)
+function hashContent(base64DataUrl: string): string {
+  return createHash('sha256').update(base64DataUrl).digest('hex').slice(0, 32)
 }
 
-/** Prune expired cache entries + enforce max size (LRU eviction) */
 function pruneCache(): void {
   const now = Date.now()
   for (const [key, entry] of cache) {
-    if (now - entry.uploadedAt > CACHE_TTL_MS) {
-      cache.delete(key)
-    }
+    if (now - entry.uploadedAt > CACHE_TTL_MS) cache.delete(key)
   }
-  // Evict oldest if over max size
   if (cache.size > MAX_CACHE_SIZE) {
     const sorted = [...cache.entries()].sort((a, b) => a[1].uploadedAt - b[1].uploadedAt)
-    const toRemove = sorted.slice(0, cache.size - MAX_CACHE_SIZE)
-    for (const [key] of toRemove) cache.delete(key)
+    for (const [key] of sorted.slice(0, cache.size - MAX_CACHE_SIZE)) cache.delete(key)
   }
 }
 
-/**
- * Upload a base64 data URL to Litterbox and return the HTTPS URL.
- * Uses cache — identical images are not re-uploaded within the TTL.
- * Falls back to returning the original base64 if upload fails.
- */
-export async function uploadImageToUrl(base64DataUrl: string): Promise<string> {
-  // Skip non-base64 (already a URL)
-  if (!base64DataUrl.startsWith('data:')) return base64DataUrl
+/** Clear the upload cache — used when the API key changes. */
+export function clearUploadCache(): void {
+  cache.clear()
+  inFlight.clear()
+}
 
-  // Check cache first
-  pruneCache()
-  const cacheKey = hashBase64(base64DataUrl)
-  const cached = cache.get(cacheKey)
-  if (cached) {
-    console.log('[ImageUpload] Cache hit, reusing URL:', cached.url)
-    return cached.url
-  }
-
-  // Parse the data URL
-  const match = base64DataUrl.match(/^data:(image\/\w+);base64,(.+)$/)
-  if (!match) return base64DataUrl
+async function uploadOne(base64DataUrl: string): Promise<string> {
+  const match = base64DataUrl.match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) throw new Error('Not a base64 data URL')
 
   const mimeType = match[1]
-  const base64Data = match[2]
-  const ext = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : mimeType.split('/')[1]
-
-  // Convert base64 to Buffer
-  const buffer = Buffer.from(base64Data, 'base64')
-
-  // Build multipart form data manually (no external deps)
-  const boundary = '----ImageStudio' + Date.now().toString(36)
-  const filename = `img_${Date.now().toString(36)}.${ext}`
-
-  const parts: Buffer[] = []
-
-  // reqtype field
-  parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="reqtype"\r\n\r\nfileupload\r\n`
-  ))
-
-  // time field
-  parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="time"\r\n\r\n${EXPIRY}\r\n`
-  ))
-
-  // file field
-  parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="fileToUpload"; filename="${filename}"\r\nContent-Type: ${mimeType}\r\n\r\n`
-  ))
-  parts.push(buffer)
-  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`))
-
-  const body = Buffer.concat(parts)
-
-  try {
-    const response = await fetch(LITTERBOX_API, {
-      method: 'POST',
-      headers: {
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      },
-      body,
-    })
-
-    if (!response.ok) {
-      console.error('[ImageUpload] Litterbox upload failed:', response.status)
-      return base64DataUrl
-    }
-
-    const url = (await response.text()).trim()
-
-    if (url.startsWith('https://')) {
-      // Store in cache
-      cache.set(cacheKey, { url, uploadedAt: Date.now() })
-      console.log('[ImageUpload] Uploaded:', url, `(${(buffer.length / 1024).toFixed(0)} KB)`)
-      return url
-    }
-
-    console.error('[ImageUpload] Unexpected response:', url)
-    return base64DataUrl
-  } catch (err) {
-    console.error('[ImageUpload] Upload error:', err)
-    return base64DataUrl
-  }
+  const buffer = Buffer.from(match[2], 'base64')
+  const blob = new Blob([new Uint8Array(buffer)], { type: mimeType })
+  const url = await fal.storage.upload(blob)
+  if (!url) throw new Error('fal.ai storage returned no URL')
+  return url
 }
 
 /**
- * Upload multiple base64 images concurrently.
- * Identical images share the same upload via cache.
- * Returns array of URLs (or original base64 on per-image failure).
+ * Upload a base64 data URL to fal storage and return the CDN URL.
+ * Values that are already URLs pass through untouched.
  */
-export async function uploadImagesToUrls(base64DataUrls: string[]): Promise<string[]> {
-  // Deduplicate: group by content hash to avoid concurrent uploads of the same image
-  const hashToBase64 = new Map<string, string>()
-  const indexToHash: string[] = []
+export async function uploadImageToUrl(base64DataUrl: string, apiKey: string): Promise<string> {
+  if (!base64DataUrl.startsWith('data:')) return base64DataUrl
+  if (!apiKey) throw new Error('No fal.ai API key configured')
 
-  for (const b64 of base64DataUrls) {
-    if (!b64.startsWith('data:')) {
-      indexToHash.push('') // not a base64, skip
-      continue
-    }
-    const hash = hashBase64(b64)
-    hashToBase64.set(hash, b64)
-    indexToHash.push(hash)
-  }
+  fal.config({ credentials: apiKey })
+  pruneCache()
 
-  // Upload unique images concurrently
-  const uploadResults = new Map<string, string>()
-  await Promise.all(
-    Array.from(hashToBase64.entries()).map(async ([hash, b64]) => {
-      const url = await uploadImageToUrl(b64)
-      uploadResults.set(hash, url)
+  const key = hashContent(base64DataUrl)
+  const cached = cache.get(key)
+  if (cached) return cached.url
+
+  const pending = inFlight.get(key)
+  if (pending) return pending
+
+  const upload = uploadOne(base64DataUrl)
+    .then((url) => {
+      cache.set(key, { url, uploadedAt: Date.now() })
+      console.log(
+        '[ImageUpload] Uploaded to fal storage:',
+        url,
+        `(${(base64DataUrl.length * 0.75 / 1024).toFixed(0)} KB)`
+      )
+      return url
     })
-  )
+    .finally(() => {
+      inFlight.delete(key)
+    })
 
-  // Map back to original order
-  return base64DataUrls.map((b64, i) => {
-    const hash = indexToHash[i]
-    if (!hash) return b64 // was already a URL
-    return uploadResults.get(hash) ?? b64
-  })
+  inFlight.set(key, upload)
+  return upload
+}
+
+/**
+ * Upload several images at once, preserving order.
+ * Duplicates within the batch are uploaded once.
+ */
+export async function uploadImagesToUrls(
+  images: string[],
+  apiKey: string
+): Promise<string[]> {
+  const unique = Array.from(new Set(images.filter((i) => i.startsWith('data:'))))
+  if (unique.length === 0) return images
+
+  const uploaded = await Promise.all(unique.map((img) => uploadImageToUrl(img, apiKey)))
+  const map = new Map<string, string>()
+  unique.forEach((img, i) => map.set(img, uploaded[i]))
+
+  return images.map((img) => map.get(img) ?? img)
 }

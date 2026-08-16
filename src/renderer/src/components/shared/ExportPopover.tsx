@@ -125,7 +125,11 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
       if (isVideo && videoFilePath) {
         await window.api.exportVideo(videoFilePath, defaultName)
       } else {
-        const { dataUrl } = await convertImage(imageSrc, 'png', 100)
+        // Follow the extension the caller asked for — writing PNG bytes into a
+        // .jpg would produce a file no viewer expects.
+        const ext = defaultName.split('.').pop()?.toLowerCase()
+        const quickFormat: ExportFormat = ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : ext === 'webp' ? 'webp' : 'png'
+        const { dataUrl } = await convertImage(imageSrc, quickFormat, 95)
         await window.api.exportImage(dataUrl, defaultName)
       }
     } catch (err) {

@@ -3,6 +3,9 @@ import { useChatStore } from '../stores/chat-store'
 import { useGalleryStore } from '../stores/gallery-store'
 import { useSettingsStore } from '../stores/settings-store'
 import { logger } from '../lib/logger'
+import { packReferencesForModel } from '../lib/reference-packing'
+import { prepareForStorage } from '../lib/anti-detection'
+import { getModel, type LabeledAttachment } from '../types/api'
 
 interface ChatGenerateOptions {
   chatId: string
@@ -11,54 +14,35 @@ interface ChatGenerateOptions {
   resolution: string
   model: string
   extraAttachments?: string[]
-  extraLabeledAttachments?: { label: string; images: string[] }[]
-  negativePrompt?: string
+  extraLabeledAttachments?: LabeledAttachment[]
   seed?: number
+  quality?: string
 }
 
-/**
- * Upload all base64 images to temp URLs. Returns updated attachments/labeled arrays.
- */
-async function uploadChatImages(
-  attachments: string[],
-  labeledAttachments: { label: string; images: string[] }[]
-): Promise<{ attachments: string[]; labeledAttachments: { label: string; images: string[] }[] }> {
-  // Collect all unique base64 images
-  const allBase64 = new Set<string>()
-  for (const a of attachments) {
-    if (a.startsWith('data:')) allBase64.add(a)
-  }
-  for (const group of labeledAttachments) {
-    for (const img of group.images) {
-      if (img.startsWith('data:')) allBase64.add(img)
-    }
-  }
+/** Upload every base64 reference to fal.ai storage (content-hash cached). */
+async function uploadReferences(groups: LabeledAttachment[]): Promise<LabeledAttachment[]> {
+  const unique = Array.from(
+    new Set(groups.flatMap((g) => g.images).filter((img) => img.startsWith('data:')))
+  )
+  if (unique.length === 0) return groups
 
-  if (allBase64.size === 0) return { attachments, labeledAttachments }
-
-  const uniqueList = Array.from(allBase64)
-  const result = await window.api.uploadToUrls(uniqueList)
-  if (!result.success) return { attachments, labeledAttachments }
+  const result = await window.api.uploadToUrls(unique)
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to upload reference images to fal.ai')
+  }
 
   const urlMap = new Map<string, string>()
-  for (let i = 0; i < uniqueList.length; i++) {
-    urlMap.set(uniqueList[i], result.urls[i])
-  }
+  unique.forEach((img, i) => urlMap.set(img, result.urls[i]))
 
-  const resolve = (img: string) => urlMap.get(img) ?? img
-
-  return {
-    attachments: attachments.map(resolve),
-    labeledAttachments: labeledAttachments.map((g) => ({
-      label: g.label,
-      images: g.images.map(resolve),
-    })),
-  }
+  return groups.map((g) => ({
+    label: g.label,
+    images: g.images.map((img) => urlMap.get(img) ?? img),
+  }))
 }
 
 export function useChatGeneration() {
-  const apiKey = useSettingsStore((s) => s.apiKey)
-  const useImageUrls = useSettingsStore((s) => s.useImageUrls)
+  const falApiKey = useSettingsStore((s) => s.falApiKey)
+  const antiDetection = useSettingsStore((s) => s.antiDetection)
   const addUserMessage = useChatStore((s) => s.addUserMessage)
   const addAssistantPlaceholder = useChatStore((s) => s.addAssistantPlaceholder)
   const completeAssistantMessage = useChatStore((s) => s.completeAssistantMessage)
@@ -66,9 +50,9 @@ export function useChatGeneration() {
 
   const generate = useCallback(
     async (options: ChatGenerateOptions) => {
-      if (!apiKey) return
+      if (!falApiKey) return
 
-      const { chatId, prompt, aspectRatio, resolution, model, extraAttachments, extraLabeledAttachments, negativePrompt, seed } = options
+      const { chatId, prompt, aspectRatio, resolution, model, extraAttachments, extraLabeledAttachments, seed, quality } = options
 
       const chat = useChatStore.getState().chats.find((c) => c.id === chatId)
       if (!chat) return
@@ -90,53 +74,43 @@ export function useChatGeneration() {
         }
       }
 
-      // Build attachments for API (base64 strings)
-      let attachments: string[] = []
-      let labeledAttachments: { label: string; images: string[] }[] = []
+      let groups: LabeledAttachment[] = []
       if (lastAssistantBase64) {
-        attachments.push(lastAssistantBase64)
-        labeledAttachments.push({ label: 'Previous image (current version)', images: [lastAssistantBase64] })
-      }
-      if (extraAttachments) {
-        attachments.push(...extraAttachments)
+        groups.push({ label: 'Previous image (current version) — the image being edited', images: [lastAssistantBase64] })
       }
       if (extraLabeledAttachments) {
-        labeledAttachments.push(...extraLabeledAttachments)
+        groups.push(...extraLabeledAttachments)
+      } else if (extraAttachments) {
+        groups.push(...extraAttachments.map((img, i) => ({ label: `Image ${i + 1}`, images: [img] })))
       }
 
-      // Add user message
       addUserMessage(chatId, prompt, undefined)
 
       const assistantMsgId = addAssistantPlaceholder(chatId)
-
-      // Upload images to temp URLs if enabled
-      if (useImageUrls && attachments.length > 0) {
-        try {
-          // Update chat message status (reuse loading message)
-          const uploaded = await uploadChatImages(attachments, labeledAttachments)
-          attachments = uploaded.attachments
-          labeledAttachments = uploaded.labeledAttachments
-        } catch (err) {
-          logger.warn('useChatGeneration', 'Upload failed, falling back to base64', err)
-        }
-      }
-
       const requestId = crypto.randomUUID()
       const startTime = Date.now()
 
       try {
+        if (groups.length > 0) {
+          const modelSpec = getModel(model)
+          const packed = await packReferencesForModel(groups, modelSpec.maxReferenceImages)
+          groups = await uploadReferences(packed.groups)
+        }
+
+        const flatAttachments = groups.flatMap((g) => g.images)
+
         const response = await window.api.generateImage({
           prompt,
           model,
-          apiKey,
+          apiKey: falApiKey,
           aspectRatio,
           resolution,
           count: 1,
           requestId,
-          attachments: attachments.length > 0 ? attachments : undefined,
-          labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
-          negativePrompt,
+          attachments: flatAttachments.length > 0 ? flatAttachments : undefined,
+          labeledAttachments: groups.length > 0 ? groups : undefined,
           seed,
+          quality,
         })
 
         if (!response.success) {
@@ -145,12 +119,12 @@ export function useChatGeneration() {
         }
 
         const durationMs = Date.now() - startTime
-        const results = response.results || []
-        const result = results[0]
+        const result = (response.results || [])[0]
 
         if (result?.status === 'complete' && result.result?.imageBase64) {
-          const filename = `chat-${assistantMsgId}.png`
-          const saveResult = await window.api.saveImage(result.result.imageBase64, filename)
+          const stored = await prepareForStorage(result.result.imageBase64, antiDetection)
+          const filename = `chat-${assistantMsgId}.${stored.extension}`
+          const saveResult = await window.api.saveImage(stored.dataUrl, filename)
 
           if (saveResult.success && saveResult.filePath) {
             completeAssistantMessage(chatId, assistantMsgId, saveResult.filePath, durationMs, model)
@@ -174,7 +148,7 @@ export function useChatGeneration() {
         failAssistantMessage(chatId, assistantMsgId, err instanceof Error ? err.message : 'Unknown error')
       }
     },
-    [apiKey, useImageUrls, addUserMessage, addAssistantPlaceholder, completeAssistantMessage, failAssistantMessage]
+    [falApiKey, antiDetection, addUserMessage, addAssistantPlaceholder, completeAssistantMessage, failAssistantMessage]
   )
 
   return { generate }

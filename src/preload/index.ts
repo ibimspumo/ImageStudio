@@ -11,9 +11,19 @@ const api = {
     requestId: string
     attachments?: string[]
     labeledAttachments?: { label: string; images: string[] }[]
-    negativePrompt?: string
     seed?: number
+    quality?: string
+    imageSize?: { width: number; height: number }
+    systemPrompt?: string
+    enableWebSearch?: boolean
+    thinkingLevel?: 'minimal' | 'high'
+    safetyTolerance?: string
+    outputFormat?: 'png' | 'jpeg' | 'webp'
+    maskUrl?: string
   }) => ipcRenderer.invoke('image:generate', request),
+
+  cancelImageGeneration: (requestId: string) =>
+    ipcRenderer.invoke('image:generate-cancel', { requestId }),
 
   onGenerateProgress: (callback: (data: unknown) => void) => {
     const handler = (_event: unknown, data: unknown): void => callback(data)
@@ -40,6 +50,7 @@ const api = {
     ipcRenderer.invoke('history:save', { id, data }),
   deleteHistory: (id: string) => ipcRenderer.invoke('history:delete', { id }),
 
+  /** Upload base64 images to fal.ai storage; returns CDN URLs (cached by content) */
   uploadToUrls: (images: string[]) =>
     ipcRenderer.invoke('image:upload-urls', { images }),
 
@@ -47,11 +58,6 @@ const api = {
   deleteImage: (filePath: string) => ipcRenderer.invoke('image:delete', { filePath }),
   migrate: () => ipcRenderer.invoke('migrate:run'),
 
-  // C8: Prompt enhancer
-  enhancePrompt: (request: { prompt: string; apiKey: string; model?: string }) =>
-    ipcRenderer.invoke('prompt:enhance', request),
-
-  // C9: Export with metadata
   exportImageWithMetadata: (base64DataUrl: string, defaultName: string, metadata?: Record<string, string>) =>
     ipcRenderer.invoke('image:export-metadata', { base64DataUrl, defaultName, metadata }),
 
@@ -80,6 +86,21 @@ const api = {
     ipcRenderer.on('video:generate-progress', handler)
     return () => {
       ipcRenderer.removeListener('video:generate-progress', handler)
+    }
+  },
+
+  // Updates (GitHub Releases)
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  revealUpdate: () => ipcRenderer.invoke('update:reveal'),
+  getUpdateStatus: () => ipcRenderer.invoke('update:status'),
+
+  onUpdateStatus: (callback: (status: unknown) => void) => {
+    const handler = (_event: unknown, status: unknown): void => callback(status)
+    ipcRenderer.on('update:status', handler)
+    return () => {
+      ipcRenderer.removeListener('update:status', handler)
     }
   },
 }
