@@ -51,6 +51,8 @@ export default function App() {
   const [viewerState, setViewerState] = useState<ViewerState | null>(null)
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [chatInitialModel, setChatInitialModel] = useState<string | undefined>(undefined)
+  // Format of the image a chat was opened from — the chat starts out matching it.
+  const [chatInitialFormat, setChatInitialFormat] = useState<{ aspectRatio?: string; resolution?: string }>({})
   const [cropState, setCropState] = useState<CropState | null>(null)
   const [showPresets, setShowPresets] = useState(false)
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
@@ -103,6 +105,7 @@ export default function App() {
       const existingChat = useChatStore.getState().chats.find((c) => c.id === image.chatId)
       if (existingChat) {
         setChatInitialModel(image.model)
+        setChatInitialFormat({ aspectRatio: image.aspectRatio, resolution: image.resolution })
         setActiveChatId(image.chatId)
         setViewerState(null)
         return
@@ -114,6 +117,7 @@ export default function App() {
       images: state.images.map((i) => i.id === imageId ? { ...i, chatId } : i)
     }))
     setChatInitialModel(image.model)
+    setChatInitialFormat({ aspectRatio: image.aspectRatio, resolution: image.resolution })
     setActiveChatId(chatId)
     setViewerState(null)
   }
@@ -123,6 +127,10 @@ export default function App() {
     if (chat) {
       const sourceImage = useGalleryStore.getState().images.find((i) => i.id === chat.sourceImageId)
       setChatInitialModel(sourceImage?.model)
+      setChatInitialFormat({
+        aspectRatio: sourceImage?.aspectRatio,
+        resolution: sourceImage?.resolution,
+      })
     }
     setActiveChatId(chatId)
     setViewerState(null)
@@ -249,9 +257,13 @@ export default function App() {
         )}
         {activeChatId && (
           <ChatView
+            // Remount per chat so model and format re-derive from the new source.
+            key={activeChatId}
             chatId={activeChatId}
             onClose={() => setActiveChatId(null)}
             initialModel={chatInitialModel}
+            initialAspectRatio={chatInitialFormat.aspectRatio}
+            initialResolution={chatInitialFormat.resolution}
           />
         )}
         {cropState && (

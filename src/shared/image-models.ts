@@ -35,6 +35,34 @@ export type GptImageQuality = 'auto' | 'low' | 'medium' | 'high'
 
 export type OutputFormat = 'png' | 'jpeg' | 'webp'
 
+/**
+ * What a generation costs, in USD.
+ *
+ * fal.ai reports no per-request price: neither the queue response nor the
+ * client exposes billable units, and the OpenAPI schema carries no pricing
+ * block. Everything the app shows is therefore derived from the published list
+ * prices below — an estimate, never an invoice. Keep it in sync with the
+ * `fal.ai/models/<id>` pages.
+ */
+export interface ImagePricing {
+  /** Price of one image at the model's base resolution (1K unless noted). */
+  perImage?: number
+  /** Multiplier applied on top of `perImage` per resolution tier. */
+  resolutionMultiplier?: Partial<Record<FalResolution, number>>
+  /**
+   * Models priced by exact output size and quality tier (GPT Image 2). The
+   * nearest row by pixel count wins — fal snaps sizes to multiples of 16, so an
+   * exact match is the exception.
+   */
+  sizeTiers?: { pixels: number; low: number; medium: number; high: number }[]
+  /** Added once per request when web search runs. */
+  webSearchSurcharge?: number
+  /** Added once per request at `thinking_level: 'high'`. */
+  highThinkingSurcharge?: number
+  /** Shown next to the estimate so the number can be judged. */
+  note: string
+}
+
 export interface ImageModelOption {
   /** Canonical model id — identical to the text-to-image endpoint id on fal.ai */
   id: string
@@ -86,6 +114,8 @@ export interface ImageModelOption {
   uiResolutions: FalResolution[]
   /** Fixed output size note shown in the UI, when the model has one. */
   fixedOutputNote?: string
+  /** fal.ai list price — see `ImagePricing`. */
+  pricing: ImagePricing
 }
 
 const GEMINI_RATIOS_FULL: FalAspectRatio[] = [
@@ -99,79 +129,6 @@ const GEMINI_RATIOS_STANDARD: FalAspectRatio[] = [
 ]
 
 export const AVAILABLE_MODELS: ImageModelOption[] = [
-  {
-    id: 'fal-ai/nano-banana-2',
-    name: 'Nano Banana 2',
-    provider: 'Google',
-    endpoint: 'fal-ai/nano-banana-2',
-    editEndpoint: 'fal-ai/nano-banana-2/edit',
-    aspectRatios: GEMINI_RATIOS_FULL,
-    resolutions: ['0.5K', '1K', '2K', '4K'],
-    qualities: null,
-    maxReferenceImages: 14,
-    maxImagesPerRequest: 4,
-    supportsSeed: true,
-    supportsSystemPrompt: true,
-    supportsWebSearch: true,
-    supportsThinkingLevel: true,
-    supportsSafetyTolerance: true,
-    supportsNegativePrompt: false,
-    supportsMask: false,
-    defaultAspectRatio: '1:1',
-    defaultResolution: '2K',
-    defaultQuality: null,
-    uiAspectRatios: GEMINI_RATIOS_FULL,
-    uiResolutions: ['0.5K', '1K', '2K', '4K'],
-  },
-  {
-    id: 'google/nano-banana-2-lite',
-    name: 'Nano Banana 2 Lite',
-    provider: 'Google',
-    endpoint: 'google/nano-banana-2-lite',
-    editEndpoint: 'google/nano-banana-2-lite/edit',
-    aspectRatios: GEMINI_RATIOS_FULL,
-    resolutions: null,
-    qualities: null,
-    maxReferenceImages: 14,
-    maxImagesPerRequest: 4,
-    supportsSeed: true,
-    supportsSystemPrompt: true,
-    supportsWebSearch: false,
-    supportsThinkingLevel: true,
-    supportsSafetyTolerance: true,
-    supportsNegativePrompt: false,
-    supportsMask: false,
-    defaultAspectRatio: '1:1',
-    defaultResolution: null,
-    defaultQuality: null,
-    uiAspectRatios: GEMINI_RATIOS_FULL,
-    uiResolutions: [],
-    fixedOutputNote: 'Fixed 1K output',
-  },
-  {
-    id: 'fal-ai/nano-banana-pro',
-    name: 'Nano Banana Pro',
-    provider: 'Google',
-    endpoint: 'fal-ai/nano-banana-pro',
-    editEndpoint: 'fal-ai/nano-banana-pro/edit',
-    aspectRatios: GEMINI_RATIOS_STANDARD,
-    resolutions: ['1K', '2K', '4K'],
-    qualities: null,
-    maxReferenceImages: 14,
-    maxImagesPerRequest: 4,
-    supportsSeed: true,
-    supportsSystemPrompt: true,
-    supportsWebSearch: true,
-    supportsThinkingLevel: false,
-    supportsSafetyTolerance: true,
-    supportsNegativePrompt: false,
-    supportsMask: false,
-    defaultAspectRatio: '1:1',
-    defaultResolution: '2K',
-    defaultQuality: null,
-    uiAspectRatios: GEMINI_RATIOS_STANDARD,
-    uiResolutions: ['1K', '2K', '4K'],
-  },
   {
     id: 'openai/gpt-image-2',
     name: 'GPT Image 2',
@@ -197,10 +154,115 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     uiAspectRatios: GEMINI_RATIOS_STANDARD,
     uiResolutions: ['1K', '2K', '4K'],
     fixedOutputNote: 'Size derived from the aspect ratio; quality is tiered',
+    pricing: {
+      // fal's published table of canonical sizes; `auto` bills as `high`.
+      sizeTiers: [
+        { pixels: 1024 * 768, low: 0.005, medium: 0.037, high: 0.145 },
+        { pixels: 1024 * 1024, low: 0.006, medium: 0.053, high: 0.211 },
+        { pixels: 1024 * 1536, low: 0.005, medium: 0.042, high: 0.165 },
+        { pixels: 1920 * 1080, low: 0.005, medium: 0.040, high: 0.158 },
+        { pixels: 2560 * 1440, low: 0.007, medium: 0.056, high: 0.222 },
+        { pixels: 3840 * 2160, low: 0.012, medium: 0.101, high: 0.401 },
+      ],
+      note: 'Token-based — depends on output size and quality tier',
+    },
+  },
+  {
+    id: 'fal-ai/nano-banana-2',
+    name: 'Nano Banana 2',
+    provider: 'Google',
+    endpoint: 'fal-ai/nano-banana-2',
+    editEndpoint: 'fal-ai/nano-banana-2/edit',
+    aspectRatios: GEMINI_RATIOS_FULL,
+    resolutions: ['0.5K', '1K', '2K', '4K'],
+    qualities: null,
+    maxReferenceImages: 14,
+    maxImagesPerRequest: 4,
+    supportsSeed: true,
+    supportsSystemPrompt: true,
+    supportsWebSearch: true,
+    supportsThinkingLevel: true,
+    supportsSafetyTolerance: true,
+    supportsNegativePrompt: false,
+    supportsMask: false,
+    defaultAspectRatio: '1:1',
+    defaultResolution: '2K',
+    defaultQuality: null,
+    uiAspectRatios: GEMINI_RATIOS_FULL,
+    uiResolutions: ['0.5K', '1K', '2K', '4K'],
+    pricing: {
+      perImage: 0.08,
+      resolutionMultiplier: { '0.5K': 0.75, '1K': 1, '2K': 1.5, '4K': 2 },
+      webSearchSurcharge: 0.015,
+      highThinkingSurcharge: 0.002,
+      note: '$0.08 per image at 1K; 2K x1.5, 4K x2, 0.5K x0.75',
+    },
+  },
+  {
+    id: 'google/nano-banana-2-lite',
+    name: 'Nano Banana 2 Lite',
+    provider: 'Google',
+    endpoint: 'google/nano-banana-2-lite',
+    editEndpoint: 'google/nano-banana-2-lite/edit',
+    aspectRatios: GEMINI_RATIOS_FULL,
+    resolutions: null,
+    qualities: null,
+    maxReferenceImages: 14,
+    maxImagesPerRequest: 4,
+    supportsSeed: true,
+    supportsSystemPrompt: true,
+    supportsWebSearch: false,
+    supportsThinkingLevel: true,
+    supportsSafetyTolerance: true,
+    supportsNegativePrompt: false,
+    supportsMask: false,
+    defaultAspectRatio: '1:1',
+    defaultResolution: null,
+    defaultQuality: null,
+    uiAspectRatios: GEMINI_RATIOS_FULL,
+    uiResolutions: [],
+    fixedOutputNote: 'Fixed 1K output',
+    pricing: {
+      // Billed per token ($37.50 / 1M output image tokens). A 1024x1024 Gemini
+      // image is 1290 output tokens, and the output size here is fixed at 1K —
+      // so the per-image price is effectively constant.
+      perImage: 1290 * (37.5 / 1_000_000),
+      note: 'Token-based, fixed 1K output — about $0.048 per image',
+    },
+  },
+  {
+    id: 'fal-ai/nano-banana-pro',
+    name: 'Nano Banana Pro',
+    provider: 'Google',
+    endpoint: 'fal-ai/nano-banana-pro',
+    editEndpoint: 'fal-ai/nano-banana-pro/edit',
+    aspectRatios: GEMINI_RATIOS_STANDARD,
+    resolutions: ['1K', '2K', '4K'],
+    qualities: null,
+    maxReferenceImages: 14,
+    maxImagesPerRequest: 4,
+    supportsSeed: true,
+    supportsSystemPrompt: true,
+    supportsWebSearch: true,
+    supportsThinkingLevel: false,
+    supportsSafetyTolerance: true,
+    supportsNegativePrompt: false,
+    supportsMask: false,
+    defaultAspectRatio: '1:1',
+    defaultResolution: '2K',
+    defaultQuality: null,
+    uiAspectRatios: GEMINI_RATIOS_STANDARD,
+    uiResolutions: ['1K', '2K', '4K'],
+    pricing: {
+      perImage: 0.15,
+      resolutionMultiplier: { '1K': 1, '2K': 1, '4K': 2 },
+      webSearchSurcharge: 0.015,
+      note: '$0.15 per image; 4K x2',
+    },
   },
 ]
 
-export const DEFAULT_MODEL = 'fal-ai/nano-banana-2'
+export const DEFAULT_MODEL = 'openai/gpt-image-2'
 
 /**
  * Models usable in thumbnail mode.
@@ -218,7 +280,7 @@ export function isThumbnailModel(modelId: string): boolean {
   return getThumbnailModels().some((m) => m.id === modelId)
 }
 
-export const DEFAULT_THUMBNAIL_MODEL = 'fal-ai/nano-banana-2'
+export const DEFAULT_THUMBNAIL_MODEL = 'openai/gpt-image-2'
 
 /** Models the app used before it moved to fal.ai, mapped onto their replacement. */
 const LEGACY_MODEL_IDS: Record<string, string> = {
@@ -352,6 +414,82 @@ export function getCombinedCapabilities(modelIds: string[]): {
     qualities,
     notes,
   }
+}
+
+export interface CostEstimateInput {
+  /** Requested resolution tier; clamped to what the model offers. */
+  resolution?: string
+  /** GPT Image 2 quality tier. `auto` bills like `high`, which is fal's default. */
+  quality?: string
+  /** Explicit output size, when the caller already resolved one. */
+  imageSize?: { width: number; height: number }
+  aspectRatio?: string
+  webSearch?: boolean
+  thinkingLevel?: string
+  /** Number of images; the per-image price is simply multiplied. */
+  count?: number
+}
+
+/**
+ * Estimate what a request costs, in USD.
+ *
+ * This is arithmetic over the published list prices in `AVAILABLE_MODELS` —
+ * fal.ai returns no billing data with a generation, so there is nothing to read
+ * back. Treat every number it produces as an estimate.
+ */
+export function estimateImageCost(modelId: string, opts: CostEstimateInput = {}): number {
+  const model = getModel(modelId)
+  const pricing = model.pricing
+  const count = opts.count ?? 1
+
+  let perImage = 0
+
+  if (pricing.sizeTiers) {
+    const size =
+      opts.imageSize ??
+      (() => {
+        const derived = toGptImageSize(
+          opts.aspectRatio ?? '1:1',
+          opts.resolution ?? model.defaultResolution ?? '1K'
+        )
+        return derived === 'auto' ? { width: 1024, height: 1024 } : derived
+      })()
+    const pixels = size.width * size.height
+
+    let tier = pricing.sizeTiers[0]
+    let bestDelta = Infinity
+    for (const candidate of pricing.sizeTiers) {
+      const delta = Math.abs(candidate.pixels - pixels)
+      if (delta < bestDelta) {
+        bestDelta = delta
+        tier = candidate
+      }
+    }
+
+    const quality = opts.quality === 'low' || opts.quality === 'medium' ? opts.quality : 'high'
+    perImage = tier[quality]
+  } else {
+    const base = pricing.perImage ?? 0
+    const tier = resolveResolution(model, opts.resolution ?? model.defaultResolution ?? '1K')
+    const multiplier = tier ? (pricing.resolutionMultiplier?.[tier as FalResolution] ?? 1) : 1
+    perImage = base * multiplier
+  }
+
+  let total = perImage * count
+
+  // Surcharges are billed per request, not per image.
+  if (opts.webSearch && pricing.webSearchSurcharge) total += pricing.webSearchSurcharge
+  if (opts.thinkingLevel === 'high' && pricing.highThinkingSurcharge) {
+    total += pricing.highThinkingSurcharge
+  }
+
+  return total
+}
+
+/** "$0.0483" below a cent, "$0.158" above — enough digits to stay meaningful. */
+export function formatCost(usd: number): string {
+  if (usd <= 0) return '$0'
+  return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(3)}`
 }
 
 /** "16:9" → 1.777…; returns null for `auto` and unparseable input. */

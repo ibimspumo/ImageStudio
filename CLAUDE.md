@@ -16,20 +16,20 @@ npx electron-vite build    # Build check only (no Electron)
 
 ## Architecture
 - `src/shared/` — code used by **both** main and renderer
-  - `image-models.ts` — the fal.ai image model registry: endpoints, aspect ratios, resolutions, reference limits, per-model capability flags, plus `resolveAspectRatio`/`resolveResolution`/`toGptImageSize`/`getCombinedCapabilities`/`normalizeModelId`
+  - `image-models.ts` — the fal.ai image model registry: endpoints, aspect ratios, resolutions, reference limits, per-model capability flags, **list prices**, plus `resolveAspectRatio`/`resolveResolution`/`toGptImageSize`/`getCombinedCapabilities`/`normalizeModelId`/`estimateImageCost`/`formatCost`
   - `thumbnail-prompt.ts` — the YouTube thumbnail system prompt (base rules, style blocks, face-fidelity block) plus the mode's locked constants and `buildThumbnailSystemPrompt()`
   - `version.ts` — semver comparison for the updater
 - `src/main/` — Electron main process (IPC, API, files)
 - `src/preload/` — Typed context bridge (`window.api`)
 - `src/renderer/src/` — React UI
   - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop, thumbnail-projects (all with debounced persistence via `lib/debounce.ts`)
-  - `hooks/` — useImageGeneration, useVideoGeneration (fal.ai), useChatGeneration, useImageRefs (shared image attachment logic), useJustifiedLayout (row-based masonry)
+  - `hooks/` — useImageGeneration, useVideoGeneration (fal.ai), useChatGeneration, useMentionEditor (the contenteditable prompt editor with @-mentions, shared by PromptBar and ChatView), useImageRefs (shared image attachment logic), useJustifiedLayout (row-based masonry)
   - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, getModelName, getVideoModelName, ImageRef, LabeledAttachment
-  - `components/input/` — PromptBar (orchestrator), VideoPromptBar (video mode, no @mentions), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (model/aspect/resolution/count/buttons), ModelSelector, VideoModelSelector, AspectRatioSelector, ResolutionSelector, DurationSelector, ImageCountSelector
+  - `components/input/` — PromptBar (orchestrator), VideoPromptBar (video mode, no @mentions), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (model/aspect/resolution/count/buttons), CostEstimate (live per-request price), ModelSelector, VideoModelSelector, AspectRatioSelector, ResolutionSelector, DurationSelector, ImageCountSelector
   - `components/gallery/` — Justified layout (row-based masonry, left-to-right fill), GalleryCard with hover actions (save, copy, chat, move-to-workspace), video hover preview
-  - `components/chat/` — ChatView (iterative editing with per-message model selection)
+  - `components/chat/` — ChatView (iterative editing; inherits the source image's model/aspect ratio/resolution, supports @-mentions and collections via `useMentionEditor`)
   - `components/workspace/` — WorkspaceBar (pill tabs, create, rename, delete, filter gallery)
-  - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog, UpdateSection
+  - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog, UpdateSection, SpendIndicator (running cost total in the TitleBar)
   - `components/thumbnail/` — ProjectBar (video pills, drop target), ThumbnailControls (model, style, face fidelity, count), StyleSelector (auto/clean/balanced/bold), ThumbnailFrame (16:9 + safe-zone/legibility overlays), ThumbnailPreviewModal (YouTube surfaces, size ladder, 1920×1080 export)
   - `components/collections/` — Asset collection CRUD
   - `lib/image-utils.ts` — compressImage, createZoomOutCanvas, createAspectRatioCanvas, collectionImagesAsBase64, renderYouTubeThumbnail (exact 1920×1080 cover-crop)
@@ -44,15 +44,16 @@ Everything — images, video, reference uploads — runs through fal.ai. There i
 
 ### Image Models (fal.ai)
 Defined in `src/shared/image-models.ts` as `AVAILABLE_MODELS`, re-exported through `types/api.ts`.
-Default: `fal-ai/nano-banana-2`. Each model has a text-to-image endpoint and an `/edit` endpoint;
-`fal-image.ts` picks the edit endpoint whenever reference images are attached.
+Default: `openai/gpt-image-2` (both `DEFAULT_MODEL` and `DEFAULT_THUMBNAIL_MODEL`; it is also first in
+`AVAILABLE_MODELS`, which is what `getModel()` falls back to). Each model has a text-to-image endpoint
+and an `/edit` endpoint; `fal-image.ts` picks the edit endpoint whenever reference images are attached.
 
-| Model | Endpoint | Aspect ratios | Resolutions | Refs | Seed |
-|---|---|---|---|---|---|
-| Nano Banana 2 | `fal-ai/nano-banana-2` | 15 incl. 4:1/8:1 | 0.5K–4K | 14 | yes |
-| Nano Banana 2 Lite | `google/nano-banana-2-lite` | 15 incl. 4:1/8:1 | fixed 1K | 14 | yes |
-| Nano Banana Pro | `fal-ai/nano-banana-pro` | 11 (no extremes) | 1K–4K | 14 | yes |
-| GPT Image 2 | `openai/gpt-image-2` | via `image_size` | via `image_size` | 16 | no |
+| Model | Endpoint | Aspect ratios | Resolutions | Refs | Seed | Price |
+|---|---|---|---|---|---|---|
+| GPT Image 2 (default) | `openai/gpt-image-2` | via `image_size` | via `image_size` | 16 | no | size × quality table |
+| Nano Banana 2 | `fal-ai/nano-banana-2` | 15 incl. 4:1/8:1 | 0.5K–4K | 14 | yes | $0.08 @1K, ×0.75/×1.5/×2 |
+| Nano Banana 2 Lite | `google/nano-banana-2-lite` | 15 incl. 4:1/8:1 | fixed 1K | 14 | yes | ~$0.048 |
+| Nano Banana Pro | `fal-ai/nano-banana-pro` | 11 (no extremes) | 1K–4K | 14 | yes | $0.15, ×2 @4K |
 
 **None of the four accept `negative_prompt`** — the control is gone from the UI.
 GPT Image 2 has no `aspect_ratio`/`resolution`/`seed`: ratios become an explicit `image_size`
@@ -61,12 +62,40 @@ Values a model cannot take are mapped to its nearest supported one rather than r
 Multi-model generation: PromptBar allows selecting multiple models; `useImageGeneration` runs each model
 independently and packs references per model. Chat uses a single model per message.
 
+### The prompt editor
+Both PromptBar and ChatView run on `useMentionEditor`. It owns the contenteditable, the reference
+chips, the `@`-mention popup and `getPromptText()` — so a mention resolves identically in the gallery
+and in a chat. Two things to keep in mind when touching it:
+- The editor's text lives in the DOM, so typing causes **no** React update on its own. The hook
+  mirrors the text into `promptText` on every input; anything derived from the prompt (the Generate
+  button, `hasContent`) must read that, never call `getPromptText()` during render. Writing the
+  editor's `innerHTML` directly (the reuse-prompt path) fires no input event — call `syncPromptText()`.
+- Chip removal has no event of its own; `handleEditorInput` reconciles `collectionRefs` against the
+  chips actually present in the DOM.
+
 ### References and @-mentions
 fal.ai takes a flat `image_urls` array plus one prompt string — there is no way to interleave labels
 between images. `buildReferencePreamble()` therefore numbers every reference in the prompt, in the exact
 order the URLs are sent, which is what makes `[Image 1]` and `[@Collection]` mentions resolvable.
 When references exceed a model's limit, `packReferencesForModel()` merges the largest groups into numbered
 collages until they fit — nothing is dropped. Single-image slots are passed through untouched.
+
+### Cost tracking
+fal.ai reports **no** per-request cost — not in the queue response, not via the client, not in the
+OpenAPI schema (checked; there is no pricing block). Every figure the app shows is therefore computed
+from the list prices in `AVAILABLE_MODELS[].pricing` by `estimateImageCost()`, and is labelled `≈`.
+
+`fal-image.ts` computes it from the request it actually built, not from what the caller asked for —
+a resolution the model does not offer was already clamped by `buildInput()`. The value rides back on
+`GenerateResult.cost`, which `completeImage()` already stored, so gallery, lightbox and the running
+total all read the same number. Surcharges (web search, high thinking) are added per request.
+
+Displayed in three places: `CostEstimate` in PromptBar and ChatView (before generating, per model),
+the lightbox details (after generating), and `SpendIndicator` in the TitleBar (today's total, all-time
+on hover). Images generated before this existed carry no `cost` and are excluded from the total.
+
+When adding a model, fill in `pricing` — the type requires it, and a missing price silently reads as
+free. Prices come from `https://fal.ai/models/<id>`; re-check them when touching the registry.
 
 ### Uploads
 Reference images go to fal.ai storage (`fal.storage.upload`) — the endpoints only accept URLs.

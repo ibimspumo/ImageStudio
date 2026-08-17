@@ -1,5 +1,6 @@
 import { fal } from '@fal-ai/client'
 import {
+  estimateImageCost,
   getModel,
   resolveAspectRatio,
   resolveResolution,
@@ -248,11 +249,26 @@ export async function generateImage(
     throw new Error(data.description || 'No image returned by the model')
   }
 
+  // Priced off what was actually sent, not what was asked for — a resolution
+  // the model does not offer was clamped in `buildInput` and bills accordingly.
+  const cost = estimateImageCost(model.id, {
+    resolution: typeof input.resolution === 'string' ? input.resolution : undefined,
+    quality: typeof input.quality === 'string' ? input.quality : undefined,
+    imageSize:
+      input.image_size && typeof input.image_size === 'object'
+        ? (input.image_size as { width: number; height: number })
+        : undefined,
+    aspectRatio: request.aspectRatio,
+    webSearch: input.enable_web_search === true,
+    thinkingLevel: typeof input.thinking_level === 'string' ? input.thinking_level : undefined,
+  })
+
   return images.map((img) => ({
     id: result.requestId,
     imageUrl: img.url,
     text: data.description || undefined,
     seed: data.seed,
+    cost,
   }))
 }
 

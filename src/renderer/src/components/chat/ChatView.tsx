@@ -12,23 +12,39 @@ import {
 import { useChatStore, type ChatMessage } from '../../stores/chat-store'
 import { toDisplayUrl } from '../../stores/gallery-store'
 import { useChatGeneration } from '../../hooks/useChatGeneration'
+import { useMentionEditor } from '../../hooks/useMentionEditor'
 import { SimpleLightbox } from '../shared/SimpleLightbox'
 import { useSettingsStore } from '../../stores/settings-store'
 import { AspectRatioSelector } from '../input/AspectRatioSelector'
 import { QualitySelector } from '../input/QualitySelector'
 import { ResolutionSelector } from '../input/ResolutionSelector'
 import { ModelSelector } from '../input/ModelSelector'
+import { AttachmentStrip } from '../input/AttachmentStrip'
+import { MentionPopup } from '../input/MentionPopup'
+import { CostEstimate } from '../input/CostEstimate'
 import type { AspectRatio, Resolution, GptImageQuality } from '../../types/api'
 import { getModelName, getCombinedCapabilities, normalizeModelId, DEFAULT_MODEL } from '../../types/api'
 import { cn } from '../../lib/utils'
 import { formatDuration, formatTime } from '../../lib/date-utils'
-import { logger } from '../../lib/logger'
 
 interface ChatViewProps {
   chatId: string
   onClose: () => void
   initialModel?: string
+  /**
+   * Format of the image the chat started from. An edit of a 9:16 image should
+   * stay 9:16 unless the user says otherwise — defaulting to 1:1 silently
+   * reframed every vertical source.
+   */
+  initialAspectRatio?: string
+  initialResolution?: string
 }
+
+const ASPECT_RATIOS: AspectRatio[] = [
+  'auto', '1:1', '16:9', '9:16', '4:3', '3:4', '2:3', '3:2', '5:4', '4:5',
+  '21:9', '4:1', '1:4', '8:1', '1:8',
+]
+const RESOLUTIONS: Resolution[] = ['0.5K', '1K', '2K', '4K']
 
 const MessageBubble = memo(function MessageBubble({ message, allImages, onImageClick }: { message: ChatMessage; allImages: string[]; onImageClick?: (images: string[], index: number) => void }) {
   const isUser = message.role === 'user'
@@ -124,23 +140,61 @@ const MessageBubble = memo(function MessageBubble({ message, allImages, onImageC
   )
 })
 
-export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
+export function ChatView({
+  chatId,
+  onClose,
+  initialModel,
+  initialAspectRatio,
+  initialResolution,
+}: ChatViewProps) {
   const [lightboxState, setLightboxState] = useState<{ images: string[]; index: number } | null>(null)
 
   const onImageClick = useCallback((images: string[], index: number) => {
     setLightboxState({ images, index })
   }, [])
   const chat = useChatStore((s) => s.chats.find((c) => c.id === chatId))
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
-  const [customRatio, setCustomRatio] = useState<string>('4:3')
-  const [resolution, setResolution] = useState<Resolution>('2K')
+
+  // The source image's format is the starting point. A ratio the selector does
+  // not list (an old custom one) is kept as a custom ratio rather than dropped.
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(() => {
+    if (!initialAspectRatio) return '1:1'
+    if (ASPECT_RATIOS.includes(initialAspectRatio as AspectRatio)) return initialAspectRatio as AspectRatio
+    return initialAspectRatio.includes(':') ? 'custom' : '1:1'
+  })
+  const [customRatio, setCustomRatio] = useState<string>(
+    initialAspectRatio && !ASPECT_RATIOS.includes(initialAspectRatio as AspectRatio) && initialAspectRatio.includes(':')
+      ? initialAspectRatio
+      : '4:3'
+  )
+  const [resolution, setResolution] = useState<Resolution>(
+    RESOLUTIONS.includes(initialResolution as Resolution) ? (initialResolution as Resolution) : '2K'
+  )
   const [selectedModels, setSelectedModels] = useState<string[]>([normalizeModelId(initialModel) || DEFAULT_MODEL])
-  const [imageRefs, setImageRefs] = useState<Array<{ id: string; base64: string }>>([])
   const [quality, setQuality] = useState<GptImageQuality>('high')
 
-  const editorRef = useRef<HTMLDivElement>(null)
+  const {
+    editorRef,
+    fileInputRef,
+    imageRefs,
+    collectionRefs,
+    collections,
+    removeImageRef,
+    removeCollectionRef,
+    clearRefs,
+    insertChipAtCursor,
+    insertCollectionChipAtCursor,
+    getPromptText,
+    promptText,
+    buildAttachments,
+    mentionItems,
+    showMentionPopup,
+    handleMentionKeyDown,
+    handleEditorInput,
+    handleFileSelect,
+    handleImageDrop,
+  } = useMentionEditor()
+
   const scrollRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { generate } = useChatGeneration()
   const falApiKey = useSettingsStore((s) => s.falApiKey)
@@ -148,7 +202,7 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
   // Scroll to bottom when messages change (new message or loading completes)
   const messageCount = chat?.messages.length ?? 0
   const lastMessageLoading = chat?.messages[messageCount - 1]?.isLoading
-  const lastMessageImage = chat?.messages[messageCount - 1]?.imageBase64
+  const lastMessageImage = chat?.messages[messageCount - 1]?.imageFilePath
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -169,18 +223,11 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const getPromptText = useCallback((): string => {
-    const editor = editorRef.current
-    if (!editor) return ''
-    return (editor.textContent || '').trim()
-  }, [])
-
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     const text = getPromptText()
     if (!text || !falApiKey || !chat) return
 
-    const extraAttachments = imageRefs.map((r) => r.base64)
-    const extraLabeledAttachments = imageRefs.map((r, i) => ({ label: `Reference image ${i + 1}`, images: [r.base64] }))
+    const { attachments, labeledAttachments } = await buildAttachments()
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
 
     generate({
@@ -189,17 +236,13 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
       aspectRatio: resolvedAspectRatio,
       resolution,
       model: selectedModels[0],
-      extraAttachments: extraAttachments.length > 0 ? extraAttachments : undefined,
-      extraLabeledAttachments: extraLabeledAttachments.length > 0 ? extraLabeledAttachments : undefined,
+      extraAttachments: attachments.length > 0 ? attachments : undefined,
+      extraLabeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
       quality,
     })
 
-    // Clear editor and refs
-    if (editorRef.current) {
-      editorRef.current.textContent = ''
-    }
-    setImageRefs([])
-  }, [getPromptText, falApiKey, chat, imageRefs, generate, aspectRatio, customRatio, resolution, selectedModels, quality])
+    clearRefs()
+  }, [getPromptText, falApiKey, chat, buildAttachments, generate, aspectRatio, customRatio, resolution, selectedModels, quality, clearRefs])
 
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -208,39 +251,14 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
         handleSubmit()
         return
       }
+      if (handleMentionKeyDown(e)) return
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         document.execCommand('insertLineBreak')
       }
     },
-    [handleSubmit]
+    [handleSubmit, handleMentionKeyDown]
   )
-
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue
-      const base64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.readAsDataURL(file)
-      })
-      setImageRefs((prev) => [...prev, { id: crypto.randomUUID(), base64 }])
-    }
-    e.target.value = ''
-  }, [])
-
-  const removeImageRef = useCallback((id: string) => {
-    setImageRefs((prev) => prev.filter((r) => r.id !== id))
-  }, [])
-
-  const [hasText, setHasText] = useState(false)
-
-  const handleEditorInput = useCallback(() => {
-    const text = (editorRef.current?.textContent || '').trim()
-    setHasText(text.length > 0)
-  }, [])
 
   if (!chat) return null
 
@@ -250,7 +268,7 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
     .find((m) => m.role === 'assistant' && m.imageFilePath)?.imageFilePath
   const lastAssistantDisplayUrl = lastAssistantFilePath ? toDisplayUrl(lastAssistantFilePath) : undefined
 
-  const canSend = hasText && falApiKey
+  const canSend = !!promptText && !!falApiKey
   const caps = getCombinedCapabilities(selectedModels)
   const isGenerating = chat.messages.some((m) => m.isLoading)
 
@@ -321,27 +339,19 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
             </div>
           )}
 
-          <div className="grain relative bg-surface-2 border border-border-base rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)]">
-            {/* Extra attached images */}
-            {imageRefs.length > 0 && (
-              <div className="flex items-center gap-2 px-4 pt-3 overflow-x-auto">
-                {imageRefs.map((ref) => (
-                  <div key={ref.id} className="relative shrink-0 group animate-scale-in">
-                    <img
-                      src={ref.base64}
-                      alt="Attachment"
-                      className="w-12 h-12 rounded-lg object-cover border border-border-base"
-                    />
-                    <button
-                      onClick={() => removeImageRef(ref.id)}
-                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-surface-0 border border-border-base flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger hover:border-danger hover:text-white text-text-muted"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div
+            className="grain relative bg-surface-2 border border-border-base rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)]"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); handleImageDrop(e) }}
+          >
+            {/* Attached images and collections */}
+            <AttachmentStrip
+              imageRefs={imageRefs}
+              collectionRefs={collectionRefs}
+              onRemoveImage={removeImageRef}
+              onRemoveCollection={removeCollectionRef}
+              onAddMore={() => fileInputRef.current?.click()}
+            />
 
             {/* Editor */}
             <div className="px-5 pt-3 pb-3">
@@ -355,6 +365,15 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
                 className="prompt-editor min-h-[40px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none"
               />
             </div>
+
+            {/* @-mention popup */}
+            {showMentionPopup && (
+              <MentionPopup
+                items={mentionItems}
+                onSelectImage={insertChipAtCursor}
+                onSelectCollection={insertCollectionChipAtCursor}
+              />
+            )}
 
 
             {/* Controls row */}
@@ -413,6 +432,21 @@ export function ChatView({ chatId, onClose, initialModel }: ChatViewProps) {
               {' + '}
               <kbd className="inline-flex items-center justify-center px-1 py-0.5 rounded bg-surface-3 text-text-muted border border-border-dim text-[10px] font-medium mx-0.5">Enter</kbd>
               {' to generate'}
+              {(imageRefs.length > 0 || collections.length > 0) && (
+                <>
+                  {'  ·  '}
+                  <kbd className="inline-flex items-center justify-center px-1 py-0.5 rounded bg-surface-3 text-text-muted border border-border-dim text-[10px] font-medium mx-0.5">@</kbd>
+                  {' references'}
+                </>
+              )}
+              {'  ·  '}
+              <CostEstimate
+                models={selectedModels}
+                aspectRatio={aspectRatio === 'custom' ? customRatio : aspectRatio}
+                resolution={resolution}
+                imageCount={1}
+                quality={quality}
+              />
             </p>
           </div>
         </div>

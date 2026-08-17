@@ -219,6 +219,46 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
       </button>
 
       <div className="img-overlay absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 transition-opacity duration-200 flex items-end p-3">
+        {/* Anchored to the card, not the button — the card clips its overflow,
+            so a button-anchored menu loses whatever sticks out. */}
+        {showMoveMenu && moveTargets.length > 0 && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute left-3 right-3 bottom-14 max-h-[min(220px,60%)] overflow-y-auto bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 animate-scale-in z-20"
+          >
+            <button
+              onClick={(e) => handleMove(e, undefined)}
+              className={cn(
+                'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
+                !currentTargetId
+                  ? 'bg-surface-4 text-text-primary font-medium'
+                  : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
+              )}
+            >
+              <div className="w-2 h-2 rounded-full bg-text-muted/40 shrink-0" />
+              {isThumbnailMode ? 'Kein Video' : 'None'}
+            </button>
+            {moveTargets.map((target) => (
+              <button
+                key={target.id}
+                onClick={(e) => handleMove(e, target.id)}
+                className={cn(
+                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
+                  currentTargetId === target.id
+                    ? 'bg-surface-4 text-text-primary font-medium'
+                    : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
+                )}
+              >
+                <div
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: target.color }}
+                />
+                <span className="truncate">{target.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center gap-1.5 w-full flex-wrap">
           <button onClick={handleSave} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Save">
             <Download className="w-3.5 h-3.5 text-white" />
@@ -276,40 +316,6 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
               >
                 <FolderInput className="w-3.5 h-3.5 text-white" />
               </button>
-              {showMoveMenu && (
-                <div className="absolute bottom-full left-0 mb-2 min-w-[140px] bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 animate-scale-in z-20">
-                  <button
-                    onClick={(e) => handleMove(e, undefined)}
-                    className={cn(
-                      'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
-                      !currentTargetId
-                        ? 'bg-surface-4 text-text-primary font-medium'
-                        : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
-                    )}
-                  >
-                    <div className="w-2 h-2 rounded-full bg-text-muted/40 shrink-0" />
-                    {isThumbnailMode ? 'Kein Video' : 'None'}
-                  </button>
-                  {moveTargets.map((target) => (
-                    <button
-                      key={target.id}
-                      onClick={(e) => handleMove(e, target.id)}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
-                        currentTargetId === target.id
-                          ? 'bg-surface-4 text-text-primary font-medium'
-                          : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
-                      )}
-                    >
-                      <div
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: target.color }}
-                      />
-                      <span className="truncate">{target.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           )}
           <div className="flex-1" />

@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
+import { useMentionEditor, collectionChipThumbnail } from '../../hooks/useMentionEditor'
 import { useSettingsStore } from '../../stores/settings-store'
-import { useCollectionsStore, type AssetCollection } from '../../stores/collections-store'
-import type { AspectRatio, Resolution, ImageRef, GptImageQuality, ThumbnailStyle } from '../../types/api'
+import { type AssetCollection } from '../../stores/collections-store'
+import type { AspectRatio, Resolution, GptImageQuality, ThumbnailStyle } from '../../types/api'
 import {
   DEFAULT_MODEL,
   DEFAULT_THUMBNAIL_MODEL,
@@ -15,16 +16,16 @@ import {
   THUMBNAIL_RESOLUTION,
   THUMBNAIL_GPT_IMAGE_SIZE,
 } from '../../types/api'
+import { CostEstimate } from './CostEstimate'
 import { ThumbnailControls } from '../thumbnail/ThumbnailControls'
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
 import { nanoid } from 'nanoid'
-import { collectionImagesAsBase64, compressImage } from '../../lib/image-utils'
+import { compressImage } from '../../lib/image-utils'
 import { useCropStore } from '../../stores/crop-store'
-import { toDisplayUrl } from '../../stores/gallery-store'
 import { AttachmentStrip, type CollectionRef } from './AttachmentStrip'
-import { MentionPopup, type MentionItem } from './MentionPopup'
+import { MentionPopup } from './MentionPopup'
 import { ControlsRow } from './ControlsRow'
 import { usePresetsStore } from '../../stores/presets-store'
 
@@ -73,41 +74,47 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   })
   const [thumbnailStyle, setThumbnailStyle] = useState<ThumbnailStyle>('auto')
   const [faceFidelity, setFaceFidelity] = useState(true)
-  const [imageRefs, setImageRefs] = useState<ImageRef[]>([])
-  const [collectionRefs, setCollectionRefs] = useState<CollectionRef[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
-  const [showMentionPopup, setShowMentionPopup] = useState(false)
-  const [mentionFilter, setMentionFilter] = useState('')
   const [quality, setQuality] = useState<GptImageQuality>('high')
   const [seed, setSeed] = useState<number | undefined>(undefined)
   const [activePresetId, setActivePresetId] = useState<string | null>(null)
 
-  const editorRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const {
+    editorRef,
+    fileInputRef,
+    imageRefs,
+    collectionRefs,
+    setCollectionRefs,
+    collections,
+    addImageRef,
+    removeImageRef,
+    removeCollectionRef,
+    clearRefs,
+    insertChipAtCursor,
+    insertCollectionChipAtCursor,
+    getPromptText,
+    promptText,
+    syncPromptText,
+    buildAttachments,
+    mentionItems,
+    showMentionPopup,
+    handleMentionKeyDown,
+    handleEditorInput,
+    handleFileSelect,
+    handleImageDrop,
+  } = useMentionEditor()
+
   const dragCountRef = useRef(0)
-  const nextImageNum = useRef(1)
 
   const { generate } = useImageGeneration()
   const falApiKey = useSettingsStore((s) => s.falApiKey)
   const hydrated = useSettingsStore((s) => s.hydrated)
-  const collections = useCollectionsStore((s) => s.collections)
   const presets = usePresetsStore((s) => s.presets)
   const activeProjectId = useThumbnailProjectsStore((s) => s.activeProjectId)
   const projects = useThumbnailProjectsStore((s) => s.projects)
   const activeProject = thumbnailMode && activeProjectId
     ? projects.find((p) => p.id === activeProjectId) ?? null
     : null
-
-  // ── Image ref management ──────────────────────────────────────────
-
-  const addImageRef = useCallback((base64: string, customName?: string): ImageRef => {
-    const existing = imageRefs.find((r) => r.base64 === base64)
-    if (existing) return existing
-    const name = customName || `Image ${nextImageNum.current++}`
-    const ref: ImageRef = { id: crypto.randomUUID(), name, base64 }
-    setImageRefs((prev) => [...prev, ref])
-    return ref
-  }, [imageRefs])
 
   // Consume pending crop references from the crop store
   const pendingCropRef = useCropStore((s) => s.pendingRef)
@@ -129,9 +136,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       const reuse = consumePendingReuse()
       if (!reuse) return
 
-      setImageRefs([])
-      setCollectionRefs([])
-      if (editorRef.current) editorRef.current.innerHTML = ''
+      clearRefs()
 
       const collectionMentionRegex = /\[@([^\]]+)\]/g
       const imageMentionRegex = /\[([^@\]][^\]]*)\]/g
@@ -168,10 +173,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
                 images: col.images,
               }
               setCollectionRefs((prev) => [...prev, cRef])
-              const thumbnailHtml = cRef.thumbnail
-                ? `<img src="${toDisplayUrl(cRef.thumbnail)}" class="w-4 h-4 rounded object-cover inline-block align-middle" />`
-                : '<span class="inline-flex w-4 h-4 items-center justify-center"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>'
-              html += `<span contenteditable="false" data-collection-ref-id="${cRef.id}" class="inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none">${thumbnailHtml}<span class="align-middle">@${col.name}</span></span>\u00A0`
+              html += `<span contenteditable="false" data-collection-ref-id="${cRef.id}" class="inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none">${collectionChipThumbnail(cRef.thumbnail)}<span class="align-middle">@${col.name}</span></span>\u00A0`
             } else {
               html += match[0]
             }
@@ -185,6 +187,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         if (remaining) html += remaining.replace(/\n/g, '<br>')
 
         editorRef.current.innerHTML = html
+        syncPromptText()
 
         const range = document.createRange()
         range.selectNodeContents(editorRef.current)
@@ -216,139 +219,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         })()
       }
     }
-  }, [pendingReuse, consumePendingReuse, addImageRef, collections])
-
-  const removeImageRef = useCallback((id: string) => {
-    setImageRefs((prev) => prev.filter((r) => r.id !== id))
-    const editor = editorRef.current
-    if (editor) {
-      const chips = editor.querySelectorAll(`[data-image-ref-id="${id}"]`)
-      chips.forEach((chip) => chip.remove())
-    }
-  }, [])
-
-  const removeCollectionRef = useCallback((id: string) => {
-    setCollectionRefs((prev) => prev.filter((r) => r.id !== id))
-    const editor = editorRef.current
-    if (editor) {
-      const chips = editor.querySelectorAll(`[data-collection-ref-id="${id}"]`)
-      chips.forEach((chip) => chip.remove())
-    }
-  }, [])
-
-  // ── Chip insertion ────────────────────────────────────────────────
-
-  const insertChipAtCursor = useCallback((ref: ImageRef) => {
-    const editor = editorRef.current
-    if (!editor) return
-    editor.focus()
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-    const range = sel.getRangeAt(0)
-    const textNode = range.startContainer
-    if (textNode.nodeType === Node.TEXT_NODE) {
-      const text = textNode.textContent || ''
-      const cursorPos = range.startOffset
-      const atIdx = text.lastIndexOf('@', cursorPos - 1)
-      if (atIdx >= 0) {
-        const before = text.substring(0, atIdx)
-        const after = text.substring(cursorPos)
-        textNode.textContent = before + after
-        range.setStart(textNode, atIdx)
-        range.setEnd(textNode, atIdx)
-      }
-    }
-    const chip = document.createElement('span')
-    chip.contentEditable = 'false'
-    chip.dataset.imageRefId = ref.id
-    chip.className = 'inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-surface-3 border border-border-base text-[12px] font-medium text-text-primary cursor-default select-none'
-    chip.innerHTML = `<img src="${ref.base64}" class="w-4 h-4 rounded object-cover inline-block align-middle" /><span class="align-middle">${ref.name}</span>`
-    range.deleteContents()
-    range.insertNode(chip)
-    const space = document.createTextNode('\u00A0')
-    chip.after(space)
-    range.setStartAfter(space)
-    range.setEndAfter(space)
-    sel.removeAllRanges()
-    sel.addRange(range)
-    setShowMentionPopup(false)
-    setMentionFilter('')
-  }, [])
-
-  const insertCollectionChipAtCursor = useCallback((collection: AssetCollection) => {
-    const editor = editorRef.current
-    if (!editor) return
-    editor.focus()
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-    const range = sel.getRangeAt(0)
-    const textNode = range.startContainer
-    if (textNode.nodeType === Node.TEXT_NODE) {
-      const text = textNode.textContent || ''
-      const cursorPos = range.startOffset
-      const atIdx = text.lastIndexOf('@', cursorPos - 1)
-      if (atIdx >= 0) {
-        const before = text.substring(0, atIdx)
-        const after = text.substring(cursorPos)
-        textNode.textContent = before + after
-        range.setStart(textNode, atIdx)
-        range.setEnd(textNode, atIdx)
-      }
-    }
-    const cRef: CollectionRef = {
-      id: crypto.randomUUID(),
-      collectionId: collection.id,
-      name: collection.name,
-      thumbnail: collection.images[0] || '',
-      images: collection.images,
-    }
-    setCollectionRefs((prev) => [...prev, cRef])
-    const chip = document.createElement('span')
-    chip.contentEditable = 'false'
-    chip.dataset.collectionRefId = cRef.id
-    chip.className = 'inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none'
-    const thumbnailHtml = cRef.thumbnail
-      ? `<img src="${toDisplayUrl(cRef.thumbnail)}" class="w-4 h-4 rounded object-cover inline-block align-middle" />`
-      : '<span class="inline-flex w-4 h-4 items-center justify-center"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>'
-    chip.innerHTML = `${thumbnailHtml}<span class="align-middle">@${collection.name}</span>`
-    range.deleteContents()
-    range.insertNode(chip)
-    const space = document.createTextNode('\u00A0')
-    chip.after(space)
-    range.setStartAfter(space)
-    range.setEndAfter(space)
-    sel.removeAllRanges()
-    sel.addRange(range)
-    setShowMentionPopup(false)
-    setMentionFilter('')
-  }, [])
-
-  // ── Prompt text extraction ────────────────────────────────────────
-
-  const getPromptText = useCallback((): string => {
-    const editor = editorRef.current
-    if (!editor) return ''
-    let text = ''
-    const walk = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        text += node.textContent || ''
-      } else if (node instanceof HTMLElement) {
-        if (node.dataset.imageRefId) {
-          const ref = imageRefs.find((r) => r.id === node.dataset.imageRefId)
-          if (ref) text += `[${ref.name}]`
-        } else if (node.dataset.collectionRefId) {
-          const cRef = collectionRefs.find((r) => r.id === node.dataset.collectionRefId)
-          if (cRef) text += `[@${cRef.name}]`
-        } else if (node.tagName === 'BR') {
-          text += '\n'
-        } else {
-          for (const child of node.childNodes) walk(child)
-        }
-      }
-    }
-    for (const child of editor.childNodes) walk(child)
-    return text.trim()
-  }, [imageRefs, collectionRefs])
+  }, [pendingReuse, consumePendingReuse, addImageRef, collections, clearRefs, setCollectionRefs, syncPromptText])
 
   // ── Submit ────────────────────────────────────────────────────────
 
@@ -356,24 +227,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     const text = getPromptText()
     if (!text || !falApiKey) return
 
-    const attachments: string[] = []
-    const labeledAttachments: { label: string; images: string[] }[] = []
-
-    for (const ref of imageRefs) {
-      attachments.push(ref.base64)
-      labeledAttachments.push({ label: ref.name, images: [ref.base64] })
-    }
-
-    // Collections go out whole. Fitting them to each model's reference limit —
-    // by collaging when there are too many — happens per model in useImageGeneration.
-    for (const cRef of collectionRefs) {
-      const images = await collectionImagesAsBase64(cRef.images)
-      attachments.push(...images)
-      labeledAttachments.push({
-        label: `Collection "@${cRef.name}" (${images.length} image${images.length === 1 ? '' : 's'})`,
-        images,
-      })
-    }
+    const { attachments, labeledAttachments } = await buildAttachments()
 
     // Inject inpaint context if present
     if (inpaintContext) {
@@ -494,17 +348,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     }
   }, [getPromptText, falApiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, inpaintContext, canvasContext, thumbnailMode, thumbnailStyle, faceFidelity])
 
-  // ── Mention items ─────────────────────────────────────────────────
-
-  const mentionItems: MentionItem[] = [
-    ...imageRefs
-      .filter((r) => r.name.toLowerCase().includes(mentionFilter.toLowerCase()))
-      .map((ref): MentionItem => ({ type: 'image', ref })),
-    ...collections
-      .filter((c) => c.name.toLowerCase().includes(mentionFilter.toLowerCase()))
-      .map((collection): MentionItem => ({ type: 'collection', collection })),
-  ]
-
   // ── Editor keyboard handling ──────────────────────────────────────
 
   const handleEditorKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -513,80 +356,12 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       handleSubmit()
       return
     }
-    if (showMentionPopup) {
-      if (e.key === 'Escape') { e.preventDefault(); setShowMentionPopup(false); return }
-      if (e.key === 'Enter' && mentionItems.length > 0) {
-        e.preventDefault()
-        const first = mentionItems[0]
-        if (first.type === 'image') insertChipAtCursor(first.ref)
-        else insertCollectionChipAtCursor(first.collection)
-        return
-      }
-    }
+    if (handleMentionKeyDown(e)) return
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault()
       document.execCommand('insertLineBreak')
     }
-  }, [handleSubmit, showMentionPopup, mentionItems, insertChipAtCursor, insertCollectionChipAtCursor])
-
-  const handleEditorInput = useCallback(() => {
-    const editor = editorRef.current
-    if (editor) {
-      const existingCollectionChipIds = new Set(
-        Array.from(editor.querySelectorAll('[data-collection-ref-id]'))
-          .map((el) => (el as HTMLElement).dataset.collectionRefId)
-      )
-      setCollectionRefs((prev) => {
-        const filtered = prev.filter((r) => existingCollectionChipIds.has(r.id))
-        return filtered.length !== prev.length ? filtered : prev
-      })
-    }
-
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-    const range = sel.getRangeAt(0)
-    const textNode = range.startContainer
-    if (textNode.nodeType !== Node.TEXT_NODE) {
-      if (showMentionPopup) setShowMentionPopup(false)
-      return
-    }
-    const text = textNode.textContent || ''
-    const cursorPos = range.startOffset
-    const atIdx = text.lastIndexOf('@', cursorPos - 1)
-    const hasImageRefs = imageRefs.length > 0
-    const hasCollections = collections.length > 0
-    if (atIdx >= 0 && (hasImageRefs || hasCollections)) {
-      const charBefore = atIdx > 0 ? text[atIdx - 1] : ' '
-      if (charBefore === ' ' || charBefore === '\u00A0' || atIdx === 0) {
-        setMentionFilter(text.substring(atIdx + 1, cursorPos).toLowerCase())
-        setShowMentionPopup(true)
-        return
-      }
-    }
-    if (showMentionPopup) setShowMentionPopup(false)
-  }, [imageRefs, collections, showMentionPopup])
-
-  // ── File handling ─────────────────────────────────────────────────
-
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue
-      try {
-        const raw = await new Promise<string>((resolve) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.readAsDataURL(file)
-        })
-        const compressed = await compressImage(raw)
-        addImageRef(compressed)
-      } catch (err) {
-        logger.error('PromptBar', 'Failed to read/compress file', err)
-      }
-    }
-    e.target.value = ''
-  }, [addImageRef])
+  }, [handleSubmit, handleMentionKeyDown])
 
   // ── Drag & drop ───────────────────────────────────────────────────
 
@@ -598,34 +373,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     e.stopPropagation()
     setIsDragOver(false)
     dragCountRef.current = 0
-    const internalData = e.dataTransfer.getData('application/x-imagestudio')
-    if (internalData) {
-      try {
-        const result = await window.api.readImage(internalData)
-        if (result.success) {
-          const compressed = await compressImage(result.base64DataUrl)
-          addImageRef(compressed)
-        }
-      } catch (err) {
-        logger.error('PromptBar', 'Failed to load internal drag image', err)
-      }
-      return
-    }
-    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'))
-    for (const file of files) {
-      try {
-        const raw = await new Promise<string>((resolve) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.readAsDataURL(file)
-        })
-        const compressed = await compressImage(raw)
-        addImageRef(compressed)
-      } catch (err) {
-        logger.error('PromptBar', 'Failed to read/compress dropped file', err)
-      }
-    }
-  }, [addImageRef])
+    await handleImageDrop(e)
+  }, [handleImageDrop])
 
   // Prevent browser default drag behavior (opening files)
   useEffect(() => {
@@ -641,17 +390,15 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   // ── Clear ─────────────────────────────────────────────────────────
 
   const clearPrompt = useCallback(() => {
-    setImageRefs([])
-    setCollectionRefs([])
-    if (editorRef.current) editorRef.current.innerHTML = ''
+    clearRefs()
     setSeed(undefined)
-  }, [])
+  }, [clearRefs])
 
   // ── Render ────────────────────────────────────────────────────────
 
-  const promptText = getPromptText()
   const hasContent = promptText || imageRefs.length > 0 || collectionRefs.length > 0
   const canSend = !!promptText && !!falApiKey
+  const resolvedRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
 
   // Warn when references exceed the strictest selected model's limit — they are
   // collaged rather than dropped, but it changes how the model sees them.
@@ -818,6 +565,15 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
                 <>
                   <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mr-0.5">&#x2318;</kbd>
                   <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">&#x23CE;</kbd>
+                  {'  ·  '}
+                  <CostEstimate
+                    models={selectedModels}
+                    aspectRatio={thumbnailMode ? THUMBNAIL_ASPECT_RATIO : resolvedRatio}
+                    resolution={thumbnailMode ? THUMBNAIL_RESOLUTION : resolution}
+                    imageCount={imageCount}
+                    quality={quality}
+                    imageSize={thumbnailMode ? THUMBNAIL_GPT_IMAGE_SIZE : undefined}
+                  />
                   {(imageRefs.length > 0 || collections.length > 0) && (
                     <>
                       {'  \u00B7  '}

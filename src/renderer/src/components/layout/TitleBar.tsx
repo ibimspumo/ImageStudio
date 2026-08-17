@@ -1,4 +1,5 @@
 import { Sparkles } from 'lucide-react'
+import { SpendIndicator } from '../shared/SpendIndicator'
 
 export function TitleBar() {
   return (
@@ -7,6 +8,7 @@ export function TitleBar() {
         <Sparkles className="w-3.5 h-3.5 text-accent-main" />
         <span className="text-[12px] font-medium text-text-secondary tracking-[0.08em] uppercase">ImageStudio</span>
       </div>
+      <SpendIndicator />
     </div>
   )
 }

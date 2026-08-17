@@ -12,6 +12,8 @@ export {
   getThumbnailModels,
   isThumbnailModel,
   DEFAULT_THUMBNAIL_MODEL,
+  estimateImageCost,
+  formatCost,
 } from '../../../shared/image-models'
 
 export {
@@ -27,6 +29,8 @@ export type { ThumbnailStyle, ThumbnailStyleOption } from '../../../shared/thumb
 
 export type {
   ImageModelOption,
+  ImagePricing,
+  CostEstimateInput,
   FalAspectRatio,
   FalResolution,
   GptImageQuality,

@@ -127,12 +127,12 @@ ImageStudio runs four image models, all through fal.ai. Click the model selector
   <img src="docs/screenshot-models.jpg" width="800" alt="Model selector with the four fal.ai image models" />
 </p>
 
-| Model | Provider | Aspect ratios | Resolution | Reference images | Seed |
-|---|---|---|---|---|---|
-| **Nano Banana 2** | Google | 15, incl. 4:1 and 8:1 | 0.5K–4K | up to 14 | yes |
-| **Nano Banana 2 Lite** | Google | 15, incl. 4:1 and 8:1 | fixed 1K | up to 14 | yes |
-| **Nano Banana Pro** | Google | 11 standard ratios | 1K–4K | up to 14 | yes |
-| **GPT Image 2** | OpenAI | 11 standard ratios | 1K–4K, quality-tiered | up to 16 | no |
+| Model | Provider | Aspect ratios | Resolution | Reference images | Seed | Price |
+|---|---|---|---|---|---|---|
+| **GPT Image 2** (default) | OpenAI | 11 standard ratios | 1K–4K, quality-tiered | up to 16 | no | $0.005–$0.40 per image |
+| **Nano Banana 2** | Google | 15, incl. 4:1 and 8:1 | 0.5K–4K | up to 14 | yes | $0.08 at 1K, ×1.5 at 2K, ×2 at 4K |
+| **Nano Banana 2 Lite** | Google | 15, incl. 4:1 and 8:1 | fixed 1K | up to 14 | yes | ~$0.048 per image |
+| **Nano Banana Pro** | Google | 11 standard ratios | 1K–4K | up to 14 | yes | $0.15, ×2 at 4K |
 
 Every control in the prompt bar reflects what the selected model genuinely accepts — options a model
 does not have are hidden rather than silently ignored. None of the four support a negative prompt, so
@@ -193,6 +193,25 @@ Live cost estimates are shown in the prompt bar before generating. Costs are cal
 
 ---
 
+## Cost Tracking
+
+fal.ai returns no billing data with a generation — neither the queue response nor the client exposes
+billable units — so every figure ImageStudio shows is computed from fal's published list prices, and
+is marked `≈` accordingly.
+
+- **Before generating** — the prompt bar (and the chat input) shows what the pending request will
+  cost. With several models selected, each one is priced separately and the total is the sum; hover
+  for the per-model breakdown.
+- **After generating** — the estimate is stored on the image and shown in the lightbox details.
+- **Running total** — the title bar shows today's spend, with the all-time total on hover. Images
+  generated before cost tracking existed carry no figure and are excluded (the tooltip says how many).
+
+The rates live in `src/shared/image-models.ts` next to each model's capabilities, priced off what was
+actually sent — a resolution a model cannot do is clamped before the request and billed at the
+clamped tier.
+
+---
+
 ## Thumbnail Mode
 
 The third mode, next to Image and Video, is built for one job: YouTube thumbnails. It removes decisions instead of adding them — what a thumbnail technically has to be is no longer a setting.
@@ -204,7 +223,7 @@ The third mode, next to Image and Video, is built for one job: YouTube thumbnail
 | **Aspect ratio** | 16:9, no selector |
 | **Generated at** | 2K (Gemini) / 1920 × 1088 px (GPT Image 2) |
 | **Exported at** | exactly 1920 × 1080 JPEG, under 2 MB |
-| **Models** | Nano Banana 2, Nano Banana Pro, GPT Image 2 — Nano Banana 2 Lite drops out (fixed 1K) |
+| **Models** | GPT Image 2 (default), Nano Banana 2, Nano Banana Pro — Nano Banana 2 Lite drops out (fixed 1K) |
 
 No model produces exactly 1920 × 1080: the Gemini endpoints return 2752 × 1536 (ratio 1.792) and fal.ai snaps GPT Image 2 to multiples of 16, so a requested 1080 comes back as 1072. Thumbnail mode therefore asks GPT Image 2 for 1920 × 1088 and normalises every export to a centre-cropped 1920 × 1080, stepping JPEG quality down until the file fits YouTube's 2 MB limit.
 
@@ -282,7 +301,7 @@ Upscale any image to a higher resolution directly from the lightbox. Available o
 - **2K images** → Upscale to 4K
 - **4K images** → Already at max resolution
 
-Choose which AI model to use for upscaling via the dropdown (defaults to Nano Banana 2). The original image is sent as a reference with instructions to recreate it at the target resolution while preserving every detail.
+Choose which AI model to use for upscaling via the dropdown (defaults to GPT Image 2). The original image is sent as a reference with instructions to recreate it at the target resolution while preserving every detail.
 
 > **Note:** Resolution output depends on the AI model. If the API returns a smaller image than requested, ImageStudio automatically detects the actual dimensions and corrects the resolution label in your gallery metadata.
 
@@ -471,10 +490,14 @@ Want to iteratively refine an image? Hover over any image in the gallery and cli
 
 - The last generated image is automatically attached as a reference
 - You can switch models between messages
-- You can attach additional reference images
+- You can attach additional reference images — drop them onto the input or use the Images button
+- `@`-mentions work exactly as in the main prompt bar: type `@` to insert an attached image or a
+  whole asset collection as a chip, and reference it in the prompt
+- Live cost estimate next to the keyboard hint
 - All chat-generated images also appear in your gallery
 
-When you open a chat from an image, the model that originally created that image is pre-selected — so you continue with the same model by default.
+When you open a chat from an image, that image's **model, aspect ratio and resolution** are
+pre-selected — an edit of a 9:16 image stays 9:16 unless you change it.
 
 ---
 
@@ -592,7 +615,7 @@ src/
 ├── preload/              # Typed context bridge (window.api)
 └── renderer/src/         # React UI
     ├── components/
-    │   ├── input/        # PromptBar, VideoPromptBar, ControlsRow, selectors, SeedInput, PresetSelector
+    │   ├── input/        # PromptBar, VideoPromptBar, ControlsRow, selectors, SeedInput, PresetSelector, CostEstimate
     │   ├── gallery/      # Justified layout (row-based masonry), cards, GalleryToolbar, SmartAlbumBar
     │   ├── canvas/       # Canvas editor: modal, workspace, toolbar, layers, color picker, expert mode
     │   ├── chat/         # Image chat modal
@@ -601,9 +624,9 @@ src/
     │   ├── presets/      # Style presets dialog
     │   ├── queue/        # Batch queue panel
     │   ├── tags/         # Tag input with autocomplete
-    │   └── shared/       # Lightbox, CropModal, InpaintModal, ImageCompare, ExportPopover, ShortcutsHelp, Settings
+    │   └── shared/       # Lightbox, CropModal, InpaintModal, ImageCompare, ExportPopover, ShortcutsHelp, Settings, SpendIndicator
     ├── stores/           # Zustand (gallery, collections, chat, settings, workspace, crop, presets, queue, canvas, gallery-filter)
-    ├── hooks/            # useImageGeneration, useVideoGeneration, useChatGeneration, useCanvasRenderer, useJustifiedLayout, useKeyboardShortcuts
+    ├── hooks/            # useImageGeneration, useVideoGeneration, useChatGeneration, useMentionEditor, useCanvasRenderer, useJustifiedLayout, useKeyboardShortcuts
     ├── types/            # API types, model definitions, shared interfaces
     └── lib/              # Utils, image compression, anti-detection, date-utils, debounce, logger
 ```
