@@ -36,6 +36,24 @@ export type GptImageQuality = 'auto' | 'low' | 'medium' | 'high'
 export type OutputFormat = 'png' | 'jpeg' | 'webp'
 
 /**
+ * `background` — GPT Image 1.5 only. `transparent` is the single route in the
+ * whole registry to an image with a real alpha channel, and it only survives
+ * when `output_format` is `png` or `webp`.
+ */
+export type FalBackground = 'auto' | 'transparent' | 'opaque'
+
+/** `input_fidelity` — how literally the edit endpoint keeps the reference. */
+export type FalInputFidelity = 'low' | 'high'
+
+/**
+ * How a model takes its output size.
+ * - `aspect-ratio` — an `aspect_ratio` string plus a `resolution` tier (Gemini)
+ * - `pixels` — an explicit `{ width, height }` object (GPT Image 2)
+ * - `size-enum` — one of a handful of fixed `WxH` strings (GPT Image 1.5)
+ */
+export type ImageSizeMode = 'aspect-ratio' | 'pixels' | 'size-enum'
+
+/**
  * What a generation costs, in USD.
  *
  * fal.ai reports no per-request price: neither the queue response nor the
@@ -79,8 +97,17 @@ export interface ImageModelOption {
   aspectRatios: FalAspectRatio[] | null
   /** Output resolutions, or null when the model has a fixed output size. */
   resolutions: FalResolution[] | null
-  /** Quality tiers (GPT Image 2 only). */
+  /** Quality tiers (the two OpenAI models; GPT Image 1.5 has no `auto`). */
   qualities: GptImageQuality[] | null
+  /** How `image_size` is expressed for this endpoint. */
+  imageSizeMode: ImageSizeMode
+  /**
+   * The exact `image_size` strings a `size-enum` model accepts, spelled the way
+   * the endpoint spells them. Null for every other mode.
+   */
+  fixedImageSizes: string[] | null
+  /** The one used when the requested ratio matches nothing. */
+  defaultImageSize: string | null
   /** Hard limit the endpoint enforces on `image_urls`. */
   maxReferenceImages: number
   /** Upper bound of `num_images`. */
@@ -91,12 +118,23 @@ export interface ImageModelOption {
   supportsThinkingLevel: boolean
   supportsSafetyTolerance: boolean
   /**
-   * None of the four models expose a negative_prompt field on fal.ai. Kept
-   * explicit so the UI can say why the control is hidden.
+   * None of the models expose a negative_prompt field on fal.ai. Kept explicit
+   * so the UI can say why the control is hidden.
    */
   supportsNegativePrompt: false
-  /** Only GPT Image 2 edit accepts an inpaint mask. */
-  supportsMask: boolean
+  /**
+   * `background` — transparency. Only GPT Image 1.5 has it, which is the whole
+   * reason logo mode exists.
+   */
+  supportsBackground: boolean
+  /** `input_fidelity` — GPT Image 1.5 edit only. */
+  supportsInputFidelity: boolean
+  /**
+   * Field name of the inpaint mask, or null when the model has none. The two
+   * OpenAI endpoints disagree: GPT Image 2 takes `mask_url`, GPT Image 1.5
+   * takes `mask_image_url`.
+   */
+  maskField: 'mask_url' | 'mask_image_url' | null
   defaultAspectRatio: FalAspectRatio | null
   defaultResolution: FalResolution | null
   defaultQuality: GptImageQuality | null
@@ -128,6 +166,12 @@ const GEMINI_RATIOS_STANDARD: FalAspectRatio[] = [
   'auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16',
 ]
 
+/**
+ * The only three `image_size` values GPT Image 1.5 accepts, in the endpoint's
+ * own spelling. They are 1:1, 3:2 and 2:3 — there is no resolution axis at all.
+ */
+const GPT_IMAGE_15_SIZES = ['1024x1024', '1536x1024', '1024x1536']
+
 export const AVAILABLE_MODELS: ImageModelOption[] = [
   {
     id: 'openai/gpt-image-2',
@@ -138,6 +182,9 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     aspectRatios: null,
     resolutions: null,
     qualities: ['auto', 'low', 'medium', 'high'],
+    imageSizeMode: 'pixels',
+    fixedImageSizes: null,
+    defaultImageSize: null,
     maxReferenceImages: 16,
     maxImagesPerRequest: 4,
     supportsSeed: false,
@@ -146,7 +193,9 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     supportsThinkingLevel: false,
     supportsSafetyTolerance: false,
     supportsNegativePrompt: false,
-    supportsMask: true,
+    supportsBackground: false,
+    supportsInputFidelity: false,
+    maskField: 'mask_url',
     defaultAspectRatio: null,
     defaultResolution: null,
     defaultQuality: 'high',
@@ -168,6 +217,54 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     },
   },
   {
+    id: 'fal-ai/gpt-image-1.5',
+    name: 'GPT Image 1.5',
+    provider: 'OpenAI',
+    endpoint: 'fal-ai/gpt-image-1.5',
+    editEndpoint: 'fal-ai/gpt-image-1.5/edit',
+    // No aspect_ratio and no resolution field — three fixed sizes, nothing else.
+    aspectRatios: null,
+    resolutions: null,
+    // `auto` is absent here; the endpoint only takes low / medium / high.
+    qualities: ['low', 'medium', 'high'],
+    imageSizeMode: 'size-enum',
+    fixedImageSizes: GPT_IMAGE_15_SIZES,
+    defaultImageSize: '1024x1024',
+    // The schema states no upper bound on image_urls; OpenAI's own limit for
+    // this model is 16, so that is what we enforce rather than letting the
+    // request fail at the endpoint.
+    maxReferenceImages: 16,
+    maxImagesPerRequest: 4,
+    supportsSeed: false,
+    supportsSystemPrompt: false,
+    supportsWebSearch: false,
+    supportsThinkingLevel: false,
+    supportsSafetyTolerance: false,
+    supportsNegativePrompt: false,
+    // The one model in the registry that can return a real alpha channel.
+    supportsBackground: true,
+    supportsInputFidelity: true,
+    maskField: 'mask_image_url',
+    defaultAspectRatio: null,
+    defaultResolution: null,
+    defaultQuality: 'high',
+    // The three sizes expressed as ratios — anything else is mapped onto the
+    // nearest of them, since the endpoint accepts nothing else.
+    uiAspectRatios: ['1:1', '3:2', '2:3'],
+    uiResolutions: [],
+    fixedOutputNote: 'Fixed sizes: 1024x1024, 1536x1024, 1024x1536',
+    pricing: {
+      // Both non-square sizes have the same pixel count (1,572,864) and are
+      // priced within $0.001 of each other, so one row covers them; the higher
+      // (portrait) figures are used so the estimate never reads low.
+      sizeTiers: [
+        { pixels: 1024 * 1024, low: 0.009, medium: 0.034, high: 0.133 },
+        { pixels: 1536 * 1024, low: 0.013, medium: 0.051, high: 0.200 },
+      ],
+      note: 'Token-based - $0.133 square / $0.20 landscape+portrait at high',
+    },
+  },
+  {
     id: 'fal-ai/nano-banana-2',
     name: 'Nano Banana 2',
     provider: 'Google',
@@ -176,6 +273,9 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     aspectRatios: GEMINI_RATIOS_FULL,
     resolutions: ['0.5K', '1K', '2K', '4K'],
     qualities: null,
+    imageSizeMode: 'aspect-ratio',
+    fixedImageSizes: null,
+    defaultImageSize: null,
     maxReferenceImages: 14,
     maxImagesPerRequest: 4,
     supportsSeed: true,
@@ -184,7 +284,9 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     supportsThinkingLevel: true,
     supportsSafetyTolerance: true,
     supportsNegativePrompt: false,
-    supportsMask: false,
+    supportsBackground: false,
+    supportsInputFidelity: false,
+    maskField: null,
     defaultAspectRatio: '1:1',
     defaultResolution: '2K',
     defaultQuality: null,
@@ -207,6 +309,9 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     aspectRatios: GEMINI_RATIOS_FULL,
     resolutions: null,
     qualities: null,
+    imageSizeMode: 'aspect-ratio',
+    fixedImageSizes: null,
+    defaultImageSize: null,
     maxReferenceImages: 14,
     maxImagesPerRequest: 4,
     supportsSeed: true,
@@ -215,7 +320,9 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     supportsThinkingLevel: true,
     supportsSafetyTolerance: true,
     supportsNegativePrompt: false,
-    supportsMask: false,
+    supportsBackground: false,
+    supportsInputFidelity: false,
+    maskField: null,
     defaultAspectRatio: '1:1',
     defaultResolution: null,
     defaultQuality: null,
@@ -239,6 +346,9 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     aspectRatios: GEMINI_RATIOS_STANDARD,
     resolutions: ['1K', '2K', '4K'],
     qualities: null,
+    imageSizeMode: 'aspect-ratio',
+    fixedImageSizes: null,
+    defaultImageSize: null,
     maxReferenceImages: 14,
     maxImagesPerRequest: 4,
     supportsSeed: true,
@@ -247,7 +357,9 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     supportsThinkingLevel: false,
     supportsSafetyTolerance: true,
     supportsNegativePrompt: false,
-    supportsMask: false,
+    supportsBackground: false,
+    supportsInputFidelity: false,
+    maskField: null,
     defaultAspectRatio: '1:1',
     defaultResolution: '2K',
     defaultQuality: null,
@@ -281,6 +393,24 @@ export function isThumbnailModel(modelId: string): boolean {
 }
 
 export const DEFAULT_THUMBNAIL_MODEL = 'openai/gpt-image-2'
+
+/**
+ * Models usable in logo mode.
+ *
+ * A logo without a transparent background is a picture of a logo, not a logo —
+ * so the mode is defined by the capability, not by a hand-kept list. Today that
+ * is GPT Image 1.5 alone; a future model with a `background` field joins on its
+ * own.
+ */
+export function getLogoModels(): ImageModelOption[] {
+  return AVAILABLE_MODELS.filter((m) => m.supportsBackground)
+}
+
+export function isLogoModel(modelId: string): boolean {
+  return getLogoModels().some((m) => m.id === modelId)
+}
+
+export const DEFAULT_LOGO_MODEL = 'fal-ai/gpt-image-1.5'
 
 /** Models the app used before it moved to fal.ai, mapped onto their replacement. */
 const LEGACY_MODEL_IDS: Record<string, string> = {
@@ -378,6 +508,8 @@ export function getCombinedCapabilities(modelIds: string[]): {
   maxImagesPerRequest: number
   minReferenceLimit: number
   supportsSeed: boolean
+  supportsBackground: boolean
+  supportsInputFidelity: boolean
   qualities: GptImageQuality[] | null
   notes: string[]
 } {
@@ -398,11 +530,14 @@ export function getCombinedCapabilities(modelIds: string[]): {
     if (model.fixedOutputNote) notes.push(`${model.name}: ${model.fixedOutputNote}`)
   }
 
-  // Quality only applies when every selected model has the same tiers.
+  // Quality only applies when every selected model has the field, and then
+  // only for the tiers all of them accept — GPT Image 2 has an `auto` tier
+  // that GPT Image 1.5 would reject.
   const qualityModels = models.filter((m) => m.qualities)
+  const allTiers: GptImageQuality[] = ['auto', 'low', 'medium', 'high']
   const qualities =
     qualityModels.length === models.length && qualityModels.length > 0
-      ? qualityModels[0].qualities
+      ? allTiers.filter((q) => qualityModels.every((m) => m.qualities!.includes(q)))
       : null
 
   return {
@@ -411,6 +546,8 @@ export function getCombinedCapabilities(modelIds: string[]): {
     maxImagesPerRequest: Math.min(...models.map((m) => m.maxImagesPerRequest)),
     minReferenceLimit: Math.min(...models.map((m) => m.maxReferenceImages)),
     supportsSeed: models.every((m) => m.supportsSeed),
+    supportsBackground: models.every((m) => m.supportsBackground),
+    supportsInputFidelity: models.every((m) => m.supportsInputFidelity),
     qualities,
     notes,
   }
@@ -448,12 +585,17 @@ export function estimateImageCost(modelId: string, opts: CostEstimateInput = {})
     const size =
       opts.imageSize ??
       (() => {
+        // A size-enum model bills by the fixed size the ratio maps onto — it
+        // has no resolution axis, so deriving pixels from one would be wrong.
+        if (model.imageSizeMode === 'size-enum') {
+          return parseImageSizeLabel(toFixedImageSize(model, opts.aspectRatio ?? '1:1'))
+        }
         const derived = toGptImageSize(
           opts.aspectRatio ?? '1:1',
           opts.resolution ?? model.defaultResolution ?? '1K'
         )
         return derived === 'auto' ? { width: 1024, height: 1024 } : derived
-      })()
+      })() ?? { width: 1024, height: 1024 }
     const pixels = size.width * size.height
 
     let tier = pricing.sizeTiers[0]
@@ -498,6 +640,41 @@ export function parseRatio(ratio: string): number | null {
   const [w, h] = ratio.split(':').map(Number)
   if (!w || !h) return null
   return w / h
+}
+
+/** "1536x1024" -> { width: 1536, height: 1024 }; null when unparseable. */
+export function parseImageSizeLabel(label: string): { width: number; height: number } | null {
+  const [w, h] = label.split('x').map(Number)
+  if (!w || !h) return null
+  return { width: w, height: h }
+}
+
+/**
+ * Pick the `image_size` string a `size-enum` model will accept.
+ *
+ * GPT Image 1.5 offers three sizes and rejects everything else, so a requested
+ * ratio is mapped onto the closest one it has rather than refused — the same
+ * rule `resolveAspectRatio` follows for the models that do take a ratio.
+ */
+export function toFixedImageSize(model: ImageModelOption, requestedRatio: string): string {
+  const sizes = model.fixedImageSizes
+  if (!sizes || sizes.length === 0) return model.defaultImageSize ?? '1024x1024'
+
+  const target = parseRatio(requestedRatio)
+  if (target == null) return model.defaultImageSize ?? sizes[0]
+
+  let best = model.defaultImageSize ?? sizes[0]
+  let bestDelta = Infinity
+  for (const label of sizes) {
+    const size = parseImageSizeLabel(label)
+    if (!size) continue
+    const delta = Math.abs(Math.log(size.width / size.height) - Math.log(target))
+    if (delta < bestDelta) {
+      bestDelta = delta
+      best = label
+    }
+  }
+  return best
 }
 
 /**

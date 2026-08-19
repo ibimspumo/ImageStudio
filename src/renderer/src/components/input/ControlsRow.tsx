@@ -3,12 +3,20 @@ import { AspectRatioSelector } from './AspectRatioSelector'
 import { ResolutionSelector } from './ResolutionSelector'
 import { ImageCountSelector } from './ImageCountSelector'
 import { QualitySelector } from './QualitySelector'
+import { BackgroundSelector } from './BackgroundSelector'
+import { InputFidelityToggle } from './InputFidelityToggle'
 import { ModelSelector } from './ModelSelector'
 import { SeedInput } from './SeedInput'
 import { PresetSelector } from './PresetSelector'
 import { QueueButton } from '../queue/QueueButton'
 import { getCombinedCapabilities } from '../../types/api'
-import type { AspectRatio, Resolution, GptImageQuality } from '../../types/api'
+import type {
+  AspectRatio,
+  Resolution,
+  GptImageQuality,
+  FalBackground,
+  FalInputFidelity,
+} from '../../types/api'
 import { cn } from '../../lib/utils'
 
 interface ControlsRowProps {
@@ -24,6 +32,12 @@ interface ControlsRowProps {
   onImageCountChange: (v: number) => void
   quality?: GptImageQuality
   onQualityChange?: (v: GptImageQuality) => void
+  background?: FalBackground
+  onBackgroundChange?: (v: FalBackground) => void
+  inputFidelity?: FalInputFidelity
+  onInputFidelityChange?: (v: FalInputFidelity) => void
+  /** input_fidelity only exists on the edit endpoint. */
+  hasReferences?: boolean
   canSend: boolean
   hasContent: boolean
   onSubmit: () => void
@@ -50,6 +64,11 @@ export function ControlsRow({
   onImageCountChange,
   quality,
   onQualityChange,
+  background,
+  onBackgroundChange,
+  inputFidelity,
+  onInputFidelityChange,
+  hasReferences,
   canSend,
   hasContent,
   onSubmit,
@@ -94,6 +113,26 @@ export function ControlsRow({
             value={quality ?? 'high'}
             onChange={onQualityChange}
             available={caps.qualities}
+          />
+        </>
+      )}
+
+      {/* Background: the transparency field, GPT Image 1.5 only */}
+      {caps.supportsBackground && onBackgroundChange && (
+        <>
+          <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+          <BackgroundSelector value={background ?? 'auto'} onChange={onBackgroundChange} />
+        </>
+      )}
+
+      {/* input_fidelity: GPT Image 1.5 edit only */}
+      {caps.supportsInputFidelity && onInputFidelityChange && (
+        <>
+          <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+          <InputFidelityToggle
+            value={inputFidelity ?? 'high'}
+            onChange={onInputFidelityChange}
+            hasReferences={!!hasReferences}
           />
         </>
       )}

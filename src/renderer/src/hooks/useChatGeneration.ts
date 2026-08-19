@@ -57,6 +57,14 @@ export function useChatGeneration() {
       const chat = useChatStore.getState().chats.find((c) => c.id === chatId)
       if (!chat) return
 
+      // A chat opened from a transparent logo keeps its alpha. Without this the
+      // edit endpoint defaults back to `auto` and the mark quietly gains a
+      // background halfway through the conversation.
+      const sourceImage = useGalleryStore
+        .getState()
+        .images.find((i) => i.id === chat.sourceImageId)
+      const transparent = sourceImage?.hasAlpha === true && getModel(model).supportsBackground
+
       // Load last assistant image from disk as base64 for API auto-reference
       const lastAssistantMsg = [...chat.messages]
         .reverse()
@@ -111,6 +119,8 @@ export function useChatGeneration() {
           labeledAttachments: groups.length > 0 ? groups : undefined,
           seed,
           quality,
+          background: transparent ? 'transparent' : undefined,
+          outputFormat: transparent ? 'png' : undefined,
         })
 
         if (!response.success) {
@@ -122,7 +132,7 @@ export function useChatGeneration() {
         const result = (response.results || [])[0]
 
         if (result?.status === 'complete' && result.result?.imageBase64) {
-          const stored = await prepareForStorage(result.result.imageBase64, antiDetection)
+          const stored = await prepareForStorage(result.result.imageBase64, antiDetection, transparent)
           const filename = `chat-${assistantMsgId}.${stored.extension}`
           const saveResult = await window.api.saveImage(stored.dataUrl, filename)
 
@@ -131,7 +141,11 @@ export function useChatGeneration() {
 
             // Also add to gallery
             const galleryStore = useGalleryStore.getState()
-            const placeholderId = galleryStore.addPlaceholder(prompt, aspectRatio, resolution, model)
+            const placeholderId = galleryStore.addPlaceholder(prompt, aspectRatio, resolution, model, undefined, undefined, {
+              hasAlpha: transparent,
+              isLogo: sourceImage?.isLogo,
+              logoStyle: sourceImage?.logoStyle,
+            })
             galleryStore.completeImage(placeholderId, saveResult.filePath, durationMs, result.result.cost)
             useGalleryStore.setState((state) => ({
               images: state.images.map((i) =>

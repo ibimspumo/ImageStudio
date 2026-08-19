@@ -13,6 +13,8 @@ const api = {
     labeledAttachments?: { label: string; images: string[] }[]
     seed?: number
     quality?: string
+    background?: 'auto' | 'transparent' | 'opaque'
+    inputFidelity?: 'low' | 'high'
     imageSize?: { width: number; height: number }
     systemPrompt?: string
     enableWebSearch?: boolean

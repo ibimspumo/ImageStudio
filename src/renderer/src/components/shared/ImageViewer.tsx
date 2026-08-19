@@ -474,7 +474,17 @@ export function ImageViewer({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <img src={displayUrl} alt="Full size" className="max-w-[75vw] max-h-[75vh] object-contain rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.4)]" onClick={(e) => e.stopPropagation()} />
+          <img
+            src={displayUrl}
+            alt="Full size"
+            className={cn(
+              'max-w-[75vw] max-h-[75vh] object-contain rounded-xl shadow-[0_0_80px_rgba(0,0,0,0.4)]',
+              // A transparent logo needs a ground here too, or it is invisible
+              // against the dark lightbox.
+              image?.hasAlpha && 'alpha-checker'
+            )}
+            onClick={(e) => e.stopPropagation()}
+          />
         )}
       </div>
 

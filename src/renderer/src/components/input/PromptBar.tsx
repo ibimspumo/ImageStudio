@@ -4,20 +4,35 @@ import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useMentionEditor, collectionChipThumbnail } from '../../hooks/useMentionEditor'
 import { useSettingsStore } from '../../stores/settings-store'
 import { type AssetCollection } from '../../stores/collections-store'
-import type { AspectRatio, Resolution, GptImageQuality, ThumbnailStyle } from '../../types/api'
+import type {
+  AspectRatio,
+  Resolution,
+  GptImageQuality,
+  ThumbnailStyle,
+  LogoStyle,
+  FalBackground,
+  FalInputFidelity,
+} from '../../types/api'
 import {
   DEFAULT_MODEL,
   DEFAULT_THUMBNAIL_MODEL,
+  DEFAULT_LOGO_MODEL,
   getCombinedCapabilities,
   normalizeModelId,
   isThumbnailModel,
+  isLogoModel,
   buildThumbnailSystemPrompt,
+  buildLogoSystemPrompt,
   THUMBNAIL_ASPECT_RATIO,
   THUMBNAIL_RESOLUTION,
   THUMBNAIL_GPT_IMAGE_SIZE,
+  LOGO_BACKGROUND,
+  LOGO_OUTPUT_FORMAT,
+  LOGO_DEFAULT_ASPECT_RATIO,
 } from '../../types/api'
 import { CostEstimate } from './CostEstimate'
 import { ThumbnailControls } from '../thumbnail/ThumbnailControls'
+import { LogoControls } from '../logo/LogoControls'
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
@@ -57,22 +72,48 @@ interface PromptBarProps {
    * else — references, @-mentions, drag & drop, collections — stays identical.
    */
   thumbnailMode?: boolean
+  /**
+   * Logo mode: the model list is filtered to the ones with a `background`
+   * field, the background is transparent and the output format is PNG, and the
+   * logo rules ride along with every request. References, @-mentions, drag &
+   * drop and collections stay identical.
+   */
+  logoMode?: boolean
 }
 
-export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, inpaintContext, canvasContext, initialModels, onCanvasClick, thumbnailMode }: PromptBarProps = {}) {
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(thumbnailMode ? '16:9' : '1:1')
+export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, inpaintContext, canvasContext, initialModels, onCanvasClick, thumbnailMode, logoMode }: PromptBarProps = {}) {
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(
+    thumbnailMode ? '16:9' : logoMode ? (LOGO_DEFAULT_ASPECT_RATIO as AspectRatio) : '1:1'
+  )
   const [customRatio, setCustomRatio] = useState<string>('4:3')
   const [resolution, setResolution] = useState<Resolution>('2K')
   const [imageCount, setImageCount] = useState(1)
   const [selectedModels, setSelectedModels] = useState<string[]>(() => {
-    const requested = (initialModels ?? [thumbnailMode ? DEFAULT_THUMBNAIL_MODEL : DEFAULT_MODEL])
-      .map(normalizeModelId)
-    if (!thumbnailMode) return requested
-    // A model that cannot do 2K has no place here — fall back rather than fail.
-    const usable = requested.filter(isThumbnailModel)
-    return usable.length > 0 ? usable : [DEFAULT_THUMBNAIL_MODEL]
+    const fallback = thumbnailMode
+      ? DEFAULT_THUMBNAIL_MODEL
+      : logoMode
+        ? DEFAULT_LOGO_MODEL
+        : DEFAULT_MODEL
+    const requested = (initialModels ?? [fallback]).map(normalizeModelId)
+    if (thumbnailMode) {
+      // A model that cannot do 2K has no place here — fall back rather than fail.
+      const usable = requested.filter(isThumbnailModel)
+      return usable.length > 0 ? usable : [DEFAULT_THUMBNAIL_MODEL]
+    }
+    if (logoMode) {
+      // Without a `background` field there is no transparency, and without
+      // transparency there is no logo mode.
+      const usable = requested.filter(isLogoModel)
+      return usable.length > 0 ? usable : [DEFAULT_LOGO_MODEL]
+    }
+    return requested
   })
   const [thumbnailStyle, setThumbnailStyle] = useState<ThumbnailStyle>('auto')
+  const [logoStyle, setLogoStyle] = useState<LogoStyle>('auto')
+  const [background, setBackground] = useState<FalBackground>(
+    logoMode ? LOGO_BACKGROUND : 'auto'
+  )
+  const [inputFidelity, setInputFidelity] = useState<FalInputFidelity>('high')
   const [faceFidelity, setFaceFidelity] = useState(true)
   const [isDragOver, setIsDragOver] = useState(false)
   const [quality, setQuality] = useState<GptImageQuality>('high')
@@ -317,11 +358,21 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         })
       : undefined
 
+    // Logo mode does the same for its own rules, and pins the two fields that
+    // make an actual logo file: a transparent background and a PNG to hold it.
+    const logoSystemPrompt = logoMode
+      ? buildLogoSystemPrompt({
+          style: logoStyle,
+          transparent: background === 'transparent',
+          hasReferences: hasRefs,
+        })
+      : undefined
+
     generate({
       prompt: inpaintContext ? `Inpaint: ${text}` : canvasContext ? `Canvas: ${text}` : finalPrompt,
       apiPrompt: apiPromptText || undefined,
       aspectRatio: thumbnailMode ? THUMBNAIL_ASPECT_RATIO : resolvedAspectRatio,
-      resolution: thumbnailMode ? THUMBNAIL_RESOLUTION : resolution,
+      resolution: thumbnailMode ? THUMBNAIL_RESOLUTION : logoMode ? '1K' : resolution,
       imageCount,
       attachments: attachments.length > 0 ? attachments : undefined,
       labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
@@ -330,11 +381,17 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       quality,
       inpaintSourceId: inpaintContext?.imageId,
       canvasSketchPath,
-      systemPrompt: thumbnailSystemPrompt,
+      systemPrompt: thumbnailSystemPrompt ?? logoSystemPrompt,
       imageSize: thumbnailMode ? { ...THUMBNAIL_GPT_IMAGE_SIZE } : undefined,
       projectId: thumbnailMode ? (project?.id ?? undefined) : undefined,
       thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined,
       faceFidelity: thumbnailMode ? faceFidelity && hasRefs : undefined,
+      background,
+      // Transparency only survives in a format that has an alpha channel.
+      outputFormat: logoMode || background === 'transparent' ? LOGO_OUTPUT_FORMAT : undefined,
+      inputFidelity,
+      isLogo: logoMode || undefined,
+      logoStyle: logoMode ? logoStyle : undefined,
     })
 
     // Close inpaint modal after generating
@@ -346,7 +403,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     if (canvasContext) {
       canvasContext.onClose()
     }
-  }, [getPromptText, falApiKey, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, inpaintContext, canvasContext, thumbnailMode, thumbnailStyle, faceFidelity])
+  }, [getPromptText, falApiKey, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, inpaintContext, canvasContext, thumbnailMode, thumbnailStyle, faceFidelity, logoMode, logoStyle, background, inputFidelity])
 
   // ── Editor keyboard handling ──────────────────────────────────────
 
@@ -436,6 +493,25 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
             </div>
           )}
 
+          {/* What comes out of here, stated once so the format is never a surprise. */}
+          {logoMode && (
+            <div className="flex items-center gap-2 px-4 pt-2.5 -mb-1">
+              <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-accent-main" />
+              <span className="text-[11px] text-text-secondary">
+                {background === 'transparent'
+                  ? 'Transparentes PNG'
+                  : background === 'opaque'
+                    ? 'PNG mit deckendem Hintergrund'
+                    : 'PNG, Hintergrund entscheidet das Modell'}
+              </span>
+              <span className="text-[10px] text-text-muted/70 shrink-0">
+                {background === 'transparent'
+                  ? '— wird ohne JPEG-Kompression gespeichert, Alphakanal bleibt erhalten'
+                  : '— nur „Transparent" liefert einen Alphakanal'}
+              </span>
+            </div>
+          )}
+
           {/* Which video are we working on? */}
           {thumbnailMode && (
             <div className="flex items-center gap-2 px-4 pt-2.5 -mb-1">
@@ -486,7 +562,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
               suppressContentEditableWarning
               onInput={handleEditorInput}
               onKeyDown={handleEditorKeyDown}
-              data-placeholder={isInpaintMode ? "Describe what should appear in the masked area..." : isCanvasMode ? "Describe what to generate from your sketch..." : thumbnailMode ? "Die eine Idee: Motiv, Emotion, Situation…" : "Describe your image..."}
+              data-placeholder={isInpaintMode ? "Describe what should appear in the masked area..." : isCanvasMode ? "Describe what to generate from your sketch..." : thumbnailMode ? "Die eine Idee: Motiv, Emotion, Situation…" : logoMode ? "Die Marke und die eine Form: „Kaffeerösterei, Bohne als Sonne…\"" : "Describe your image..."}
               className="prompt-editor flex-1 min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none pt-1"
             />
           </div>
@@ -505,7 +581,32 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           )}
 
           {/* Controls */}
-          {thumbnailMode ? (
+          {logoMode ? (
+            <LogoControls
+              selectedModels={selectedModels}
+              onModelsChange={setSelectedModels}
+              style={logoStyle}
+              onStyleChange={setLogoStyle}
+              aspectRatio={resolvedRatio}
+              onAspectRatioChange={(r) => setAspectRatio(r as AspectRatio)}
+              background={background}
+              onBackgroundChange={setBackground}
+              inputFidelity={inputFidelity}
+              onInputFidelityChange={setInputFidelity}
+              hasReferences={imageRefs.length > 0 || collectionRefs.length > 0}
+              quality={quality}
+              onQualityChange={setQuality}
+              imageCount={imageCount}
+              onImageCountChange={setImageCount}
+              canSend={canSend}
+              hasContent={!!hasContent}
+              onSubmit={handleSubmit}
+              onClear={clearPrompt}
+              onSettingsClick={onSettingsClick}
+              onCollectionsClick={onCollectionsClick}
+              onQueueClick={onQueueClick}
+            />
+          ) : thumbnailMode ? (
             <ThumbnailControls
               selectedModels={selectedModels}
               onModelsChange={setSelectedModels}
@@ -544,6 +645,11 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
             onCollectionsClick={isEmbeddedMode ? undefined : onCollectionsClick}
             quality={quality}
             onQualityChange={setQuality}
+            background={background}
+            onBackgroundChange={setBackground}
+            inputFidelity={inputFidelity}
+            onInputFidelityChange={setInputFidelity}
+            hasReferences={imageRefs.length > 0 || collectionRefs.length > 0}
             seed={seed}
             onSeedChange={setSeed}
             onPresetsManage={isEmbeddedMode ? undefined : onPresetsManage}

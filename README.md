@@ -25,7 +25,7 @@
 
 ImageStudio is a native desktop app for macOS and Windows that lets you generate images and videos using the best AI models — all through a single, polished interface. No browser tabs, no subscriptions, no clutter. Just you, your prompts, and your creations.
 
-You bring your own [fal.ai](https://fal.ai) API key — one key for images and video — paying only for what you use. ImageStudio supports four image models, so you can compare results side by side.
+You bring your own [fal.ai](https://fal.ai) API key — one key for images and video — paying only for what you use. ImageStudio supports five image models, so you can compare results side by side.
 
 ---
 
@@ -107,8 +107,12 @@ The prompt bar gives you full control over your generation:
 - **Aspect ratio** — the ratios the selected model actually supports; a custom ratio is mapped to the closest one each model can produce
 - **Resolution** — the output sizes the selected model offers (hidden for models with a fixed size)
 - **Image count** — generate up to 4 images at once
-- **Quality** — GPT Image 2's quality tier (only shown for that model)
-- **Seed** — lock a seed for reproducible results (hidden for GPT Image 2, which has no seed)
+- **Quality** — the quality tier of the OpenAI models (only shown for those)
+- **Background** — `auto` / `transparent` / `opaque`, shown only for GPT Image 1.5, the one model
+  with the field. `transparent` returns a PNG with a real alpha channel
+- **Reference fidelity** — GPT Image 1.5's `input_fidelity`; `treu` keeps the reference's detail,
+  `frei` lets the model reinterpret it. Only active with reference images attached
+- **Seed** — lock a seed for reproducible results (hidden for the OpenAI models, which have no seed)
 - **Style preset** — append predefined style suffixes to your prompt
 - **@** button — open your asset collections
 - **Queue** — batch processing queue status
@@ -121,7 +125,7 @@ Everything is non-blocking. You can fire off multiple generations and keep promp
 
 ## Choosing a Model
 
-ImageStudio runs four image models, all through fal.ai. Click the model selector in the prompt bar to switch between them:
+ImageStudio runs five image models, all through fal.ai. Click the model selector in the prompt bar to switch between them:
 
 <p align="center">
   <img src="docs/screenshot-models.jpg" width="800" alt="Model selector with the four fal.ai image models" />
@@ -130,12 +134,20 @@ ImageStudio runs four image models, all through fal.ai. Click the model selector
 | Model | Provider | Aspect ratios | Resolution | Reference images | Seed | Price |
 |---|---|---|---|---|---|---|
 | **GPT Image 2** (default) | OpenAI | 11 standard ratios | 1K–4K, quality-tiered | up to 16 | no | $0.005–$0.40 per image |
+| **GPT Image 1.5** | OpenAI | 1:1, 3:2, 2:3 only | three fixed sizes, quality-tiered | up to 16 | no | $0.009–$0.20 per image |
 | **Nano Banana 2** | Google | 15, incl. 4:1 and 8:1 | 0.5K–4K | up to 14 | yes | $0.08 at 1K, ×1.5 at 2K, ×2 at 4K |
 | **Nano Banana 2 Lite** | Google | 15, incl. 4:1 and 8:1 | fixed 1K | up to 14 | yes | ~$0.048 per image |
 | **Nano Banana Pro** | Google | 11 standard ratios | 1K–4K | up to 14 | yes | $0.15, ×2 at 4K |
 
+**GPT Image 1.5 is the only model that can return transparency.** Its `background` field takes
+`auto`, `transparent` or `opaque`, and `transparent` gives you a PNG with a real alpha channel —
+which is what [Logo Mode](#logo-mode) is built on. It has no aspect ratio and no resolution axis at
+all: the endpoint accepts exactly 1024 × 1024, 1536 × 1024 and 1024 × 1536, so any other ratio is
+mapped onto the nearest of those three. It also exposes `input_fidelity` on its edit endpoint, which
+controls how literally a reference image is preserved.
+
 Every control in the prompt bar reflects what the selected model genuinely accepts — options a model
-does not have are hidden rather than silently ignored. None of the four support a negative prompt, so
+does not have are hidden rather than silently ignored. None of the five support a negative prompt, so
 that control does not exist for images. Pick several models at once and the strictest limits apply,
 while values a given model cannot take are mapped to its nearest supported one.
 
@@ -251,6 +263,60 @@ The preview (the ▶ button on a thumbnail card) renders the image in the surfac
 - **Squint** — blurred: does it survive the fast scroll?
 
 Below that the same image is shown at 120 × 68, 88 × 50 and 64 × 36 px. What is unreadable there does not exist in the feed. The export button writes exactly 1920 × 1080 and reports the resulting file size.
+
+---
+
+## Logo Mode
+
+The fourth mode, next to Image, Video and Thumbnail, exists for one reason: **GPT Image 1.5 is the
+only model in the app that can return a real alpha channel.** A logo on a white square is a picture
+of a logo; a logo on transparency is a logo you can actually place.
+
+### What is locked
+
+| | |
+|---|---|
+| **Model** | GPT Image 1.5 — derived from the registry: a model needs a `background` field to appear here |
+| **Background** | `transparent` by default, switchable to `opaque` or `auto` |
+| **Format** | PNG, always. JPEG has no alpha channel, so it is not offered |
+| **Sizes** | 1024 × 1024 (1:1), 1536 × 1024 (3:2), 1024 × 1536 (2:3) — the three the endpoint accepts |
+
+### The system prompt
+
+Every generation carries a logo ruleset the user never has to retype: one memorable idea, flat
+vector language, legibility filled in solid black at 16 px, centred with margin, two colours at
+most, type only when the request names words, and no mockups, boards, frames or watermarks. With a
+transparent background a second block is added that forbids painted backgrounds, glows, halos and
+drop shadows — the things that quietly fill an alpha channel back in. GPT Image 1.5 has no
+`system_prompt` field, so the block is prepended to the prompt.
+
+### Logo types
+
+| Type | What changes |
+|---|---|
+| **Automatisch** | No style block at all — the prompt alone decides (default) |
+| **Minimal** | Geometric primitives on a grid, one colour, negative space doing real work |
+| **Wortmarke** | The name itself is the logo; considered letterforms, no symbol beside it |
+| **Emblem** | One closed outer form — badge, shield, seal — with everything locked inside it |
+| **Maskottchen** | A single flat-vector character with a strong silhouette |
+
+### The file that comes out
+
+A transparent logo **never** goes through the JPEG anti-detection pipeline — that pipeline's first
+and last step is JPEG, which has no alpha channel, and its middle step resamples the image twice,
+which would blur exactly the hard edges a mark lives on. Transparent results are instead re-encoded
+once as PNG through the browser's own encoder, which strips the generator's metadata and leaves
+every pixel intact. Save, export, copy and drag & drop all hand out that PNG with its transparency
+— `Save` in the gallery and the lightbox follows the stored file's extension, so it never writes a
+`.jpg`.
+
+Logos appear on a checkerboard in the gallery and the lightbox, in two mid greys rather than the
+usual white pair, so a white mark stays as visible as a black one. Chats opened from a logo inherit
+its transparency, so an iteration does not silently gain a background halfway through.
+
+Logo mode filters the gallery to what it produced and keeps the normal workspace bar — a logo is an
+ordinary asset that happens to have an alpha channel. Collections, @-mentions, drag & drop, the
+queue and export behave exactly as elsewhere.
 
 ---
 
@@ -471,6 +537,11 @@ Because the pipeline runs before storage, everything downstream hands out the pr
 gallery, export, copy to clipboard and drag & drop. Exported file names become neutral
 (`IMG_4831.jpg`) instead of `imagestudio-<uuid>.png`; a thumbnail project keeps its own title,
 which is your wording and gives nothing away.
+
+**Transparent images are the one exception.** JPEG has no alpha channel and the squeeze step would
+soften the hard edges a logo is made of, so an image generated with `background: transparent` is
+re-encoded once as PNG instead — metadata dropped, every pixel kept, alpha intact. It stays a `.png`
+through storage, export, clipboard and drag & drop.
 
 Toggle it under **⚙ → Anti-detection processing** (on by default). With it off, images are stored
 as PNG exactly as the model returned them.

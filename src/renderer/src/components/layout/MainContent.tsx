@@ -3,18 +3,18 @@ import { ImageGallery } from '../gallery/ImageGallery'
 import { PromptBar } from '../input/PromptBar'
 import { VideoPromptBar } from '../input/VideoPromptBar'
 import { WorkspaceBar } from '../workspace/WorkspaceBar'
-import { useGalleryStore, isThumbnailImage, type GalleryImage } from '../../stores/gallery-store'
+import { useGalleryStore, isThumbnailImage, isLogoImage, type GalleryImage } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useGalleryFilterStore } from '../../stores/gallery-filter-store'
 import { GalleryToolbar } from '../gallery/GalleryToolbar'
 import { SmartAlbumBar } from '../gallery/SmartAlbumBar'
 import { ProjectBar } from '../thumbnail/ProjectBar'
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
-import { Sparkles, SearchX, ImageIcon, Film, Youtube } from 'lucide-react'
+import { Sparkles, SearchX, ImageIcon, Film, Youtube, Hexagon } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 
-export type AppMode = 'image' | 'video' | 'thumbnail'
+export type AppMode = 'image' | 'video' | 'thumbnail' | 'logo'
 
 interface MainContentProps {
   onImageClick: (images: GalleryImage[], index: number) => void
@@ -49,6 +49,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   const clearFilters = useGalleryFilterStore((s) => s.clearFilters)
 
   const thumbnailCount = useMemo(() => allImages.filter(isThumbnailImage).length, [allImages])
+  const logoCount = useMemo(() => allImages.filter(isLogoImage).length, [allImages])
 
   const images = useMemo(() => {
     // Thumbnail mode runs on its own axis: projects instead of workspaces.
@@ -62,6 +63,20 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
       if (favoritesOnly) thumbs = thumbs.filter((img) => img.isFavorite)
       if (sortBy === 'oldest') thumbs = [...thumbs].sort((a, b) => a.timestamp - b.timestamp)
       return thumbs
+    }
+
+    // Logo mode keeps the workspace axis — a logo is a normal asset, it just
+    // has an alpha channel — and only narrows the gallery to what it produced.
+    if (mode === 'logo') {
+      let logos = allImages.filter(isLogoImage)
+      if (activeWorkspaceId !== null) logos = logos.filter((img) => img.workspaceId === activeWorkspaceId)
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase()
+        logos = logos.filter((img) => img.prompt.toLowerCase().includes(q))
+      }
+      if (favoritesOnly) logos = logos.filter((img) => img.isFavorite)
+      if (sortBy === 'oldest') logos = [...logos].sort((a, b) => a.timestamp - b.timestamp)
+      return logos
     }
 
     let filtered = activeWorkspaceId === null ? allImages : allImages.filter((img) => img.workspaceId === activeWorkspaceId)
@@ -200,6 +215,18 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
             <Youtube className="w-3 h-3" />
             Thumbnail
           </button>
+          <button
+            onClick={() => onModeChange('logo')}
+            className={cn(
+              'no-drag flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium transition-all',
+              mode === 'logo'
+                ? 'bg-surface-4 text-text-primary shadow-sm'
+                : 'text-text-muted hover:text-text-secondary'
+            )}
+          >
+            <Hexagon className="w-3 h-3" />
+            Logo
+          </button>
         </div>
       </div>
 
@@ -211,6 +238,10 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
       {mode === 'thumbnail' ? (
         thumbnailCount > 0 && (
           <GalleryToolbar allTags={allTags} totalCount={thumbnailCount} filteredCount={images.length} />
+        )
+      ) : mode === 'logo' ? (
+        logoCount > 0 && (
+          <GalleryToolbar allTags={allTags} totalCount={logoCount} filteredCount={images.length} />
         )
       ) : allImages.length > 0 ? (
         <>
@@ -240,6 +271,26 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
             onStartChat={onStartChat}
             onCropImage={onCropImage}
             onPreviewThumbnail={onPreviewThumbnail}
+          />
+        )
+      ) : mode === 'logo' ? (
+        images.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center px-8">
+            <div className="w-14 h-14 rounded-2xl bg-accent-main/10 border border-accent-main/20 flex items-center justify-center mb-5">
+              <Hexagon className="w-6 h-6 text-accent-main" />
+            </div>
+            <h2 className="text-[18px] font-semibold text-text-primary mb-2">Noch keine Logos</h2>
+            <p className="text-text-muted text-[13px] max-w-sm text-center leading-relaxed">
+              GPT Image 1.5 liefert hier ein transparentes PNG — kein JPEG, kein weißer Kasten.
+              Beschreibe die Marke und die eine Form.
+            </p>
+          </div>
+        ) : (
+          <ImageGallery
+            images={images}
+            onImageClick={onImageClick}
+            onStartChat={onStartChat}
+            onCropImage={onCropImage}
           />
         )
       ) : allImages.length === 0 ? (
@@ -305,6 +356,14 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
             <PromptBar
               key="thumbnail-prompt"
               thumbnailMode
+              onSettingsClick={onSettingsClick}
+              onCollectionsClick={onCollectionsClick}
+              onQueueClick={onQueueClick}
+            />
+          ) : mode === 'logo' ? (
+            <PromptBar
+              key="logo-prompt"
+              logoMode
               onSettingsClick={onSettingsClick}
               onCollectionsClick={onCollectionsClick}
               onQueueClick={onQueueClick}

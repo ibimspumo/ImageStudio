@@ -6,7 +6,13 @@ import { logger } from '../lib/logger'
 import { getResolutionLabel } from '../lib/image-utils'
 import { prepareForStorage } from '../lib/anti-detection'
 import { packReferencesForModel } from '../lib/reference-packing'
-import { getModel, DEFAULT_MODEL, type LabeledAttachment } from '../types/api'
+import {
+  getModel,
+  DEFAULT_MODEL,
+  type FalBackground,
+  type FalInputFidelity,
+  type LabeledAttachment,
+} from '../types/api'
 
 interface GenerateOptions {
   prompt: string
@@ -33,6 +39,19 @@ interface GenerateOptions {
   projectId?: string
   thumbnailStyle?: string
   faceFidelity?: boolean
+  /**
+   * Logo mode: `transparent` is the whole point of the mode. Only models with
+   * a `background` field see it — for the others the flag is dropped and the
+   * image is treated as opaque, so it never claims an alpha channel it lacks.
+   */
+  background?: FalBackground
+  /** File format fal.ai returns. Logo mode pins png; alpha needs it. */
+  outputFormat?: 'png' | 'jpeg' | 'webp'
+  /** How literally the edit endpoint keeps the references it is given. */
+  inputFidelity?: FalInputFidelity
+  /** Logo mode metadata, stored on the image so it survives a reuse. */
+  isLogo?: boolean
+  logoStyle?: string
 }
 
 /**
@@ -81,8 +100,13 @@ export function useImageGeneration() {
 
       for (const model of models) {
         const ids: string[] = []
+        // Transparency is a per-model capability: a model without a
+        // `background` field never gets one, so its result has no alpha and
+        // must not be marked as if it had.
+        const hasAlpha =
+          options.background === 'transparent' && getModel(model).supportsBackground
         for (let i = 0; i < options.imageCount; i++) {
-          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments, activeWorkspaceId, { seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity })
+          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments, activeWorkspaceId, { seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, hasAlpha })
           ids.push(id)
         }
         modelPlaceholders.push({ model, ids })
@@ -154,6 +178,9 @@ export function useImageGeneration() {
               labeledAttachments: groups.length > 0 ? groups : undefined,
               seed: options.seed,
               quality: options.quality,
+              background: options.background,
+              outputFormat: options.outputFormat,
+              inputFidelity: options.inputFidelity,
             })
 
             if (!response.success) {
@@ -171,7 +198,13 @@ export function useImageGeneration() {
                   // Strip the generator's pixel signature before the image ever
                   // reaches disk, so gallery, export, copy and drag all hand out
                   // the same processed file.
-                  const stored = await prepareForStorage(result.result.imageBase64, antiDetection)
+                  // A transparent result stays PNG: the scrub's JPEG rounds
+                  // would flatten the alpha channel it was generated for.
+                  const stored = await prepareForStorage(
+                    result.result.imageBase64,
+                    antiDetection,
+                    options.background === 'transparent' && modelSpec.supportsBackground
+                  )
                   const filename = `${placeholderIds[i]}.${stored.extension}`
                   const saveResult = await window.api.saveImage(stored.dataUrl, filename)
                   if (saveResult.success && saveResult.filePath) {

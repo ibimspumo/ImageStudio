@@ -16,8 +16,9 @@ npx electron-vite build    # Build check only (no Electron)
 
 ## Architecture
 - `src/shared/` — code used by **both** main and renderer
-  - `image-models.ts` — the fal.ai image model registry: endpoints, aspect ratios, resolutions, reference limits, per-model capability flags, **list prices**, plus `resolveAspectRatio`/`resolveResolution`/`toGptImageSize`/`getCombinedCapabilities`/`normalizeModelId`/`estimateImageCost`/`formatCost`
+  - `image-models.ts` — the fal.ai image model registry: endpoints, aspect ratios, resolutions, reference limits, per-model capability flags, **list prices**, plus `resolveAspectRatio`/`resolveResolution`/`toGptImageSize`/`toFixedImageSize`/`getCombinedCapabilities`/`normalizeModelId`/`estimateImageCost`/`formatCost`
   - `thumbnail-prompt.ts` — the YouTube thumbnail system prompt (base rules, style blocks, face-fidelity block) plus the mode's locked constants and `buildThumbnailSystemPrompt()`
+  - `logo-prompt.ts` — the logo system prompt (base rules, style blocks, transparency block, reference block) plus the mode's locked constants and `buildLogoSystemPrompt()`
   - `version.ts` — semver comparison for the updater
 - `src/main/` — Electron main process (IPC, API, files)
 - `src/preload/` — Typed context bridge (`window.api`)
@@ -25,15 +26,16 @@ npx electron-vite build    # Build check only (no Electron)
   - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop, thumbnail-projects (all with debounced persistence via `lib/debounce.ts`)
   - `hooks/` — useImageGeneration, useVideoGeneration (fal.ai), useChatGeneration, useMentionEditor (the contenteditable prompt editor with @-mentions, shared by PromptBar and ChatView), useImageRefs (shared image attachment logic), useJustifiedLayout (row-based masonry)
   - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, getModelName, getVideoModelName, ImageRef, LabeledAttachment
-  - `components/input/` — PromptBar (orchestrator), VideoPromptBar (video mode, no @mentions), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (model/aspect/resolution/count/buttons), CostEstimate (live per-request price), ModelSelector, VideoModelSelector, AspectRatioSelector, ResolutionSelector, DurationSelector, ImageCountSelector
+  - `components/input/` — PromptBar (orchestrator), VideoPromptBar (video mode, no @mentions), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (model/aspect/resolution/count/buttons), CostEstimate (live per-request price), ModelSelector, VideoModelSelector, AspectRatioSelector, ResolutionSelector, DurationSelector, ImageCountSelector, BackgroundSelector + InputFidelityToggle (GPT Image 1.5 only, shared with logo mode)
   - `components/gallery/` — Justified layout (row-based masonry, left-to-right fill), GalleryCard with hover actions (save, copy, chat, move-to-workspace), video hover preview
   - `components/chat/` — ChatView (iterative editing; inherits the source image's model/aspect ratio/resolution, supports @-mentions and collections via `useMentionEditor`)
   - `components/workspace/` — WorkspaceBar (pill tabs, create, rename, delete, filter gallery)
   - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog, UpdateSection, SpendIndicator (running cost total in the TitleBar)
   - `components/thumbnail/` — ProjectBar (video pills, drop target), ThumbnailControls (model, style, face fidelity, count), StyleSelector (auto/clean/balanced/bold), ThumbnailFrame (16:9 + safe-zone/legibility overlays), ThumbnailPreviewModal (YouTube surfaces, size ladder, 1920×1080 export)
+  - `components/logo/` — LogoControls (model, logo type, size, background, fidelity, quality, count), LogoStyleSelector, LogoSizeSelector (the three fixed pixel sizes)
   - `components/collections/` — Asset collection CRUD
   - `lib/image-utils.ts` — compressImage, createZoomOutCanvas, createAspectRatioCanvas, collectionImagesAsBase64, renderYouTubeThumbnail (exact 1920×1080 cover-crop)
-  - `lib/anti-detection.ts` — `prepareForStorage()` / `scrubGeneratedImage()` / `neutralImageName()`, see **Anti-Detection** below
+  - `lib/anti-detection.ts` — `prepareForStorage()` / `scrubGeneratedImage()` / `reencodePreservingAlpha()` / `neutralImageName()`, see **Anti-Detection** below
   - `lib/reference-packing.ts` — fits reference images into each model's `image_urls` limit by merging the biggest groups into numbered collages
   - `lib/date-utils.ts` — formatDuration, formatTime, formatDate (shared across components)
   - `lib/debounce.ts` — debounce utility for store persistence
@@ -51,13 +53,20 @@ and an `/edit` endpoint; `fal-image.ts` picks the edit endpoint whenever referen
 | Model | Endpoint | Aspect ratios | Resolutions | Refs | Seed | Price |
 |---|---|---|---|---|---|---|
 | GPT Image 2 (default) | `openai/gpt-image-2` | via `image_size` | via `image_size` | 16 | no | size × quality table |
+| GPT Image 1.5 | `fal-ai/gpt-image-1.5` | 3 fixed `image_size` values | none | 16 | no | size × quality table |
 | Nano Banana 2 | `fal-ai/nano-banana-2` | 15 incl. 4:1/8:1 | 0.5K–4K | 14 | yes | $0.08 @1K, ×0.75/×1.5/×2 |
 | Nano Banana 2 Lite | `google/nano-banana-2-lite` | 15 incl. 4:1/8:1 | fixed 1K | 14 | yes | ~$0.048 |
 | Nano Banana Pro | `fal-ai/nano-banana-pro` | 11 (no extremes) | 1K–4K | 14 | yes | $0.15, ×2 @4K |
 
-**None of the four accept `negative_prompt`** — the control is gone from the UI.
+**None of the five accept `negative_prompt`** — the control is gone from the UI.
 GPT Image 2 has no `aspect_ratio`/`resolution`/`seed`: ratios become an explicit `image_size`
 (multiples of 16, ≤3840 px per edge, ≤3:1, 655,360–8,294,400 px) and it exposes a `quality` tier instead.
+GPT Image 1.5 has none of those either, and no pixel freedom: `image_size` is an enum of exactly
+`1024x1024` / `1536x1024` / `1024x1536` (the edit endpoint adds `auto`), so `imageSizeMode: 'size-enum'`
+routes it through `toFixedImageSize()`. Its `quality` has no `auto` tier. It is the **only** model with
+a `background` field (`auto` | `transparent` | `opaque`) — the sole route to an alpha channel — and the
+only one with `input_fidelity` (edit endpoint only). The two OpenAI models disagree on the mask field
+name, hence `maskField` (`mask_url` vs `mask_image_url`).
 Values a model cannot take are mapped to its nearest supported one rather than rejected.
 Multi-model generation: PromptBar allows selecting multiple models; `useImageGeneration` runs each model
 independently and packs references per model. Chat uses a single model per message.
@@ -120,6 +129,29 @@ prompt otherwise — GPT Image 2 has no such field, and silently dropping the ru
 Projects (`thumbnail-projects-store.ts`, persisted as `thumbnail-projects`) are a second axis next to workspaces and only filter
 inside thumbnail mode. `GalleryImage` carries `projectId`, `thumbnailStyle` and `faceFidelity`.
 
+### Logo Mode
+The fourth `AppMode` (`MainContent.tsx`), and the reason GPT Image 1.5 is in the registry at all: it is the
+only model with a `background` field, so it is the only route to a real alpha channel.
+`getLogoModels()` derives the model list from that capability rather than a hand-kept list.
+It reuses `PromptBar` via the `logoMode` prop — references, @-mentions, drag & drop and collections stay
+identical; only `ControlsRow` is swapped for `LogoControls`.
+
+`buildLogoSystemPrompt()` assembles base rules + optional style block (`auto` adds none — the default;
+otherwise `minimal` | `wordmark` | `emblem` | `mascot`) + the transparency block when the background is
+transparent + a reference block when references are attached. GPT Image 1.5 has no `system_prompt` field,
+so `useImageGeneration` prepends it to the prompt.
+
+Logo mode locks `background: 'transparent'` and `output_format: 'png'`, and keeps the workspace axis
+(no separate project store — a logo is an ordinary asset with an alpha channel). `GalleryImage` carries
+`isLogo`, `logoStyle` and **`hasAlpha`**. `hasAlpha` is the load-bearing one: it is computed per model
+(`background === 'transparent' && model.supportsBackground`), it routes the image around the JPEG scrub,
+and it drives the `.alpha-checker` backdrop in `GalleryCard`/`ImageViewer`. `useChatGeneration` reads it
+off the chat's source image so an iteration does not silently lose its transparency.
+
+`background` and `input_fidelity` are also offered in normal image mode via `ControlsRow`, gated on
+`getCombinedCapabilities().supportsBackground` / `.supportsInputFidelity` — they are ordinary model
+capabilities, not mode-specific switches.
+
 ### Anti-Detection
 Every generated image runs through `prepareForStorage()` **before** `window.api.saveImage` — in
 `useImageGeneration`, `useChatGeneration` and the three derive actions in `ImageViewer` (zoom out,
@@ -128,7 +160,14 @@ gallery, export, clipboard and drag & drop all hand out the same processed file.
 
 The pipeline is JPEG 95 → squeeze X to 99 % → squeeze Y to 99 % → scale back → JPEG 95. The JPEG
 round has to be decoded again in between, otherwise the quantisation never reaches the pixels the
-resample works on. Output keeps the generated dimensions exactly; ~86 % of pixels change at an
+resample works on.
+
+**Transparent images take the other branch.** `prepareForStorage(dataUrl, enabled, preserveAlpha)`
+with `preserveAlpha` runs `reencodePreservingAlpha()` instead: a single canvas re-encode to PNG.
+JPEG has no alpha channel at all, and the squeeze step would blur exactly the hard edges a logo is
+made of — so that path keeps only what costs nothing (metadata dropped, pixels intact) and the
+statistical scrub does not happen. The stored extension stays `png`, which is what makes the whole
+save/export/clipboard chain hand out a transparent file. Output keeps the generated dimensions exactly; ~86 % of pixels change at an
 average delta of 1.5/255. A failed scrub falls back to the untouched image — never lose a generation
 over post-processing.
 

@@ -14,6 +14,10 @@
  *      result has the exact size that was generated.
  *
  * Videos never pass through here — this is images and thumbnails only.
+ *
+ * Images with a real alpha channel (logo mode) take the alternate route in
+ * `reencodePreservingAlpha` — see the note there for why the pipeline above
+ * cannot run on them.
  */
 import { logger } from './logger'
 
@@ -33,8 +37,19 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-/** Draws a source onto a fresh canvas of the given size, resampling as needed. */
-function drawTo(source: CanvasImageSource, width: number, height: number): HTMLCanvasElement {
+/**
+ * Draws a source onto a fresh canvas of the given size, resampling as needed.
+ *
+ * `opaque` fills white first, which every step of the JPEG pipeline needs —
+ * JPEG has no alpha channel, so transparency would otherwise turn black. The
+ * alpha-preserving path passes `false` and keeps the channel intact.
+ */
+function drawTo(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  opaque = true
+): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
@@ -42,9 +57,10 @@ function drawTo(source: CanvasImageSource, width: number, height: number): HTMLC
   if (!ctx) throw new Error('Canvas not supported')
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
-  // JPEG has no alpha channel — without this, transparency turns black.
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, width, height)
+  if (opaque) {
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
+  }
   ctx.drawImage(source, 0, 0, width, height)
   return canvas
 }
@@ -77,16 +93,48 @@ export async function scrubGeneratedImage(base64DataUrl: string): Promise<string
 }
 
 /**
+ * Re-encodes a transparent image as PNG through a canvas, alpha intact.
+ *
+ * The pipeline above cannot run here. Its first and last step is JPEG, which
+ * has no alpha channel at all, and its middle step resamples the image twice —
+ * on a logo that is a sub-pixel blur along exactly the hard edges the mark
+ * lives on. So the transparent path keeps only what costs nothing: a decode
+ * and a re-encode, which drops whatever metadata the generator's PNG carried
+ * and rewrites the file through the browser's own encoder. Every pixel value
+ * survives; the statistical scrub does not happen.
+ */
+export async function reencodePreservingAlpha(base64DataUrl: string): Promise<string> {
+  const source = await loadImage(base64DataUrl)
+  const width = source.naturalWidth
+  const height = source.naturalHeight
+  if (!width || !height) throw new Error('Image has no dimensions')
+  return drawTo(source, width, height, false).toDataURL('image/png')
+}
+
+/**
  * Prepares a freshly generated image for storage.
  *
  * Falls back to the untouched image if anything goes wrong — a failed scrub
  * must never cost the user the generation itself.
+ *
+ * @param preserveAlpha the generation was requested with a transparent
+ * background, so the result has to stay PNG with its alpha channel.
  */
 export async function prepareForStorage(
   base64DataUrl: string,
-  enabled: boolean
+  enabled: boolean,
+  preserveAlpha = false
 ): Promise<{ dataUrl: string; extension: string }> {
   if (!enabled) return { dataUrl: base64DataUrl, extension: 'png' }
+
+  if (preserveAlpha) {
+    try {
+      return { dataUrl: await reencodePreservingAlpha(base64DataUrl), extension: 'png' }
+    } catch (err) {
+      logger.warn('anti-detection', 'PNG re-encode failed, storing the original image', err)
+      return { dataUrl: base64DataUrl, extension: 'png' }
+    }
+  }
 
   try {
     return { dataUrl: await scrubGeneratedImage(base64DataUrl), extension: 'jpg' }

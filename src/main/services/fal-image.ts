@@ -4,7 +4,10 @@ import {
   getModel,
   resolveAspectRatio,
   resolveResolution,
+  toFixedImageSize,
   toGptImageSize,
+  type FalBackground,
+  type FalInputFidelity,
   type ImageModelOption,
 } from '../../shared/image-models'
 import { uploadImagesToUrls } from './image-upload'
@@ -25,8 +28,15 @@ export interface GenerateRequest {
   attachments?: string[]
   labeledAttachments?: LabeledAttachment[]
   seed?: number
-  /** GPT Image 2 only */
+  /** Both OpenAI models */
   quality?: string
+  /**
+   * GPT Image 1.5 only — `transparent` is what logo mode is built on. It only
+   * survives if `outputFormat` is png or webp.
+   */
+  background?: FalBackground
+  /** GPT Image 1.5 edit only — how literally the reference is preserved. */
+  inputFidelity?: FalInputFidelity
   /**
    * Explicit output size for models that take pixels instead of a ratio
    * (GPT Image 2). Set by thumbnail mode, which needs one exact format;
@@ -39,7 +49,7 @@ export interface GenerateRequest {
   thinkingLevel?: 'minimal' | 'high'
   safetyTolerance?: string
   outputFormat?: 'png' | 'jpeg' | 'webp'
-  /** GPT Image 2 edit only — inpaint mask */
+  /** Inpaint mask, for the models that take one (see `maskField`). */
   maskUrl?: string
 }
 
@@ -117,11 +127,32 @@ function buildInput(
     input.quality = model.qualities.includes((request.quality ?? '') as never)
       ? request.quality
       : model.defaultQuality
+  }
+
+  if (model.imageSizeMode === 'pixels') {
     // GPT Image 2 has no aspect_ratio field — the ratio becomes an explicit size.
     // fal snaps both edges to multiples of 16, so a caller-supplied size has to
     // already be valid (thumbnail mode passes 1920 x 1088 for exactly that reason).
     input.image_size =
       request.imageSize ?? toGptImageSize(request.aspectRatio, request.resolution)
+  } else if (model.imageSizeMode === 'size-enum') {
+    // GPT Image 1.5 takes one of three fixed strings. An explicit pixel size
+    // from the caller means nothing here, so the ratio decides.
+    input.image_size = toFixedImageSize(model, request.aspectRatio)
+  }
+
+  if (model.supportsBackground && request.background) {
+    input.background = request.background
+    // A transparent background exists only in a format that has an alpha
+    // channel — JPEG would silently come back flattened.
+    if (request.background === 'transparent' && input.output_format === 'jpeg') {
+      input.output_format = 'png'
+    }
+  }
+
+  // input_fidelity only exists on the edit endpoint.
+  if (model.supportsInputFidelity && request.inputFidelity && imageUrls.length > 0) {
+    input.input_fidelity = request.inputFidelity
   }
 
   if (model.supportsSeed && request.seed != null) {
@@ -144,8 +175,8 @@ function buildInput(
     input.safety_tolerance = request.safetyTolerance
   }
 
-  if (model.supportsMask && request.maskUrl && imageUrls.length > 0) {
-    input.mask_url = request.maskUrl
+  if (model.maskField && request.maskUrl && imageUrls.length > 0) {
+    input[model.maskField] = request.maskUrl
   }
 
   return input
@@ -207,7 +238,7 @@ export async function generateImage(
   }
 
   let maskUrl = request.maskUrl
-  if (maskUrl && model.supportsMask) {
+  if (maskUrl && model.maskField) {
     const [uploaded] = await uploadImagesToUrls([maskUrl], request.apiKey)
     maskUrl = uploaded
   }

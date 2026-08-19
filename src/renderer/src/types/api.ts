@@ -12,9 +12,25 @@ export {
   getThumbnailModels,
   isThumbnailModel,
   DEFAULT_THUMBNAIL_MODEL,
+  getLogoModels,
+  isLogoModel,
+  DEFAULT_LOGO_MODEL,
+  toFixedImageSize,
+  parseImageSizeLabel,
   estimateImageCost,
   formatCost,
 } from '../../../shared/image-models'
+
+export {
+  LOGO_STYLES,
+  LOGO_BACKGROUND,
+  LOGO_OUTPUT_FORMAT,
+  LOGO_DEFAULT_ASPECT_RATIO,
+  LOGO_ASPECT_RATIOS,
+  buildLogoSystemPrompt,
+} from '../../../shared/logo-prompt'
+
+export type { LogoStyle, LogoStyleOption } from '../../../shared/logo-prompt'
 
 export {
   THUMBNAIL_STYLES,
@@ -35,6 +51,9 @@ export type {
   FalResolution,
   GptImageQuality,
   OutputFormat,
+  FalBackground,
+  FalInputFidelity,
+  ImageSizeMode,
 } from '../../../shared/image-models'
 
 /** UI-level aspect ratio; `custom` is resolved to a real ratio before the request. */

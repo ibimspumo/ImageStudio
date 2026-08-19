@@ -30,6 +30,14 @@ export interface GalleryImage {
   projectId?: string            // thumbnail mode: the video this belongs to
   thumbnailStyle?: string       // thumbnail mode: 'clean' | 'balanced' | 'bold'
   faceFidelity?: boolean        // thumbnail mode: identity-preservation was on
+  isLogo?: boolean              // logo mode: produced there, filters the logo gallery
+  logoStyle?: string            // logo mode: 'minimal' | 'wordmark' | 'emblem' | 'mascot'
+  /**
+   * The file on disk has a real alpha channel. Set when the request ran with
+   * `background: transparent`; it is what keeps the image out of the JPEG
+   * scrub and makes the UI show it on a checkerboard instead of a solid card.
+   */
+  hasAlpha?: boolean
   type?: 'image' | 'video'     // default 'image' for backwards compat
   videoDuration?: number        // video length in seconds
   videoThumbnailPath?: string   // path to extracted first-frame JPEG
@@ -43,6 +51,14 @@ export interface GalleryImage {
  */
 export function isThumbnailImage(image: GalleryImage): boolean {
   return image.thumbnailStyle != null || image.projectId != null
+}
+
+/**
+ * A logo is what logo mode produced. Unlike thumbnails there is no second axis
+ * to infer it from, so the flag is the only signal — set at placeholder time.
+ */
+export function isLogoImage(image: GalleryImage): boolean {
+  return image.isLogo === true
 }
 
 /** Convert a file path to a displayable URL (handles spaces, special chars, and Windows backslashes) */
@@ -62,7 +78,7 @@ export function toDisplayUrl(filePath: string): string {
 
 interface GalleryStore {
   images: GalleryImage[]
-  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string; canvasSketchPath?: string; projectId?: string; thumbnailStyle?: string; faceFidelity?: boolean }) => string
+  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string; canvasSketchPath?: string; projectId?: string; thumbnailStyle?: string; faceFidelity?: boolean; isLogo?: boolean; logoStyle?: string; hasAlpha?: boolean }) => string
   addVideoPlaceholder: (prompt: string, aspectRatio: string, model: string, attachments?: string[], workspaceId?: string) => string
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
   completeVideo: (id: string, filePath: string, durationMs: number, videoDuration: number, thumbnailPath?: string, cost?: number) => void
@@ -108,6 +124,9 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           projectId: extra?.projectId,
           thumbnailStyle: extra?.thumbnailStyle,
           faceFidelity: extra?.faceFidelity,
+          isLogo: extra?.isLogo,
+          logoStyle: extra?.logoStyle,
+          hasAlpha: extra?.hasAlpha,
         },
         ...state.images,
       ],

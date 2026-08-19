@@ -144,7 +144,11 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   return (
     <div
-      className="img-card relative group rounded-2xl overflow-hidden cursor-pointer border border-border-dim/60 animate-fade-up w-full h-full"
+      className={cn(
+        'img-card relative group rounded-2xl overflow-hidden cursor-pointer border border-border-dim/60 animate-fade-up w-full h-full',
+        // Without a ground behind it a transparent logo reads as a hole.
+        image.hasAlpha && 'alpha-checker'
+      )}
       onClick={() => onClick(image.id, image.filePath)}
       draggable={!isVideo}
       onDragStart={isVideo ? undefined : handleDragStart}
@@ -166,7 +170,11 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
         <img
           src={displayUrl}
           alt={image.prompt}
-          className="w-full h-full object-cover block"
+          className={cn(
+            'w-full h-full block',
+            // A logo is designed with its margin — cropping it would cut the mark.
+            image.hasAlpha ? 'object-contain' : 'object-cover'
+          )}
           loading="lazy"
           draggable={false}
         />
