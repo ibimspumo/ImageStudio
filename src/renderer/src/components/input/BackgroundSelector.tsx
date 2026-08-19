@@ -30,7 +30,7 @@ export function BackgroundSelector({ value, onChange }: BackgroundSelectorProps)
   const ActiveIcon = active.icon
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
         title={active.hint}

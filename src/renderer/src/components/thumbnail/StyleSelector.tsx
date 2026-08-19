@@ -21,7 +21,7 @@ export function StyleSelector({ value, onChange }: StyleSelectorProps) {
   const ActiveIcon = ICONS[active.id]
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
         className={cn(

@@ -15,7 +15,7 @@ export function SeedInput({ seed, onChange }: SeedInputProps) {
     return (
       <button
         onClick={() => setExpanded(true)}
-        className="no-drag flex items-center justify-center h-8 w-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
+        className="no-drag shrink-0 flex items-center justify-center h-8 w-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
         title="Set seed for reproducibility"
       >
         <Dices className="w-3.5 h-3.5" />
@@ -24,7 +24,7 @@ export function SeedInput({ seed, onChange }: SeedInputProps) {
   }
 
   return (
-    <div className="no-drag flex items-center gap-1 h-8 px-2 rounded-lg bg-surface-3 border border-border-base">
+    <div className="no-drag shrink-0 flex items-center gap-1 h-8 px-2 rounded-lg bg-surface-3 border border-border-base">
       <Dices className={cn('w-3.5 h-3.5 shrink-0', isActive ? 'text-accent-main' : 'text-text-secondary')} />
       <input
         type="number"

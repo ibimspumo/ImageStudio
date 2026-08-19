@@ -13,7 +13,7 @@ export function ImageCountSelector({ value, onChange, max = 4 }: ImageCountSelec
   const increment = () => onChange(Math.min(max, value + 1))
 
   return (
-    <div className="no-drag flex items-center h-8 rounded-lg bg-surface-3 border border-border-base overflow-hidden">
+    <div className="no-drag shrink-0 flex items-center h-8 rounded-lg bg-surface-3 border border-border-base overflow-hidden">
       <button
         onClick={decrement}
         disabled={value <= 1}

@@ -13,7 +13,7 @@ export function PresetSelector({ onManageClick }: PresetSelectorProps) {
   const activePreset = presets.find((p) => p.id === activePresetId)
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
         className={cn(

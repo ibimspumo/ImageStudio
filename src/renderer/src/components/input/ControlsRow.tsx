@@ -85,9 +85,9 @@ export function ControlsRow({
   const caps = getCombinedCapabilities(selectedModels)
 
   return (
-    <div className="flex items-center gap-1 px-4 py-3">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-2 px-4 py-3">
       <ModelSelector selectedModels={selectedModels} onChange={onModelsChange} />
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
       <AspectRatioSelector
         value={aspectRatio}
         onChange={onAspectRatioChange}
@@ -95,20 +95,20 @@ export function ControlsRow({
         onCustomRatioChange={onCustomRatioChange}
         available={caps.aspectRatios}
       />
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
       <ResolutionSelector
         value={resolution}
         onChange={onResolutionChange}
         available={caps.resolutions}
         notes={caps.notes}
       />
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
       <ImageCountSelector value={imageCount} onChange={onImageCountChange} max={caps.maxImagesPerRequest} />
 
       {/* Quality only exists on GPT Image 2 */}
       {caps.qualities && onQualityChange && (
         <>
-          <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+          <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
           <QualitySelector
             value={quality ?? 'high'}
             onChange={onQualityChange}
@@ -120,7 +120,7 @@ export function ControlsRow({
       {/* Background: the transparency field, GPT Image 1.5 only */}
       {caps.supportsBackground && onBackgroundChange && (
         <>
-          <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+          <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
           <BackgroundSelector value={background ?? 'auto'} onChange={onBackgroundChange} />
         </>
       )}
@@ -128,7 +128,7 @@ export function ControlsRow({
       {/* input_fidelity: GPT Image 1.5 edit only */}
       {caps.supportsInputFidelity && onInputFidelityChange && (
         <>
-          <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+          <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
           <InputFidelityToggle
             value={inputFidelity ?? 'high'}
             onChange={onInputFidelityChange}
@@ -140,19 +140,19 @@ export function ControlsRow({
       {/* Seed: GPT Image 2 has no seed parameter */}
       {onSeedChange && caps.supportsSeed && (
         <>
-          <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+          <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
           <SeedInput seed={seed} onChange={onSeedChange} />
         </>
       )}
 
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5" />
+      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
 
       <PresetSelector onManageClick={onPresetsManage} />
 
       {onCollectionsClick && (
         <button
           onClick={onCollectionsClick}
-          className="no-drag flex items-center justify-center h-8 w-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[14px] font-semibold"
+          className="no-drag shrink-0 flex items-center justify-center h-8 w-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[14px] font-semibold"
           title="Collections (@)"
         >
           @
@@ -161,7 +161,7 @@ export function ControlsRow({
       {onCanvasClick && (
         <button
           onClick={onCanvasClick}
-          className="no-drag flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
+          className="no-drag shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
           title="Canvas — sketch to generate"
         >
           <Palette className="w-3.5 h-3.5" />
@@ -170,7 +170,7 @@ export function ControlsRow({
       {onSettingsClick && (
         <button
           onClick={onSettingsClick}
-          className="no-drag flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
+          className="no-drag shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
           title="Settings"
         >
           <Settings className="w-3.5 h-3.5" />
@@ -179,31 +179,31 @@ export function ControlsRow({
 
       {onQueueClick && <QueueButton onClick={onQueueClick} />}
 
-      <div className="flex-1" />
-
-      {hasContent && (
-        <button
-          onClick={onClear}
-          className="no-drag flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-3 transition-all"
-          title="Clear prompt"
-        >
-          <XCircle className="w-3.5 h-3.5" />
-        </button>
-      )}
-
-      <button
-        onClick={onSubmit}
-        disabled={!canSend}
-        className={cn(
-          'no-drag btn-interactive flex items-center justify-center h-9 rounded-xl transition-all',
-          canSend
-            ? 'bg-accent-main hover:bg-accent-bright text-white px-4 gap-2 glow-accent shadow-lg'
-            : 'bg-surface-3 text-text-muted cursor-not-allowed w-9'
+      <div className="flex items-center gap-1 ml-auto shrink-0">
+        {hasContent && (
+          <button
+            onClick={onClear}
+            className="no-drag shrink-0 flex items-center justify-center w-8 h-8 rounded-lg text-text-muted hover:text-text-secondary hover:bg-surface-3 transition-all"
+            title="Clear prompt"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+          </button>
         )}
-      >
-        <Send className="w-4 h-4" />
-        {canSend && <span className="text-[12px] font-semibold tracking-wide">Generate</span>}
-      </button>
+
+        <button
+          onClick={onSubmit}
+          disabled={!canSend}
+          className={cn(
+            'no-drag btn-interactive shrink-0 flex items-center justify-center h-9 rounded-xl transition-all',
+            canSend
+              ? 'bg-accent-main hover:bg-accent-bright text-white px-4 gap-2 glow-accent shadow-lg'
+              : 'bg-surface-3 text-text-muted cursor-not-allowed w-9'
+          )}
+        >
+          <Send className="w-4 h-4" />
+          {canSend && <span className="text-[12px] font-semibold tracking-wide">Generate</span>}
+        </button>
+      </div>
     </div>
   )
 }

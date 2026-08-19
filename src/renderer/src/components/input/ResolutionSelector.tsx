@@ -19,7 +19,7 @@ export function ResolutionSelector({ value, onChange, available, notes }: Resolu
   if (available.length === 0) {
     return (
       <div
-        className="no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 border border-border-dim text-text-muted text-[12px] font-medium"
+        className="no-drag shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 border border-border-dim text-text-muted text-[12px] font-medium"
         title={notes?.join('\n') || 'This model has a fixed output size'}
       >
         <Diamond className="w-3.5 h-3.5" />
@@ -29,7 +29,7 @@ export function ResolutionSelector({ value, onChange, available, notes }: Resolu
   }
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
         className="no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium"

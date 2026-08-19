@@ -77,7 +77,7 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
     : RATIO_DIMS[value]
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
         className="no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium"

@@ -29,7 +29,7 @@ export function ModelSelector({ selectedModels, onChange, compact, available }: 
   const multiCount = selectedModels.length
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
         className={cn(

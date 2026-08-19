@@ -13,7 +13,7 @@ export function QueueButton({ onClick }: QueueButtonProps) {
     <button
       onClick={onClick}
       className={cn(
-        'no-drag relative flex items-center justify-center w-8 h-8 rounded-lg border transition-all',
+        'no-drag relative shrink-0 flex items-center justify-center w-8 h-8 rounded-lg border transition-all',
         pendingCount > 0
           ? 'bg-accent-dim border-accent-main/30 text-accent-main'
           : 'bg-surface-3 border-border-base text-text-secondary hover:text-text-primary hover:bg-surface-4'
