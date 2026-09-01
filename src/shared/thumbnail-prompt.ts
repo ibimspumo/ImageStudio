@@ -163,6 +163,12 @@ export interface ThumbnailPromptOptions {
   videoTitle?: string
   /** The angle/hook of the video, if the project has one. */
   videoAngle?: string
+  /**
+   * A user-saved meta prompt (e.g. a channel format). Appended as the last
+   * block, so it sits below all built-in rules and directly above the user's
+   * own prompt — and wins where the two disagree.
+   */
+  customMetaPrompt?: string
 }
 
 /**
@@ -188,6 +194,15 @@ export function buildThumbnailSystemPrompt(options: ThumbnailPromptOptions): str
   const angle = options.videoAngle?.trim()
   if (angle) context.push(`- The angle of the video: ${angle}`)
   if (context.length > 0) blocks.push(`VIDEO CONTEXT\n${context.join('\n')}`)
+
+  const custom = options.customMetaPrompt?.trim()
+  if (custom) {
+    blocks.push(`CUSTOM FORMAT RULES
+The following rules were set by the user for this channel/format. Where they
+conflict with anything above, these rules win.
+
+${custom}`)
+  }
 
   return blocks.join('\n\n')
 }

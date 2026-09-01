@@ -246,6 +246,7 @@ Every generation carries a thumbnail ruleset the user never has to retype: forma
 - **Style** — `Automatisch` is the default and adds no style instruction at all, leaving the prompt in charge. The three explicit steps are `Clean` (editorial, typography-led, no arrows), `Balanced` (clear emotion, one accent colour) and `MrBeast` (expression at the limit, red arrow, outlined text, hyper-saturation)
 - **Faces true** — with reference images attached, an identity-preservation block is added: facial geometry, skin tone, hairline, glasses stay exactly as in the reference; expression and lighting may change, the identity may not. Faces are rendered large, unobstructed and never covered by text
 - **Video title** — goes in as context with the explicit rule that any text in the image must not repeat it
+- **Custom meta prompts** — reusable rule blocks you save yourself (e.g. one per channel format), managed and selected right in the controls row. The active one is appended below the built-in system prompt and directly above your own prompt — and wins where the two disagree. The selection persists across restarts
 
 Text in the image is not a separate control — write it into the prompt (`Text: "30 TAGE"`) and the rules take care of the rest: 4 words maximum, spelled exactly as given, never across a face, never in the outer 5 %.
 

@@ -3,6 +3,7 @@ import { ModelSelector } from '../input/ModelSelector'
 import { ImageCountSelector } from '../input/ImageCountSelector'
 import { QueueButton } from '../queue/QueueButton'
 import { StyleSelector } from './StyleSelector'
+import { MetaPromptSelector } from './MetaPromptSelector'
 import { getCombinedCapabilities, getThumbnailModels, type ThumbnailStyle } from '../../types/api'
 import { cn } from '../../lib/utils'
 
@@ -58,6 +59,8 @@ export function ThumbnailControls({
         <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
 
         <StyleSelector value={style} onChange={onStyleChange} />
+
+        <MetaPromptSelector />
 
         <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
 

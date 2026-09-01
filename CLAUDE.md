@@ -23,7 +23,7 @@ npx electron-vite build    # Build check only (no Electron)
 - `src/main/` — Electron main process (IPC, API, files)
 - `src/preload/` — Typed context bridge (`window.api`)
 - `src/renderer/src/` — React UI
-  - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop, thumbnail-projects (all with debounced persistence via `lib/debounce.ts`)
+  - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop, thumbnail-projects, thumbnail-meta-prompts (all with debounced persistence via `lib/debounce.ts`)
   - `hooks/` — useImageGeneration, useVideoGeneration (fal.ai), useChatGeneration, useMentionEditor (the contenteditable prompt editor with @-mentions, shared by PromptBar and ChatView), useImageRefs (shared image attachment logic), useJustifiedLayout (row-based masonry)
   - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, getModelName, getVideoModelName, ImageRef, LabeledAttachment
   - `components/input/` — PromptBar (orchestrator), VideoPromptBar (video mode, no @mentions), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (model/aspect/resolution/count/buttons), CostEstimate (live per-request price), ModelSelector, VideoModelSelector, AspectRatioSelector, ResolutionSelector, DurationSelector, ImageCountSelector, BackgroundSelector + InputFidelityToggle (GPT Image 1.5 only, shared with logo mode)
@@ -31,7 +31,7 @@ npx electron-vite build    # Build check only (no Electron)
   - `components/chat/` — ChatView (iterative editing; inherits the source image's model/aspect ratio/resolution, supports @-mentions and collections via `useMentionEditor`)
   - `components/workspace/` — WorkspaceBar (pill tabs, create, rename, delete, filter gallery)
   - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog, UpdateSection, SpendIndicator (running cost total in the TitleBar)
-  - `components/thumbnail/` — ProjectBar (video pills, drop target), ThumbnailControls (model, style, face fidelity, count), StyleSelector (auto/clean/balanced/bold), ThumbnailFrame (16:9 + safe-zone/legibility overlays), ThumbnailPreviewModal (YouTube surfaces, size ladder, 1920×1080 export)
+  - `components/thumbnail/` — ProjectBar (video pills, drop target), ThumbnailControls (model, style, meta prompt, face fidelity, count), StyleSelector (auto/clean/balanced/bold), MetaPromptSelector (saved custom meta prompts, CRUD in the popup), ThumbnailFrame (16:9 + safe-zone/legibility overlays), ThumbnailPreviewModal (YouTube surfaces, size ladder, 1920×1080 export)
   - `components/logo/` — LogoControls (model, logo type, size, background, fidelity, quality, count), LogoStyleSelector, LogoSizeSelector (the three fixed pixel sizes)
   - `components/collections/` — Asset collection CRUD
   - `lib/image-utils.ts` — compressImage, createZoomOutCanvas, createAspectRatioCanvas, collectionImagesAsBase64, renderYouTubeThumbnail (exact 1920×1080 cover-crop)
@@ -118,7 +118,10 @@ It reuses `PromptBar` via the `thumbnailMode` prop — references, @-mentions, d
 only `ControlsRow` is swapped for `ThumbnailControls` and the format controls disappear.
 
 `buildThumbnailSystemPrompt()` assembles base rules + optional style block (`auto` adds none — the default; otherwise `clean` | `balanced` | `bold`) + optional face-fidelity block
-+ video context. `useImageGeneration` delivers it as `system_prompt` where `supportsSystemPrompt` is true and prepends it to the
++ video context + an optional **custom meta prompt** as the last block, so it sits directly above the
+user's prompt and explicitly wins over the built-in rules. Custom meta prompts are user-saved rule
+blocks (e.g. one per channel format), managed via `MetaPromptSelector` in the controls row and stored
+in `thumbnail-meta-prompts-store.ts` (persisted as `thumbnail-meta-prompts`, active selection included). `useImageGeneration` delivers it as `system_prompt` where `supportsSystemPrompt` is true and prepends it to the
 prompt otherwise — GPT Image 2 has no such field, and silently dropping the rules there would be worse than a long prompt.
 
 **Exact pixels:** no model returns 1920 × 1080. Gemini at 16:9/2K returns 2752 × 1536 (ratio 1.792); fal.ai rounds GPT Image 2's

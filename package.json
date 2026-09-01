@@ -1,6 +1,6 @@
 {
   "name": "imagestudio",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "AI Image Generation Studio",
   "main": "./out/main/index.js",
   "scripts": {

@@ -34,6 +34,7 @@ import { CostEstimate } from './CostEstimate'
 import { ThumbnailControls } from '../thumbnail/ThumbnailControls'
 import { LogoControls } from '../logo/LogoControls'
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
+import { useThumbnailMetaPromptsStore } from '../../stores/thumbnail-meta-prompts-store'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
 import { nanoid } from 'nanoid'
@@ -355,6 +356,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           faceFidelity: faceFidelity && hasRefs,
           videoTitle: project?.title,
           videoAngle: project?.angle,
+          customMetaPrompt: useThumbnailMetaPromptsStore.getState().getActiveText(),
         })
       : undefined
 
