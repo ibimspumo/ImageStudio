@@ -26,6 +26,7 @@ import { useCanvasStore } from './stores/canvas-store'
 import { ThumbnailPreviewModal } from './components/thumbnail/ThumbnailPreviewModal'
 import { useThumbnailProjectsStore } from './stores/thumbnail-projects-store'
 import { useThumbnailMetaPromptsStore } from './stores/thumbnail-meta-prompts-store'
+import { useUiRecentsStore } from './stores/ui-recents-store'
 
 interface ViewerState {
   images: GalleryImage[]
@@ -47,6 +48,7 @@ export default function App() {
   const loadQueue = useQueueStore((s) => s.loadFromDisk)
   const loadThumbnailProjects = useThumbnailProjectsStore((s) => s.loadFromDisk)
   const loadThumbnailMetaPrompts = useThumbnailMetaPromptsStore((s) => s.loadFromDisk)
+  const loadUiRecents = useUiRecentsStore((s) => s.loadFromDisk)
   const queuePendingCount = useQueueStore((s) => s.items.filter(i => i.status === 'pending').length)
   const [showSettings, setShowSettings] = useState(false)
   const [showCollections, setShowCollections] = useState(false)
@@ -83,8 +85,9 @@ export default function App() {
       loadQueue()
       loadThumbnailProjects()
       loadThumbnailMetaPrompts()
+      loadUiRecents()
     })
-  }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces, loadPresets, loadQueue, loadThumbnailProjects, loadThumbnailMetaPrompts])
+  }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces, loadPresets, loadQueue, loadThumbnailProjects, loadThumbnailMetaPrompts, loadUiRecents])
 
   const falApiKey = useSettingsStore((s) => s.falApiKey)
   const hydrated = useSettingsStore((s) => s.hydrated)

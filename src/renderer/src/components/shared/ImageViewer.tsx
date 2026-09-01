@@ -208,7 +208,7 @@ export function ImageViewer({
     if (!image?.filePath) return
     try {
       const result = await window.api.readImage(image.filePath)
-      if (result.success) {
+      if (result.success && result.base64DataUrl) {
         const response = await fetch(result.base64DataUrl)
         const blob = await response.blob()
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
@@ -244,7 +244,7 @@ export function ImageViewer({
     try {
       // Load base64 from disk
       const readResult = await window.api.readImage(image.filePath)
-      if (!readResult.success) throw new Error('Failed to read image')
+      if (!readResult.success || !readResult.base64DataUrl) throw new Error('Failed to read image')
 
       // Create zoom-out canvas (image centered on larger black canvas) + compressed reference
       const { canvas, reference } = await createZoomOutCanvas(readResult.base64DataUrl, factor)
@@ -307,7 +307,7 @@ export function ImageViewer({
     setUpscaleGenerating(targetResolution)
     try {
       const readResult = await window.api.readImage(image.filePath)
-      if (!readResult.success) throw new Error('Failed to read image')
+      if (!readResult.success || !readResult.base64DataUrl) throw new Error('Failed to read image')
 
       // Pre-upscale small images so the API produces the requested resolution.
       // Gemini matches output size to input size — a 1024px input with image_size:"4K"
@@ -375,7 +375,7 @@ export function ImageViewer({
     setAspectRatioGenerating(targetRatio)
     try {
       const readResult = await window.api.readImage(image.filePath)
-      if (!readResult.success) throw new Error('Failed to read image')
+      if (!readResult.success || !readResult.base64DataUrl) throw new Error('Failed to read image')
 
       const { canvas, reference } = await createAspectRatioCanvas(readResult.base64DataUrl, targetRatio)
 

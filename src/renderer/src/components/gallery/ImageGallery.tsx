@@ -75,7 +75,12 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, o
   )
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-40">
+    <div
+      ref={scrollRef}
+      className="flex-1 overflow-y-auto px-6"
+      // Measured live in MainContent — the last row always clears the bar.
+      style={{ paddingBottom: 'calc(var(--prompt-bar-h, 160px) + 24px)' }}
+    >
       <div ref={containerRef} className="max-w-6xl mx-auto relative" style={{ height: totalHeight }}>
         {rows.flatMap((row) =>
           row.items.map((item) => {

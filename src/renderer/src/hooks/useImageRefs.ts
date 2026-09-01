@@ -59,7 +59,7 @@ export function useImageRefs() {
     if (internalData) {
       try {
         const result = await window.api.readImage(internalData)
-        if (result.success) {
+        if (result.success && result.base64DataUrl) {
           const compressed = await compressImage(result.base64DataUrl)
           addImageRef(compressed)
         }

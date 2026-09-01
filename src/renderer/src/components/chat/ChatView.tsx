@@ -15,10 +15,8 @@ import { useChatGeneration } from '../../hooks/useChatGeneration'
 import { useMentionEditor } from '../../hooks/useMentionEditor'
 import { SimpleLightbox } from '../shared/SimpleLightbox'
 import { useSettingsStore } from '../../stores/settings-store'
-import { AspectRatioSelector } from '../input/AspectRatioSelector'
-import { QualitySelector } from '../input/QualitySelector'
-import { ResolutionSelector } from '../input/ResolutionSelector'
 import { ModelSelector } from '../input/ModelSelector'
+import { TuneMenu, TuneGroup, TuneOption, TuneRatioOptions } from '../input/TunePanel'
 import { AttachmentStrip } from '../input/AttachmentStrip'
 import { MentionPopup } from '../input/MentionPopup'
 import { CostEstimate } from '../input/CostEstimate'
@@ -272,6 +270,16 @@ export function ChatView({
   const caps = getCombinedCapabilities(selectedModels)
   const isGenerating = chat.messages.some((m) => m.isLoading)
 
+  // The chat inherits the source image's format — the badge counts what the
+  // user changed relative to that inheritance.
+  const tuneBadge = [
+    initialAspectRatio
+      ? (aspectRatio === 'custom' ? customRatio : aspectRatio) !== initialAspectRatio
+      : aspectRatio !== '1:1',
+    resolution !== (RESOLUTIONS.includes(initialResolution as Resolution) ? initialResolution : '2K'),
+    !!caps.qualities && quality !== 'high',
+  ].filter(Boolean).length
+
   return (
     <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center animate-overlay-in" onClick={onClose}>
       <div className="bg-surface-1 border border-border-base rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.6)] w-full max-w-2xl h-[80vh] flex flex-col animate-scale-in" onClick={(e) => e.stopPropagation()}>
@@ -396,17 +404,55 @@ export function ChatView({
 
               <div className="w-px h-4 bg-border-dim mx-0.5" />
               <ModelSelector selectedModels={selectedModels} onChange={setSelectedModels} compact />
-              <div className="w-px h-4 bg-border-dim mx-0.5" />
-              <AspectRatioSelector value={aspectRatio} onChange={setAspectRatio} customRatio={customRatio} onCustomRatioChange={setCustomRatio} available={caps.aspectRatios} />
-              <div className="w-px h-4 bg-border-dim mx-0.5" />
-              <ResolutionSelector value={resolution} onChange={setResolution} available={caps.resolutions} notes={caps.notes} />
 
-              {caps.qualities && (
-                <>
-                  <div className="w-px h-4 bg-border-dim mx-0.5" />
-                  <QualitySelector value={quality} onChange={setQuality} available={caps.qualities} />
-                </>
-              )}
+              <TuneMenu badge={tuneBadge} width={340}>
+                {() => (
+                  <>
+                    <TuneGroup label="Format">
+                      <TuneRatioOptions
+                        ratios={caps.aspectRatios}
+                        value={aspectRatio}
+                        onChange={(r) => setAspectRatio(r as AspectRatio)}
+                        customRatio={customRatio}
+                        onCustomRatioChange={setCustomRatio}
+                      />
+                    </TuneGroup>
+
+                    <TuneGroup label="Auflösung">
+                      {caps.resolutions.length === 0 ? (
+                        <TuneOption disabled title={caps.notes?.join('\n') || 'Dieses Modell hat eine feste Ausgabegröße'}>
+                          1K · fixiert
+                        </TuneOption>
+                      ) : (
+                        caps.resolutions.map((res) => (
+                          <TuneOption
+                            key={res}
+                            selected={resolution === res}
+                            onClick={() => setResolution(res as Resolution)}
+                          >
+                            {res}
+                          </TuneOption>
+                        ))
+                      )}
+                      {caps.qualities && (
+                        <>
+                          <div className="w-px h-4 bg-border-dim mx-1 shrink-0" />
+                          {caps.qualities.map((q) => (
+                            <TuneOption
+                              key={q}
+                              selected={quality === q}
+                              onClick={() => setQuality(q)}
+                              title="Quality-Stufe — beeinflusst den Preis"
+                            >
+                              <span className="capitalize">{q}</span>
+                            </TuneOption>
+                          ))}
+                        </>
+                      )}
+                    </TuneGroup>
+                  </>
+                )}
+              </TuneMenu>
 
               <div className="flex-1" />
 

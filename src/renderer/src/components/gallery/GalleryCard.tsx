@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, memo } from 'react'
-import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop, Star, Play, Film, Youtube } from 'lucide-react'
+import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop, Star, Play, Film, Youtube, Search } from 'lucide-react'
 import { useGalleryStore, type GalleryImage, toDisplayUrl } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
+import { useUiRecentsStore } from '../../stores/ui-recents-store'
 import { useSettingsStore } from '../../stores/settings-store'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
@@ -28,6 +29,11 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
   const antiDetection = useSettingsStore((s) => s.antiDetection)
   const isThumbnailMode = !!onPreviewThumbnail
   const [showMoveMenu, setShowMoveMenu] = useState(false)
+  const [moveQuery, setMoveQuery] = useState('')
+  const recentProjectIds = useUiRecentsStore((s) => s.recentProjectIds)
+  const recentWorkspaceIds = useUiRecentsStore((s) => s.recentWorkspaceIds)
+  const bumpProject = useUiRecentsStore((s) => s.bumpProject)
+  const bumpWorkspace = useUiRecentsStore((s) => s.bumpWorkspace)
   const videoRef = useRef<HTMLVideoElement>(null)
   const isVideo = image.type === 'video'
 
@@ -76,15 +82,17 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (!image.filePath) return
+    const filePath = image.filePath
     try {
       if (isVideo) {
         const name = antiDetection ? neutralImageName('mp4') : `imagestudio-${image.id}.mp4`
-        await window.api.exportVideo(image.filePath, name)
+        await window.api.exportVideo(filePath, name)
       } else {
-        const result = await window.api.readImage(image.filePath)
-        if (result.success) {
+        const result = await window.api.readImage(filePath)
+        if (result.success && result.base64DataUrl) {
           // Keep the stored file's extension — with anti-detection on it is a JPEG.
-          const ext = image.filePath.split('.').pop()?.toLowerCase() || 'png'
+          const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
           const name = antiDetection ? neutralImageName(ext) : `imagestudio-${image.id}.png`
           await window.api.exportImage(result.base64DataUrl, name)
         }
@@ -94,9 +102,10 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (!image.filePath) return
     try {
       const result = await window.api.readImage(image.filePath)
-      if (result.success) {
+      if (result.success && result.base64DataUrl) {
         const response = await fetch(result.base64DataUrl)
         const blob = await response.blob()
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
@@ -121,13 +130,19 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
   const handleMoveClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     setShowMoveMenu(!showMoveMenu)
+    setMoveQuery('')
   }
 
   // In thumbnail mode the same control files the image under a video instead.
   const handleMove = (e: React.MouseEvent, targetId: string | undefined) => {
     e.stopPropagation()
-    if (isThumbnailMode) moveToProject(image.id, targetId)
-    else moveToWorkspace(image.id, targetId)
+    if (isThumbnailMode) {
+      moveToProject(image.id, targetId)
+      if (targetId) bumpProject(targetId)
+    } else {
+      moveToWorkspace(image.id, targetId)
+      if (targetId) bumpWorkspace(targetId)
+    }
     setShowMoveMenu(false)
   }
 
@@ -135,6 +150,20 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
     ? projects.map((p) => ({ id: p.id, name: p.title, color: p.color }))
     : workspaces.map((w) => ({ id: w.id, name: w.name, color: w.color }))
   const currentTargetId = isThumbnailMode ? image.projectId : image.workspaceId
+
+  // With many targets the menu becomes a searchable list: recents on top,
+  // the query narrows the rest.
+  const moveRecentIds = isThumbnailMode ? recentProjectIds : recentWorkspaceIds
+  const trimmedMoveQuery = moveQuery.trim().toLowerCase()
+  const filteredMoveTargets = trimmedMoveQuery
+    ? moveTargets.filter((t) => t.name.toLowerCase().includes(trimmedMoveQuery))
+    : moveTargets
+  const recentMoveTargets = trimmedMoveQuery
+    ? []
+    : moveRecentIds
+        .map((id) => moveTargets.find((t) => t.id === id))
+        .filter((t): t is NonNullable<typeof t> => !!t && t.id !== currentTargetId)
+        .slice(0, 3)
 
   const currentWorkspace = isThumbnailMode
     ? projects.find((p) => p.id === image.projectId) ?? null
@@ -232,38 +261,87 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
         {showMoveMenu && moveTargets.length > 0 && (
           <div
             onClick={(e) => e.stopPropagation()}
-            className="absolute left-3 right-3 bottom-14 max-h-[min(220px,60%)] overflow-y-auto bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 animate-scale-in z-20"
+            // The card clips its overflow, so the menu must never grow past
+            // its top edge: cap at the card height minus anchor + margin and
+            // let the list scroll inside instead.
+            className="absolute left-3 right-3 bottom-14 max-h-[calc(100%-68px)] flex flex-col bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 animate-scale-in z-20"
           >
-            <button
-              onClick={(e) => handleMove(e, undefined)}
-              className={cn(
-                'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
-                !currentTargetId
-                  ? 'bg-surface-4 text-text-primary font-medium'
-                  : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
-              )}
-            >
-              <div className="w-2 h-2 rounded-full bg-text-muted/40 shrink-0" />
-              {isThumbnailMode ? 'Kein Video' : 'None'}
-            </button>
-            {moveTargets.map((target) => (
-              <button
-                key={target.id}
-                onClick={(e) => handleMove(e, target.id)}
-                className={cn(
-                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
-                  currentTargetId === target.id
-                    ? 'bg-surface-4 text-text-primary font-medium'
-                    : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
-                )}
-              >
-                <div
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: target.color }}
+            {moveTargets.length > 5 && (
+              <div className="shrink-0 flex items-center gap-1.5 h-7 px-2 mb-1 rounded-lg bg-surface-4 border border-border-base focus-within:border-accent-main/50 transition-colors">
+                <Search className="w-3 h-3 text-text-muted shrink-0" />
+                <input
+                  autoFocus
+                  value={moveQuery}
+                  onChange={(e) => setMoveQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation()
+                    if (e.key === 'Escape') setShowMoveMenu(false)
+                    if (e.key === 'Enter' && filteredMoveTargets.length > 0) {
+                      handleMove(e as unknown as React.MouseEvent, filteredMoveTargets[0].id)
+                    }
+                  }}
+                  placeholder={isThumbnailMode ? 'Video suchen…' : 'Workspace suchen…'}
+                  className="flex-1 min-w-0 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-muted"
                 />
-                <span className="truncate">{target.name}</span>
-              </button>
-            ))}
+              </div>
+            )}
+
+            <div className="min-h-0 overflow-y-auto">
+              {recentMoveTargets.length > 0 && (
+                <>
+                  <div className="px-2 pt-0.5 pb-1 text-[9px] font-medium uppercase tracking-wider text-text-muted">
+                    Zuletzt benutzt
+                  </div>
+                  {recentMoveTargets.map((target) => (
+                    <button
+                      key={`recent-${target.id}`}
+                      onClick={(e) => handleMove(e, target.id)}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors text-text-secondary hover:bg-surface-4 hover:text-text-primary"
+                    >
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: target.color }} />
+                      <span className="truncate">{target.name}</span>
+                    </button>
+                  ))}
+                  <div className="h-px bg-border-dim my-1 mx-1" />
+                </>
+              )}
+
+              {!trimmedMoveQuery && (
+                <button
+                  onClick={(e) => handleMove(e, undefined)}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
+                    !currentTargetId
+                      ? 'bg-surface-4 text-text-primary font-medium'
+                      : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
+                  )}
+                >
+                  <div className="w-2 h-2 rounded-full bg-text-muted/40 shrink-0" />
+                  {isThumbnailMode ? 'Kein Video' : 'None'}
+                </button>
+              )}
+              {filteredMoveTargets.map((target) => (
+                <button
+                  key={target.id}
+                  onClick={(e) => handleMove(e, target.id)}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-left transition-colors',
+                    currentTargetId === target.id
+                      ? 'bg-surface-4 text-text-primary font-medium'
+                      : 'text-text-secondary hover:bg-surface-4 hover:text-text-primary'
+                  )}
+                >
+                  <div
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: target.color }}
+                  />
+                  <span className="truncate">{target.name}</span>
+                </button>
+              ))}
+              {filteredMoveTargets.length === 0 && (
+                <div className="px-2.5 py-2 text-[11px] text-text-muted text-center">Nichts gefunden</div>
+              )}
+            </div>
           </div>
         )}
 

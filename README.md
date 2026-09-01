@@ -100,24 +100,28 @@ Type your prompt into the floating prompt bar at the bottom. It overlays the gal
   <img src="docs/screenshot-prompt.jpg" width="800" alt="Type a prompt and generate" />
 </p>
 
-The prompt bar gives you full control over your generation:
+The prompt bar keeps the per-generation decisions in view and tucks everything else behind one
+**Tune** panel — and it **collapses to a single summary line** whenever your focus is elsewhere,
+so the gallery gets its height back. Click the line (or the editor) to expand it again.
+
+In the bar:
 
 - **+** button — attach reference images (moves above the text when images are attached)
 - **Model selector** — choose which AI model to use (select multiple to compare)
-- **Aspect ratio** — the ratios the selected model actually supports; a custom ratio is mapped to the closest one each model can produce
-- **Resolution** — the output sizes the selected model offers (hidden for models with a fixed size)
 - **Image count** — generate up to 4 images at once
-- **Quality** — the quality tier of the OpenAI models (only shown for those)
-- **Background** — `auto` / `transparent` / `opaque`, shown only for GPT Image 1.5, the one model
-  with the field. `transparent` returns a PNG with a real alpha channel
-- **Reference fidelity** — GPT Image 1.5's `input_fidelity`; `treu` keeps the reference's detail,
-  `frei` lets the model reinterpret it. Only active with reference images attached
-- **Seed** — lock a seed for reproducible results (hidden for the OpenAI models, which have no seed)
-- **Style preset** — append predefined style suffixes to your prompt
+- **Tune** — every other option, grouped; a badge counts settings that deviate from their defaults
 - **@** button — open your asset collections
-- **Queue** — batch processing queue status
+- **Queue** — appears only while the batch queue actually holds work
 - **Clear** (⊗) — clear the current prompt, attachments, and collection references
-- **⚙** — settings & about
+
+Inside the Tune panel (each control appears only if the selected model supports it):
+
+- **Format** — the ratios the selected model actually supports, plus a live custom `W:H` input
+- **Auflösung / Quality** — output sizes, and the OpenAI models' quality tier
+- **Hintergrund** — `auto` / `transparent` / `opaque` (GPT Image 1.5 only; `transparent` returns a real alpha PNG)
+- **Referenz** — GPT Image 1.5's `input_fidelity` (`Treu` / `Frei`), active with references attached
+- **Stil & Seed** — style presets and a seed for reproducible results (models with a seed only)
+- **Werkzeuge** — Canvas, Generation Queue, Settings
 
 Everything is non-blocking. You can fire off multiple generations and keep prompting while they render.
 
@@ -159,7 +163,7 @@ Select multiple models using the checkboxes, then generate. ImageStudio fires of
 
 ## Aspect Ratios
 
-Click the aspect ratio button to choose from 10 presets — each shown as a visual box so you can immediately see the shape. Need something custom? Use the custom ratio input at the bottom with a live preview. Both fields are required before you can apply.
+Open **Tune → Format** to choose from the presets — each shown as a visual box so you can immediately see the shape. Need something custom? Type into the `W:H` inputs and the ratio applies live.
 
 <p align="center">
   <img src="docs/screenshot-aspectratio.jpg" width="800" alt="Aspect ratio selector with visual previews and custom ratio" />
@@ -244,15 +248,15 @@ No model produces exactly 1920 × 1080: the Gemini endpoints return 2752 × 1536
 Every generation carries a thumbnail ruleset the user never has to retype: format and safe zones, the one-idea rule, faces and emotion, contrast and the 60/30/10 split, text limits, and click psychology. It ships as `system_prompt` on the Gemini models and is prepended to the prompt on GPT Image 2, which has no such field.
 
 - **Style** — `Automatisch` is the default and adds no style instruction at all, leaving the prompt in charge. The three explicit steps are `Clean` (editorial, typography-led, no arrows), `Balanced` (clear emotion, one accent colour) and `MrBeast` (expression at the limit, red arrow, outlined text, hyper-saturation)
-- **Faces true** — with reference images attached, an identity-preservation block is added: facial geometry, skin tone, hairline, glasses stay exactly as in the reference; expression and lighting may change, the identity may not. Faces are rendered large, unobstructed and never covered by text
+- **Faces true** — on by default; with reference images attached, an identity-preservation block is added (toggle lives in the Tune panel): facial geometry, skin tone, hairline, glasses stay exactly as in the reference; expression and lighting may change, the identity may not. Faces are rendered large, unobstructed and never covered by text
 - **Video title** — goes in as context with the explicit rule that any text in the image must not repeat it
-- **Custom meta prompts** — reusable rule blocks you save yourself (e.g. one per channel format), managed and selected right in the controls row. The active one is appended below the built-in system prompt and directly above your own prompt — and wins where the two disagree. The selection persists across restarts
+- **Custom meta prompts** — reusable rule blocks you save yourself (e.g. one per channel format), managed and selected in the Tune panel. The active one is appended below the built-in system prompt and directly above your own prompt — and wins where the two disagree. The selection persists across restarts
 
 Text in the image is not a separate control — write it into the prompt (`Text: "30 TAGE"`) and the rules take care of the rest: 4 words maximum, spelled exactly as given, never across a face, never in the outer 5 %.
 
 ### Projects
 
-A project is a video: a title, optionally an angle, a colour. Thumbnails generated in the mode are filed under the active project automatically, and can be moved later by dragging them onto a project pill or via the card's move menu. Projects are a separate axis from workspaces — they only exist inside thumbnail mode, so eight videos in progress never leak into normal image work. Collections, @-mentions, drag & drop, the queue and export all behave exactly as elsewhere.
+A project is a video: a title, optionally an angle, a colour. The bar shows the active video plus your recently used ones — every other project lives in a searchable switcher panel (⌘P). Thumbnails generated in the mode are filed under the active project automatically, and can be moved later by dragging them onto a pill or switcher row, or via the card's searchable move menu. Projects are a separate axis from workspaces — they only exist inside thumbnail mode, so eight videos in progress never leak into normal image work. Collections, @-mentions, drag & drop, the queue and export all behave exactly as elsewhere.
 
 ### YouTube preview
 
@@ -627,12 +631,14 @@ As your gallery grows, workspaces help you stay organized. Think of them as ligh
 </p>
 
 - **By default, you work without a workspace** — all images are visible
-- Click **+ Workspace** below the title bar to create one
+- The bar shows the **active workspace plus your recently used ones**; everything else lives in a searchable switcher panel (**⌘P** or click the active pill)
+- Type a new name into the switcher's search field to **create** a workspace on the spot; rename and delete live behind the hover icons of each row
 - When a workspace is active, new generations automatically go into it
-- Move existing images between workspaces via the folder icon on hover
+- Move existing images via the folder icon on hover — the move menu is **searchable** and lists your recently used targets first
+- Drag an image onto any pill or switcher row to file it there
 - Switch back to **All** to see everything
 
-Each workspace gets its own color. Images in a workspace show a subtle colored bar at the bottom. Right-click a workspace tab to rename or delete it.
+Each workspace gets its own color. Images in a workspace show a subtle colored bar at the bottom. Thumbnail projects use the exact same switcher, so both organisation layers scale to dozens of entries without horizontal scrolling.
 
 ---
 
@@ -650,6 +656,7 @@ Press **?** anywhere (outside a text input) to see the full shortcuts help overl
 | `@` | Reference images/collections in prompt |
 | `G` | Focus prompt editor |
 | `⌘/Ctrl F` | Focus search bar |
+| `⌘/Ctrl P` | Open the project/workspace switcher |
 | `F` | Toggle favorite (in lightbox) |
 | `E` | Export (in lightbox) |
 | `R` | Reuse prompt (in lightbox) |
@@ -687,11 +694,11 @@ src/
 ├── preload/              # Typed context bridge (window.api)
 └── renderer/src/         # React UI
     ├── components/
-    │   ├── input/        # PromptBar, VideoPromptBar, ControlsRow, selectors, SeedInput, PresetSelector, CostEstimate
+    │   ├── input/        # PromptBar + VideoPromptBar (both collapsible), ControlsRow, TunePanel, selectors, PresetSelector, CostEstimate
     │   ├── gallery/      # Justified layout (row-based masonry), cards, GalleryToolbar, SmartAlbumBar
     │   ├── canvas/       # Canvas editor: modal, workspace, toolbar, layers, color picker, expert mode
     │   ├── chat/         # Image chat modal
-    │   ├── workspace/    # Workspace tabs and management
+    │   ├── workspace/    # WorkspaceBar (shared SwitcherBar)
     │   ├── collections/  # Asset collection manager
     │   ├── presets/      # Style presets dialog
     │   ├── queue/        # Batch queue panel

@@ -95,6 +95,20 @@ body {
 
 .drop-active { animation: dropPulse 1.2s ease-in-out infinite; }
 
+/* === Prompt bar collapse ===
+   The bar's two faces (summary row / full content) each sit in a one-row grid
+   whose track animates between 0fr and 1fr — height morphs without measuring,
+   and the editor never unmounts. Overflow is managed in the component: it may
+   only clip during the animation, popovers escape the card upwards. */
+.collapse-seg {
+  display: grid;
+  transition: grid-template-rows 0.32s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+}
+.collapse-seg > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* === Prompt editor === */
 .prompt-editor { word-wrap: break-word; white-space: pre-wrap; }
 .prompt-editor:empty::before {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { ImageGallery } from '../gallery/ImageGallery'
 import { PromptBar } from '../input/PromptBar'
 import { VideoPromptBar } from '../input/VideoPromptBar'
@@ -168,8 +168,27 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
     return Array.from(tags)
   }, [allImages])
 
+  // The prompt bar floats over the gallery with a height that changes with
+  // attachments and a growing prompt (and collapses entirely) — measure it and
+  // hand the height to the gallery as a CSS variable, so the last row can
+  // always scroll fully clear of the bar.
+  const mainRef = useRef<HTMLElement>(null)
+  const promptBarRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const bar = promptBarRef.current
+    const main = mainRef.current
+    if (!bar || !main) return
+    const observer = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height ?? 160
+      main.style.setProperty('--prompt-bar-h', `${Math.round(h)}px`)
+    })
+    observer.observe(bar)
+    return () => observer.disconnect()
+  }, [mode])
+
   return (
-    <main className="flex-1 flex flex-col min-w-0 h-full relative">
+    <main ref={mainRef} className="flex-1 flex flex-col min-w-0 h-full relative">
       {/* Ambient background orbs */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
         <div className="ambient-orb absolute w-[500px] h-[500px] rounded-full blur-[120px] opacity-[0.035] bg-purple-500 -top-40 -right-40" />
@@ -346,7 +365,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
       )}
 
       <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-gradient-to-t from-surface-0 via-surface-0/80 to-transparent pt-12">
-        <div className="pointer-events-auto">
+        <div ref={promptBarRef} className="pointer-events-auto">
           {mode === 'video' ? (
             <VideoPromptBar
               onSettingsClick={onSettingsClick}

@@ -122,14 +122,18 @@ export function useMentionEditor() {
     (collection: AssetCollection) => {
       const range = consumeMentionQuery()
       if (!range) return
-      const cRef: CollectionRef = {
+      // Mentioning an already-attached collection reuses its ref — the chip
+      // points at the same id, so the images upload once however often the
+      // prompt refers to them, and the ref only dies with its last chip.
+      const existing = collectionRefs.find((r) => r.collectionId === collection.id)
+      const cRef: CollectionRef = existing ?? {
         id: crypto.randomUUID(),
         collectionId: collection.id,
         name: collection.name,
         thumbnail: collection.images[0] || '',
         images: collection.images,
       }
-      setCollectionRefs((prev) => [...prev, cRef])
+      if (!existing) setCollectionRefs((prev) => [...prev, cRef])
       const chip = document.createElement('span')
       chip.contentEditable = 'false'
       chip.dataset.collectionRefId = cRef.id
@@ -138,7 +142,7 @@ export function useMentionEditor() {
       chip.innerHTML = `${collectionChipThumbnail(cRef.thumbnail)}<span class="align-middle">@${collection.name}</span>`
       placeChip(range, chip)
     },
-    [consumeMentionQuery, placeChip]
+    [consumeMentionQuery, placeChip, collectionRefs]
   )
 
   // ── Prompt text extraction ────────────────────────────────────────
@@ -202,7 +206,12 @@ export function useMentionEditor() {
       labeledAttachments.push({ label: ref.name, images: [ref.base64] })
     }
 
+    // Belt and braces: a second ref to the same collection must never double
+    // the upload, wherever it came from.
+    const seenCollections = new Set<string>()
     for (const cRef of collectionRefs) {
+      if (seenCollections.has(cRef.collectionId)) continue
+      seenCollections.add(cRef.collectionId)
       const images = await collectionImagesAsBase64(cRef.images)
       attachments.push(...images)
       labeledAttachments.push({

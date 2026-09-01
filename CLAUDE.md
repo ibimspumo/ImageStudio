@@ -23,16 +23,16 @@ npx electron-vite build    # Build check only (no Electron)
 - `src/main/` — Electron main process (IPC, API, files)
 - `src/preload/` — Typed context bridge (`window.api`)
 - `src/renderer/src/` — React UI
-  - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop, thumbnail-projects, thumbnail-meta-prompts (all with debounced persistence via `lib/debounce.ts`)
+  - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop, thumbnail-projects, thumbnail-meta-prompts, ui-recents (recently used projects/workspaces for switcher pills and move menu; all with debounced persistence via `lib/debounce.ts`)
   - `hooks/` — useImageGeneration, useVideoGeneration (fal.ai), useChatGeneration, useMentionEditor (the contenteditable prompt editor with @-mentions, shared by PromptBar and ChatView), useImageRefs (shared image attachment logic), useJustifiedLayout (row-based masonry)
   - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, getModelName, getVideoModelName, ImageRef, LabeledAttachment
-  - `components/input/` — PromptBar (orchestrator), VideoPromptBar (video mode, no @mentions), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (model/aspect/resolution/count/buttons), CostEstimate (live per-request price), ModelSelector, VideoModelSelector, AspectRatioSelector, ResolutionSelector, DurationSelector, ImageCountSelector, BackgroundSelector + InputFidelityToggle (GPT Image 1.5 only, shared with logo mode)
-  - `components/gallery/` — Justified layout (row-based masonry, left-to-right fill), GalleryCard with hover actions (save, copy, chat, move-to-workspace), video hover preview
-  - `components/chat/` — ChatView (iterative editing; inherits the source image's model/aspect ratio/resolution, supports @-mentions and collections via `useMentionEditor`)
-  - `components/workspace/` — WorkspaceBar (pill tabs, create, rename, delete, filter gallery)
-  - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog, UpdateSection, SpendIndicator (running cost total in the TitleBar)
-  - `components/thumbnail/` — ProjectBar (video pills, drop target), ThumbnailControls (model, style, meta prompt, face fidelity, count), StyleSelector (auto/clean/balanced/bold), MetaPromptSelector (saved custom meta prompts, CRUD in the popup), ThumbnailFrame (16:9 + safe-zone/legibility overlays), ThumbnailPreviewModal (YouTube surfaces, size ladder, 1920×1080 export)
-  - `components/logo/` — LogoControls (model, logo type, size, background, fidelity, quality, count), LogoStyleSelector, LogoSizeSelector (the three fixed pixel sizes)
+  - `components/input/` — PromptBar (orchestrator; **collapses** to a one-line summary row when focus is elsewhere, expands on click — the editor stays mounted behind an animated 0fr grid row because its text lives in the DOM), VideoPromptBar (same shell: prompt card, model · duration · Tune panel, collapse — no @mentions, one start frame), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (slim bar: model · count · **Tune panel** · @ · Generate), TunePanel (TuneMenu/TuneGroup/TuneOption/TuneRow/TuneRatioOptions/RatioBox — the one door to all secondary options in every mode, image/thumbnail/logo/video/chat alike; the badge counts non-default settings), CostEstimate (live per-request price), ModelSelector, VideoModelSelector, ImageCountSelector, PresetSelector (lives inside the Tune panel; active preset comes from `presets-store`), AspectRatioSelector/ResolutionSelector/QualitySelector (only used by the canvas panels now), DurationSelector. Background/fidelity/seed/audio/camera are Tune-panel chips, not standalone components
+  - `components/gallery/` — Justified layout (row-based masonry, left-to-right fill; bottom padding follows the measured prompt-bar height via `--prompt-bar-h`, set by a ResizeObserver in MainContent, so the last row always scrolls clear of the bar), GalleryCard with hover actions (save, copy, chat, move-to-workspace — the move menu is searchable with a "Zuletzt benutzt" section from `ui-recents-store` once there are >5 targets), video hover preview
+  - `components/chat/` — ChatView (iterative editing; inherits the source image's model/aspect ratio/resolution, supports @-mentions and collections via `useMentionEditor`; controls follow the unified pattern — model pill + Tune panel whose badge counts deviations from the inherited format)
+  - `components/workspace/` — WorkspaceBar (thin wrapper over the shared SwitcherBar)
+  - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog, UpdateSection, SpendIndicator (running cost total in the TitleBar), SwitcherBar (the project/workspace switcher: active entry + recents as pills, searchable panel behind ⌘P with keyboard nav, inline rename/delete, create-from-query; pills and panel rows stay drop targets for gallery drags — used by both ProjectBar and WorkspaceBar)
+  - `components/thumbnail/` — ProjectBar (thin wrapper over the shared SwitcherBar, drop targets included), ThumbnailControls (slim bar: model · count · Tune panel with style chips, meta prompt, face-fidelity toggle), MetaPromptSelector (saved custom meta prompts, CRUD in the popup — lives inside the Tune panel), ThumbnailFrame (16:9 + safe-zone/legibility overlays), ThumbnailPreviewModal (YouTube surfaces, size ladder, 1920×1080 export)
+  - `components/logo/` — LogoControls (slim bar: model · count · Tune panel with logo type, the three fixed pixel sizes, background, fidelity, quality)
   - `components/collections/` — Asset collection CRUD
   - `lib/image-utils.ts` — compressImage, createZoomOutCanvas, createAspectRatioCanvas, collectionImagesAsBase64, renderYouTubeThumbnail (exact 1920×1080 cover-crop)
   - `lib/anti-detection.ts` — `prepareForStorage()` / `scrubGeneratedImage()` / `reencodePreservingAlpha()` / `neutralImageName()`, see **Anti-Detection** below
@@ -81,6 +81,11 @@ and in a chat. Two things to keep in mind when touching it:
   editor's `innerHTML` directly (the reuse-prompt path) fires no input event — call `syncPromptText()`.
 - Chip removal has no event of its own; `handleEditorInput` reconciles `collectionRefs` against the
   chips actually present in the DOM.
+- Mentioning the same collection twice reuses the existing `CollectionRef` — both chips carry the
+  same `data-collection-ref-id`, the images upload once, and the ref only dies with its last chip.
+  `buildAttachments()` additionally dedupes by `collectionId` as a safety net, and the reuse-prompt
+  path in PromptBar keeps a per-run map for the same reason. Never create a second ref for a
+  collection that is already attached.
 
 ### References and @-mentions
 fal.ai takes a flat `image_urls` array plus one prompt string — there is no way to interleave labels
@@ -183,7 +188,7 @@ VALID_SETTINGS_KEYS, loadSettings) and `types/settings.ts` + `settings-store.ts`
 
 ### Video Models (fal.ai)
 Defined in `types/api.ts` as `AVAILABLE_VIDEO_MODELS`. Default: `fal-ai/bytedance/seedance/v1.5/pro/image-to-video` (Seedance 1.5 Pro).
-All image-to-video only (require start frame). VideoPromptBar uses single model select (no @mentions/collections — not supported by video API). `useVideoGeneration` fires via fal.ai queue API, stores estimated cost on completion.
+All image-to-video only (require start frame). VideoPromptBar uses single model select (no @mentions/collections — not supported by video API) and mirrors the image bar: prompt card, slim controls with a Tune panel (resolution, ratio, audio, camera lock), collapse to a summary row, cost in the hint row. `useVideoGeneration` fires via fal.ai queue API, stores estimated cost on completion.
 Models: Kling v3 Standard, Kling v3 Pro, Seedance 1.5 Pro. Kling v3 Pro is the only model in the app that supports a negative prompt.
 Videos saved as MP4 in `{userData}/ImageStudio/videos/`. Gallery shows both images and videos (filterable). Videos auto-play on hover in grid view. Video export uses direct file copy (no Canvas conversion).
 

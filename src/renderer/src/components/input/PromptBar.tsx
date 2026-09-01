@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Send } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useMentionEditor, collectionChipThumbnail } from '../../hooks/useMentionEditor'
 import { useSettingsStore } from '../../stores/settings-store'
@@ -18,6 +18,7 @@ import {
   DEFAULT_THUMBNAIL_MODEL,
   DEFAULT_LOGO_MODEL,
   getCombinedCapabilities,
+  getModelName,
   normalizeModelId,
   isThumbnailModel,
   isLogoModel,
@@ -115,11 +116,9 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     logoMode ? LOGO_BACKGROUND : 'auto'
   )
   const [inputFidelity, setInputFidelity] = useState<FalInputFidelity>('high')
-  const [faceFidelity, setFaceFidelity] = useState(true)
   const [isDragOver, setIsDragOver] = useState(false)
   const [quality, setQuality] = useState<GptImageQuality>('high')
   const [seed, setSeed] = useState<number | undefined>(undefined)
-  const [activePresetId, setActivePresetId] = useState<string | null>(null)
 
   const {
     editorRef,
@@ -148,10 +147,51 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
 
   const dragCountRef = useRef(0)
 
+  // ── Collapse ──────────────────────────────────────────────────────
+  // The bar shrinks to a single summary row when the focus is elsewhere and
+  // expands on click — the gallery gets its height back between prompts. The
+  // editor stays mounted throughout (its text lives in the DOM), only hidden
+  // behind an animated 0fr grid row.
+  const [expanded, setExpanded] = useState(true)
+  const cardWrapRef = useRef<HTMLDivElement>(null)
+
+  const expandAndFocus = useCallback(() => {
+    setExpanded(true)
+    requestAnimationFrame(() => editorRef.current?.focus())
+  }, [editorRef])
+
+  useEffect(() => {
+    if (inpaintContext || canvasContext) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (!cardWrapRef.current) return
+      if (!cardWrapRef.current.contains(e.target as Node)) setExpanded(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [inpaintContext, canvasContext])
+
+  // Popovers escape the card upwards — the content wrapper may only clip
+  // while the collapse animation runs, never in the resting expanded state.
+  const [contentOverflow, setContentOverflow] = useState<'hidden' | 'visible'>('visible')
+  const collapsedNow = !expanded && !inpaintContext && !canvasContext && !isDragOver
+  useEffect(() => {
+    if (collapsedNow) {
+      setContentOverflow('hidden')
+      return
+    }
+    // transitionend restores this sooner; the timer covers reduced motion,
+    // where the transition (and its event) never happens.
+    const t = setTimeout(() => setContentOverflow('visible'), 400)
+    return () => clearTimeout(t)
+  }, [collapsedNow])
+
   const { generate } = useImageGeneration()
   const falApiKey = useSettingsStore((s) => s.falApiKey)
   const hydrated = useSettingsStore((s) => s.hydrated)
   const presets = usePresetsStore((s) => s.presets)
+  // The active preset lives in its store — the selector writes it there, and
+  // reading it here is what actually applies the suffix on submit.
+  const activePresetId = usePresetsStore((s) => s.activePresetId)
   const activeProjectId = useThumbnailProjectsStore((s) => s.activeProjectId)
   const projects = useThumbnailProjectsStore((s) => s.projects)
   const activeProject = thumbnailMode && activeProjectId
@@ -199,6 +239,9 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         let html = ''
         let lastIndex = 0
         const allMentionRegex = /\[@([^\]]+)\]|\[([^@\]][^\]]*)\]/g
+        // A collection mentioned twice in the reused prompt still gets ONE ref
+        // \u2014 both chips point at it, mirroring the live editor's dedupe.
+        const reusedRefs = new Map<string, CollectionRef>()
 
         while ((match = allMentionRegex.exec(reuse.prompt)) !== null) {
           const textBefore = reuse.prompt.substring(lastIndex, match.index)
@@ -207,14 +250,18 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           if (match[1]) {
             const col = collections.find((c) => c.name === match![1])
             if (col) {
-              const cRef: CollectionRef = {
-                id: crypto.randomUUID(),
-                collectionId: col.id,
-                name: col.name,
-                thumbnail: col.images[0] || '',
-                images: col.images,
+              let cRef = reusedRefs.get(col.id)
+              if (!cRef) {
+                cRef = {
+                  id: crypto.randomUUID(),
+                  collectionId: col.id,
+                  name: col.name,
+                  thumbnail: col.images[0] || '',
+                  images: col.images,
+                }
+                reusedRefs.set(col.id, cRef)
+                setCollectionRefs((prev) => [...prev, cRef!])
               }
-              setCollectionRefs((prev) => [...prev, cRef])
               html += `<span contenteditable="false" data-collection-ref-id="${cRef.id}" class="inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none">${collectionChipThumbnail(cRef.thumbnail)}<span class="align-middle">@${col.name}</span></span>\u00A0`
             } else {
               html += match[0]
@@ -250,7 +297,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           for (const fp of individualPaths) {
             try {
               const result = await window.api.readImage(fp)
-              if (result.success) {
+              if (result.success && result.base64DataUrl) {
                 const compressed = await compressImage(result.base64DataUrl)
                 addImageRef(compressed)
               }
@@ -353,7 +400,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     const thumbnailSystemPrompt = thumbnailMode
       ? buildThumbnailSystemPrompt({
           style: thumbnailStyle,
-          faceFidelity: faceFidelity && hasRefs,
+          // Rides along automatically — identity preservation whenever references exist.
+          faceFidelity: hasRefs,
           videoTitle: project?.title,
           videoAngle: project?.angle,
           customMetaPrompt: useThumbnailMetaPromptsStore.getState().getActiveText(),
@@ -387,7 +435,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       imageSize: thumbnailMode ? { ...THUMBNAIL_GPT_IMAGE_SIZE } : undefined,
       projectId: thumbnailMode ? (project?.id ?? undefined) : undefined,
       thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined,
-      faceFidelity: thumbnailMode ? faceFidelity && hasRefs : undefined,
+      faceFidelity: thumbnailMode ? hasRefs : undefined,
       background,
       // Transparency only survives in a format that has an alpha channel.
       outputFormat: logoMode || background === 'transparent' ? LOGO_OUTPUT_FORMAT : undefined,
@@ -405,7 +453,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     if (canvasContext) {
       canvasContext.onClose()
     }
-  }, [getPromptText, falApiKey, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, inpaintContext, canvasContext, thumbnailMode, thumbnailStyle, faceFidelity, logoMode, logoStyle, background, inputFidelity])
+  }, [getPromptText, falApiKey, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, inpaintContext, canvasContext, thumbnailMode, thumbnailStyle, logoMode, logoStyle, background, inputFidelity])
 
   // ── Editor keyboard handling ──────────────────────────────────────
 
@@ -469,14 +517,39 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   const isCanvasMode = !!canvasContext
   const isEmbeddedMode = isInpaintMode || isCanvasMode
 
+  // Embedded modes (inpaint, canvas) live in a modal and never collapse; a
+  // drag keeps the bar open so the drop targets stay visible.
+  const showExpanded = expanded || isEmbeddedMode || isDragOver
+
+  const editorPlaceholder = isInpaintMode
+    ? 'Describe what should appear in the masked area...'
+    : isCanvasMode
+      ? 'Describe what to generate from your sketch...'
+      : thumbnailMode
+        ? 'Die eine Idee: Motiv, Emotion, Situation…'
+        : logoMode
+          ? 'Die Marke und die eine Form: „Kaffeerösterei, Bohne als Sonne…"'
+          : 'Describe your image...'
+
+  const collapsedSummary = [
+    selectedModels.length > 1 ? `${selectedModels.length} Models` : getModelName(selectedModels[0]),
+    thumbnailMode ? '16:9' : logoMode ? null : resolvedRatio,
+    `${imageCount}×`,
+    totalRefImages > 0 ? `${totalRefImages} Ref${totalRefImages === 1 ? '' : 's'}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   return (
     <div className={cn("shrink-0 flex flex-col items-center", isEmbeddedMode ? "px-6 pb-4 pt-3" : "px-6 pb-6 pt-3")}>
-      <div className="w-full max-w-[800px] relative">
+      <div ref={cardWrapRef} className="w-full max-w-[800px] relative">
         <div
           className={cn(
             'prompt-card grain relative border rounded-2xl transition-all',
-            isDragOver ? 'border-accent-main/60 glow-accent-strong' : 'border-border-base'
+            isDragOver ? 'border-accent-main/60 glow-accent-strong' : 'border-border-base',
+            !showExpanded && 'cursor-text hover:border-border-bright'
           )}
+          onClick={!showExpanded ? expandAndFocus : undefined}
           onDragOver={handleDragOver}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
@@ -494,6 +567,60 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
               </div>
             </div>
           )}
+
+          {/* Collapsed summary row — crossfades with the full content below. */}
+          {!isEmbeddedMode && (
+            <div
+              className="collapse-seg"
+              style={{ gridTemplateRows: showExpanded ? '0fr' : '1fr', opacity: showExpanded ? 0 : 1 }}
+              aria-hidden={showExpanded}
+            >
+              <div>
+                <div className="flex items-center gap-3 pl-4 pr-2.5 h-[52px]">
+                  <span
+                    className={cn(
+                      'flex-1 min-w-0 truncate text-[13.5px]',
+                      promptText ? 'text-text-primary' : 'text-text-muted'
+                    )}
+                  >
+                    {promptText || editorPlaceholder}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-text-muted whitespace-nowrap">
+                    {collapsedSummary}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleSubmit()
+                    }}
+                    disabled={!canSend}
+                    tabIndex={showExpanded ? -1 : 0}
+                    className={cn(
+                      'no-drag btn-interactive shrink-0 w-8 h-8 rounded-[10px] flex items-center justify-center transition-all',
+                      canSend
+                        ? 'bg-accent-main hover:bg-accent-bright text-white glow-accent'
+                        : 'bg-surface-3 text-text-muted cursor-not-allowed'
+                    )}
+                    title="Generate"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Full content — stays mounted while collapsed (the editor's text
+              lives in the DOM), hidden behind an animated 0fr grid row. */}
+          <div
+            className="collapse-seg"
+            style={{ gridTemplateRows: showExpanded ? '1fr' : '0fr', opacity: showExpanded ? 1 : 0 }}
+            aria-hidden={!showExpanded}
+            onTransitionEnd={() => {
+              if (showExpanded) setContentOverflow('visible')
+            }}
+          >
+            <div style={{ overflow: contentOverflow }}>
 
           {/* What comes out of here, stated once so the format is never a surprise. */}
           {logoMode && (
@@ -564,7 +691,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
               suppressContentEditableWarning
               onInput={handleEditorInput}
               onKeyDown={handleEditorKeyDown}
-              data-placeholder={isInpaintMode ? "Describe what should appear in the masked area..." : isCanvasMode ? "Describe what to generate from your sketch..." : thumbnailMode ? "Die eine Idee: Motiv, Emotion, Situation…" : logoMode ? "Die Marke und die eine Form: „Kaffeerösterei, Bohne als Sonne…\"" : "Describe your image..."}
+              data-placeholder={editorPlaceholder}
               className="prompt-editor flex-1 min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none pt-1"
             />
           </div>
@@ -614,9 +741,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
               onModelsChange={setSelectedModels}
               style={thumbnailStyle}
               onStyleChange={setThumbnailStyle}
-              faceFidelity={faceFidelity}
-              onFaceFidelityChange={setFaceFidelity}
-              hasReferences={imageRefs.length > 0 || collectionRefs.length > 0}
               imageCount={imageCount}
               onImageCountChange={setImageCount}
               canSend={canSend}
@@ -659,11 +783,18 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
             onCanvasClick={isEmbeddedMode ? undefined : onCanvasClick}
           />
           )}
+            </div>
+          </div>
         </div>
 
-        {/* Hint - only show when not in embedded mode */}
+        {/* Hint - only show when not in embedded mode; fades out with the bar */}
         {!isEmbeddedMode && (
-          <div className="flex justify-center mt-2.5">
+          <div
+            className={cn(
+              'flex justify-center mt-2.5 transition-opacity duration-200',
+              !showExpanded && 'opacity-0 pointer-events-none'
+            )}
+          >
             <p className="text-[11px] text-text-muted/70">
               {hydrated && !falApiKey ? (
                 <button onClick={onSettingsClick} className="text-danger/80 hover:text-danger transition-colors cursor-pointer">

@@ -1,14 +1,11 @@
-import { Send, XCircle, Settings, Palette } from 'lucide-react'
-import { AspectRatioSelector } from './AspectRatioSelector'
-import { ResolutionSelector } from './ResolutionSelector'
+import { Send, XCircle, Settings, Brush, ListOrdered, Dices } from 'lucide-react'
 import { ImageCountSelector } from './ImageCountSelector'
-import { QualitySelector } from './QualitySelector'
-import { BackgroundSelector } from './BackgroundSelector'
-import { InputFidelityToggle } from './InputFidelityToggle'
 import { ModelSelector } from './ModelSelector'
-import { SeedInput } from './SeedInput'
 import { PresetSelector } from './PresetSelector'
+import { TuneMenu, TuneGroup, TuneOption, TuneRow, TuneRatioOptions } from './TunePanel'
 import { QueueButton } from '../queue/QueueButton'
+import { useQueueStore } from '../../stores/queue-store'
+import { usePresetsStore } from '../../stores/presets-store'
 import { getCombinedCapabilities } from '../../types/api'
 import type {
   AspectRatio,
@@ -51,6 +48,12 @@ interface ControlsRowProps {
   onCanvasClick?: () => void
 }
 
+const BACKGROUND_OPTIONS: { id: FalBackground; label: string; hint: string }[] = [
+  { id: 'auto', label: 'Auto', hint: 'Das Modell entscheidet' },
+  { id: 'transparent', label: 'Transparent', hint: 'PNG mit echtem Alphakanal' },
+  { id: 'opaque', label: 'Deckend', hint: 'Immer ein gefüllter Hintergrund' },
+]
+
 export function ControlsRow({
   selectedModels,
   onModelsChange,
@@ -83,71 +86,159 @@ export function ControlsRow({
 }: ControlsRowProps) {
   // Every control below reflects what the selected model(s) actually accept.
   const caps = getCombinedCapabilities(selectedModels)
+  const activePresetId = usePresetsStore((s) => s.activePresetId)
+  const queuePending = useQueueStore(
+    (s) => s.items.filter((i) => i.status === 'pending' || i.status === 'active').length
+  )
+
+  // The badge counts everything in the panel that deviates from its default —
+  // the bar stays readable without opening the panel.
+  const tuneBadge = [
+    aspectRatio !== '1:1',
+    resolution !== '2K' && caps.resolutions.length > 0,
+    !!caps.qualities && quality !== 'high',
+    caps.supportsBackground && background !== 'auto',
+    caps.supportsInputFidelity && !!hasReferences && inputFidelity !== 'high',
+    caps.supportsSeed && seed != null,
+    !!activePresetId,
+  ].filter(Boolean).length
 
   return (
     <div className="flex flex-wrap items-center gap-x-1 gap-y-2 px-4 py-3">
       <ModelSelector selectedModels={selectedModels} onChange={onModelsChange} />
+
       <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
-      <AspectRatioSelector
-        value={aspectRatio}
-        onChange={onAspectRatioChange}
-        customRatio={customRatio}
-        onCustomRatioChange={onCustomRatioChange}
-        available={caps.aspectRatios}
-      />
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
-      <ResolutionSelector
-        value={resolution}
-        onChange={onResolutionChange}
-        available={caps.resolutions}
-        notes={caps.notes}
-      />
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
+
       <ImageCountSelector value={imageCount} onChange={onImageCountChange} max={caps.maxImagesPerRequest} />
 
-      {/* Quality only exists on GPT Image 2 */}
-      {caps.qualities && onQualityChange && (
-        <>
-          <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
-          <QualitySelector
-            value={quality ?? 'high'}
-            onChange={onQualityChange}
-            available={caps.qualities}
-          />
-        </>
-      )}
+      <TuneMenu badge={tuneBadge} width={360}>
+        {(close) => (
+          <>
+            <TuneGroup label="Format">
+              <TuneRatioOptions
+                ratios={caps.aspectRatios}
+                value={aspectRatio}
+                onChange={(r) => onAspectRatioChange(r as AspectRatio)}
+                customRatio={customRatio}
+                onCustomRatioChange={onCustomRatioChange}
+              />
+            </TuneGroup>
 
-      {/* Background: the transparency field, GPT Image 1.5 only */}
-      {caps.supportsBackground && onBackgroundChange && (
-        <>
-          <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
-          <BackgroundSelector value={background ?? 'auto'} onChange={onBackgroundChange} />
-        </>
-      )}
+            <TuneGroup label="Auflösung">
+              {caps.resolutions.length === 0 ? (
+                <TuneOption disabled title={caps.notes?.join('\n') || 'Dieses Modell hat eine feste Ausgabegröße'}>
+                  1K · fixiert
+                </TuneOption>
+              ) : (
+                caps.resolutions.map((res) => (
+                  <TuneOption
+                    key={res}
+                    selected={resolution === res}
+                    onClick={() => onResolutionChange(res as Resolution)}
+                  >
+                    {res}
+                  </TuneOption>
+                ))
+              )}
+              {caps.qualities && onQualityChange && (
+                <>
+                  <div className="w-px h-4 bg-border-dim mx-1 shrink-0" />
+                  {caps.qualities.map((q) => (
+                    <TuneOption
+                      key={q}
+                      selected={quality === q}
+                      onClick={() => onQualityChange(q)}
+                      title="Quality-Stufe — beeinflusst den Preis"
+                    >
+                      <span className="capitalize">{q}</span>
+                    </TuneOption>
+                  ))}
+                </>
+              )}
+            </TuneGroup>
 
-      {/* input_fidelity: GPT Image 1.5 edit only */}
-      {caps.supportsInputFidelity && onInputFidelityChange && (
-        <>
-          <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
-          <InputFidelityToggle
-            value={inputFidelity ?? 'high'}
-            onChange={onInputFidelityChange}
-            hasReferences={!!hasReferences}
-          />
-        </>
-      )}
+            {caps.supportsBackground && onBackgroundChange && (
+              <TuneGroup label="Hintergrund">
+                {BACKGROUND_OPTIONS.map((opt) => (
+                  <TuneOption
+                    key={opt.id}
+                    selected={background === opt.id}
+                    onClick={() => onBackgroundChange(opt.id)}
+                    title={opt.hint}
+                  >
+                    {opt.label}
+                  </TuneOption>
+                ))}
+              </TuneGroup>
+            )}
 
-      {/* Seed: GPT Image 2 has no seed parameter */}
-      {onSeedChange && caps.supportsSeed && (
-        <>
-          <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
-          <SeedInput seed={seed} onChange={onSeedChange} />
-        </>
-      )}
+            {caps.supportsInputFidelity && onInputFidelityChange && (
+              <TuneGroup label="Referenz">
+                <TuneOption
+                  selected={inputFidelity === 'high'}
+                  disabled={!hasReferences}
+                  onClick={() => onInputFidelityChange('high')}
+                  title={hasReferences ? 'Referenz wird detailgetreu übernommen' : 'Erst Referenzbilder anhängen'}
+                >
+                  Treu
+                </TuneOption>
+                <TuneOption
+                  selected={inputFidelity === 'low'}
+                  disabled={!hasReferences}
+                  onClick={() => onInputFidelityChange('low')}
+                  title={hasReferences ? 'Modell interpretiert die Referenz frei' : 'Erst Referenzbilder anhängen'}
+                >
+                  Frei
+                </TuneOption>
+              </TuneGroup>
+            )}
 
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
+            {(
+              <TuneGroup label="Stil & Seed">
+                <PresetSelector onManageClick={onPresetsManage} />
+                {caps.supportsSeed && onSeedChange && (
+                  <div className="flex items-center gap-1 h-7 px-2 rounded-lg bg-surface-4/60 border border-border-base">
+                    <Dices className={cn('w-3.5 h-3.5 shrink-0', seed != null ? 'text-accent-main' : 'text-text-muted')} />
+                    <input
+                      type="number"
+                      value={seed ?? ''}
+                      onChange={(e) => onSeedChange(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+                      placeholder="Seed"
+                      className="w-16 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-muted [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                  </div>
+                )}
+              </TuneGroup>
+            )}
 
-      <PresetSelector onManageClick={onPresetsManage} />
+            {(onCanvasClick || onQueueClick || onSettingsClick) && (
+              <TuneGroup label="Werkzeuge">
+                <div className="flex flex-col w-full -mx-0.5">
+                  {onCanvasClick && (
+                    <TuneRow icon={<Brush className="w-3.5 h-3.5" />} onClick={() => { onCanvasClick(); close() }}>
+                      Canvas — Skizze zeichnen
+                    </TuneRow>
+                  )}
+                  {onQueueClick && (
+                    <TuneRow
+                      icon={<ListOrdered className="w-3.5 h-3.5" />}
+                      onClick={() => { onQueueClick(); close() }}
+                      trailing={queuePending > 0 ? <span className="text-[10px] tabular-nums text-accent-main">{queuePending}</span> : undefined}
+                    >
+                      Generation Queue
+                    </TuneRow>
+                  )}
+                  {onSettingsClick && (
+                    <TuneRow icon={<Settings className="w-3.5 h-3.5" />} onClick={() => { onSettingsClick(); close() }}>
+                      Settings
+                    </TuneRow>
+                  )}
+                </div>
+              </TuneGroup>
+            )}
+          </>
+        )}
+      </TuneMenu>
 
       {onCollectionsClick && (
         <button
@@ -158,26 +249,9 @@ export function ControlsRow({
           @
         </button>
       )}
-      {onCanvasClick && (
-        <button
-          onClick={onCanvasClick}
-          className="no-drag shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
-          title="Canvas — sketch to generate"
-        >
-          <Palette className="w-3.5 h-3.5" />
-        </button>
-      )}
-      {onSettingsClick && (
-        <button
-          onClick={onSettingsClick}
-          className="no-drag shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all"
-          title="Settings"
-        >
-          <Settings className="w-3.5 h-3.5" />
-        </button>
-      )}
 
-      {onQueueClick && <QueueButton onClick={onQueueClick} />}
+      {/* The queue surfaces in the bar only while it actually holds work. */}
+      {onQueueClick && queuePending > 0 && <QueueButton onClick={onQueueClick} />}
 
       <div className="flex items-center gap-1 ml-auto shrink-0">
         {hasContent && (
