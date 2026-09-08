@@ -129,12 +129,6 @@ export interface ImageModelOption {
   supportsBackground: boolean
   /** `input_fidelity` — GPT Image 1.5 edit only. */
   supportsInputFidelity: boolean
-  /**
-   * Field name of the inpaint mask, or null when the model has none. The two
-   * OpenAI endpoints disagree: GPT Image 2 takes `mask_url`, GPT Image 1.5
-   * takes `mask_image_url`.
-   */
-  maskField: 'mask_url' | 'mask_image_url' | null
   defaultAspectRatio: FalAspectRatio | null
   defaultResolution: FalResolution | null
   defaultQuality: GptImageQuality | null
@@ -195,7 +189,6 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     supportsNegativePrompt: false,
     supportsBackground: false,
     supportsInputFidelity: false,
-    maskField: 'mask_url',
     defaultAspectRatio: null,
     defaultResolution: null,
     defaultQuality: 'high',
@@ -244,7 +237,6 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     // The one model in the registry that can return a real alpha channel.
     supportsBackground: true,
     supportsInputFidelity: true,
-    maskField: 'mask_image_url',
     defaultAspectRatio: null,
     defaultResolution: null,
     defaultQuality: 'high',
@@ -286,7 +278,6 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     supportsNegativePrompt: false,
     supportsBackground: false,
     supportsInputFidelity: false,
-    maskField: null,
     defaultAspectRatio: '1:1',
     defaultResolution: '2K',
     defaultQuality: null,
@@ -322,7 +313,6 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     supportsNegativePrompt: false,
     supportsBackground: false,
     supportsInputFidelity: false,
-    maskField: null,
     defaultAspectRatio: '1:1',
     defaultResolution: null,
     defaultQuality: null,
@@ -359,7 +349,6 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
     supportsNegativePrompt: false,
     supportsBackground: false,
     supportsInputFidelity: false,
-    maskField: null,
     defaultAspectRatio: '1:1',
     defaultResolution: '2K',
     defaultQuality: null,

@@ -1,3 +1,5 @@
+import { ComposerPopover } from './ComposerPopover'
+import { useDismissOnEscape } from './useDismissOnEscape'
 import { useState } from 'react'
 import { Cpu, Check, Layers } from 'lucide-react'
 import { AVAILABLE_MODELS, getModelName, type ImageModelOption } from '../../types/api'
@@ -14,6 +16,7 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ selectedModels, onChange, compact, available, single }: ModelSelectorProps) {
   const [open, setOpen] = useState(false)
+  useDismissOnEscape(open, () => setOpen(false))
   const models = available ?? AVAILABLE_MODELS
 
   const toggleModel = (modelId: string) => {
@@ -33,21 +36,23 @@ export function ModelSelector({ selectedModels, onChange, compact, available, si
   return (
     <div className="relative shrink-0">
       <button
+        aria-label="Bildmodell auswählen"
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
         className={cn(
-          'no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium',
+          'no-drag flex items-center gap-1.5 h-9 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium',
           multiCount > 1 && 'border-accent-main/30 text-accent-main'
         )}
       >
         {multiCount > 1 ? (
           <>
             <Layers className="w-3.5 h-3.5" />
-            <span>{multiCount} Models</span>
+            <span>{multiCount} Modelle</span>
           </>
         ) : (
           <>
             <Cpu className="w-3.5 h-3.5" />
-            {!compact && <span className="max-w-[100px] truncate">{getModelName(primaryModel)}</span>}
+            {!compact && <span className="max-w-[200px] truncate">{getModelName(primaryModel)}</span>}
             {compact && <span className="max-w-[80px] truncate">{getModelName(primaryModel)}</span>}
           </>
         )}
@@ -55,11 +60,11 @@ export function ModelSelector({ selectedModels, onChange, compact, available, si
 
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-2 z-30 animate-scale-in min-w-[240px]">
+          <div className="fixed inset-0 z-[79]" onClick={() => setOpen(false)} />
+          <ComposerPopover className="bg-surface-3 border border-border-base rounded-xl shadow-sm p-2 animate-scale-in w-[360px] max-w-[calc(100vw-48px)] max-h-[65vh] overflow-y-auto">
             <div className="flex items-center justify-between px-2 pb-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Models</span>
-              <span className="text-[10px] text-text-muted">{single ? 'select one model' : 'select multiple to compare'}</span>
+              <span className="text-[12px] font-medium text-text-muted">Modelle</span>
+              <span className="text-[12px] text-text-muted">{single ? 'Ein Modell auswählen' : 'Mehrere zum Vergleichen auswählen'}</span>
             </div>
 
             {models.map((model) => {
@@ -67,6 +72,7 @@ export function ModelSelector({ selectedModels, onChange, compact, available, si
               return (
                 <button
                   key={model.id}
+                  aria-pressed={isSelected}
                   onClick={() => toggleModel(model.id)}
                   className={cn(
                     'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all',
@@ -85,12 +91,12 @@ export function ModelSelector({ selectedModels, onChange, compact, available, si
                   </div>
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-[12px] font-medium truncate">{model.name}</span>
-                    <span className="text-[10px] text-text-muted">{model.provider}</span>
+                    <span className="text-[12px] text-text-muted">{model.provider}</span>
                   </div>
                 </button>
               )
             })}
-          </div>
+          </ComposerPopover>
         </>
       )}
     </div>

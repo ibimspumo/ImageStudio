@@ -10,7 +10,7 @@ Verify affected functionality through both interfaces before declaring it comple
 
 ## IMPORTANT: Keep README.md and CLAUDE.md up to date with ANY changes.
 When features are added/changed, update README.md (features list, usage table, architecture).
-When screenshots change visually, regenerate them: `node test-readme-screenshots.mjs` (needs dev server running).
+Verify the integrated UI with `npm run test:automation:app` (real Electron, disposable profile, mocked providers). Set `IMAGESTUDIO_TEST_SCREENSHOT` to an absolute PNG path to capture its settings view. Old `docs/` screenshots predate the redesign; do not present them as current.
 When architecture changes, update the tree below.
 
 ## Build & Run
@@ -19,7 +19,10 @@ npm run dev                # Dev with hot reload
 npm run build              # Production build
 npm run build:mac          # Package for macOS (.dmg)
 npm run build:win          # Package for Windows (.exe)
-npx electron-vite build    # Build check only (no Electron)
+npx tsc --noEmit -p tsconfig.web.json
+npx tsc --noEmit -p tsconfig.node.json
+npm run test:automation      # Renderer, transport and generation lifecycle
+npm run test:automation:app  # Real Electron/MCP parity smoke, no paid requests
 ```
 
 ## Architecture
@@ -38,17 +41,21 @@ npx electron-vite build    # Build check only (no Electron)
   - `lib/canvas-automation.ts`, `lib/canvas-generation.ts` — actual canvas renderer operations and shared canvas request preparation
   - `lib/image-editing.ts`, `lib/image-export.ts` — shared UI/MCP image transformation and export behavior
   - `components/shared/AutomationSection.tsx`, `MediaImport.tsx` — local connection controls and media URL/path import
-  - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop, thumbnail-projects, thumbnail-meta-prompts, ui-recents (recently used projects/workspaces for switcher pills and move menu; all with debounced persistence via `lib/debounce.ts`)
-  - `hooks/` — useImageGeneration, useVideoGeneration (fal.ai), useChatGeneration, useMentionEditor (the contenteditable prompt editor with @-mentions, shared by PromptBar and ChatView), useImageRefs (shared image attachment logic), useJustifiedLayout (row-based masonry)
-  - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, getModelName, getVideoModelName, ImageRef, LabeledAttachment
-  - `components/input/` — PromptBar (orchestrator; **collapses** to a one-line summary row when focus is elsewhere, expands on click — the editor stays mounted behind an animated 0fr grid row because its text lives in the DOM), VideoPromptBar (same shell: prompt card, model · duration · Tune panel, collapse — no @mentions, one start frame), AttachmentStrip (image/collection thumbnails), MentionPopup (@-mention dropdown), ControlsRow (slim bar: model · count · **Tune panel** · @ · Generate), TunePanel (TuneMenu/TuneGroup/TuneOption/TuneRow/TuneRatioOptions/RatioBox — the one door to all secondary options in every mode, image/thumbnail/logo/video/chat alike; the badge counts non-default settings), CostEstimate (live per-request price), ModelSelector, VideoModelSelector, ImageCountSelector, PresetSelector (lives inside the Tune panel; active preset comes from `presets-store`), AspectRatioSelector/ResolutionSelector/QualitySelector (only used by the canvas panels now), DurationSelector. Background/fidelity/seed/audio/camera are Tune-panel chips, not standalone components
-  - `components/gallery/` — Justified layout (row-based masonry, left-to-right fill; bottom padding follows the measured prompt-bar height via `--prompt-bar-h`, set by a ResizeObserver in MainContent, so the last row always scrolls clear of the bar), GalleryCard with hover actions (save, copy, chat, move-to-workspace — the move menu is searchable with a "Zuletzt benutzt" section from `ui-recents-store` once there are >5 targets), video hover preview
-  - `components/chat/` — ChatView (iterative editing; inherits the source image's model/aspect ratio/resolution, supports @-mentions and collections via `useMentionEditor`; controls follow the unified pattern — model pill + Tune panel whose badge counts deviations from the inherited format)
-  - `components/workspace/` — WorkspaceBar (thin wrapper over the shared SwitcherBar)
-  - `components/shared/` — ErrorBoundary, ImageViewer (lightbox with chat origin), SimpleLightbox, ExportPopover (format/quality/filesize), SettingsDialog, UpdateSection, SpendIndicator (running cost total in the TitleBar), SwitcherBar (the project/workspace switcher: active entry + recents as pills, searchable panel behind ⌘P with keyboard nav, inline rename/delete, create-from-query; pills and panel rows stay drop targets for gallery drags — used by both ProjectBar and WorkspaceBar)
-  - `components/thumbnail/` — ProjectBar (thin wrapper over the shared SwitcherBar, drop targets included), ThumbnailControls (slim bar: model · count · Tune panel with style chips, meta prompt, face-fidelity toggle), MetaPromptSelector (saved custom meta prompts, CRUD in the popup — lives inside the Tune panel), ThumbnailFrame (16:9 + safe-zone/legibility overlays), ThumbnailPreviewModal (YouTube surfaces, size ladder, 1920×1080 export)
-  - `components/logo/` — LogoControls (slim bar: model · count · Tune panel with logo type, the three fixed pixel sizes, background, fidelity, quality)
-  - `components/collections/` — Asset collection CRUD
+  - `App.tsx`, `components/layout/StudioSidebar.tsx`, `TitleBar.tsx`, `MainContent.tsx` — route shell with a permanent sidebar, one context header, gallery and stable bottom composer. `StudioSection` includes image/video/thumbnail/logo, library, references, styles, projects, activity and settings; `AppMode` retains the last creation mode for support routes. Sidebar buttons expose `data-studio-section` and `aria-current="page"` for parity checks.
+  - `app.css` — anthracite surfaces, lime accent and responsive studio shell; the sidebar becomes a drawer on narrow windows.
+  - `stores/` — Zustand: gallery, collections, settings, workspace, crop, presets, queue, canvas, gallery-filter, thumbnail-projects, thumbnail-meta-prompts and ui-recents, backed by local histories.
+  - `hooks/` — useImageGeneration, useVideoGeneration, useMentionEditor (contenteditable prompt and real inline reference chips), useImageRefs and useJustifiedLayout.
+  - `types/api.ts` — image/video registries, mode rules and shared reference types.
+  - `components/input/` — persistent expanded PromptBar and VideoPromptBar; model/count or duration controls, reference attachments, generation cost and secondary options in TunePanel (format/options summary, tooltip Alle weiteren Einstellungen). The DOM draft stays mounted across support routes. Video has one start frame and no image/collection mention syntax.
+  - `components/gallery/` — justified image/video layout, toolbar/filter controls and cards with variant, reference, export and organization actions.
+  - `components/workspace/ProjectsPage.tsx` — working folders and thumbnail video projects in one management page, preserving their independent store axes.
+  - `components/shared/` — ImageViewer with grouped actions/details, ExportPopover, CropModal, ImageCompare, settings categories, update controls and local AI connection. Settings supports embedded rendering and explicit save/discard for local fields; connection controls apply immediately.
+  - `components/thumbnail/`, `components/logo/` — mode-specific controls/prompt rules, thumbnail meta-prompts, preview surfaces and exact thumbnail export.
+  - `components/collections/`, `components/presets/` — full-page reference collections and saved prompt styles, with embedded variants of their dialogs.
+  - `components/queue/QueuePanel.tsx` — activity across gallery jobs plus the sequential image queue; queue pause affects subsequent queue work.
+  - `lib/studio-actions.ts` — `prepareImageVariant` shared by UI and MCP navigation; stages source reference/model/format and alpha intent without generating. PromptBar hydrates references into real chips, reports loading/errors and offers retry.
+  - `lib/organization-actions.ts` — shared folder/project deletion detaches retained media before removing the organization entry.
+  - `lib/gallery-costs.ts` — retained-gallery and local-calendar-day confirmed/estimated spend shared by Activity and MCP status.
   - `lib/image-utils.ts` — compressImage, createZoomOutCanvas, createAspectRatioCanvas, collectionImagesAsBase64, renderYouTubeThumbnail (exact 1920×1080 cover-crop)
   - `lib/anti-detection.ts` — `prepareForStorage()` / `scrubGeneratedImage()` / `reencodePreservingAlpha()` / `neutralImageName()`, see **Anti-Detection** below
   - `lib/reference-packing.ts` — fits reference images into each model's `image_urls` limit by merging the biggest groups into numbered collages
@@ -80,27 +87,17 @@ GPT Image 1.5 has none of those either, and no pixel freedom: `image_size` is an
 `1024x1024` / `1536x1024` / `1024x1536` (the edit endpoint adds `auto`), so `imageSizeMode: 'size-enum'`
 routes it through `toFixedImageSize()`. Its `quality` has no `auto` tier. It is the **only** model with
 a `background` field (`auto` | `transparent` | `opaque`) — the sole route to an alpha channel — and the
-only one with `input_fidelity` (edit endpoint only). The two OpenAI models disagree on the mask field
-name, hence `maskField` (`mask_url` vs `mask_image_url`).
+only one with `input_fidelity` (edit endpoint only). Mask request fields are not exposed; Inpaint is retired.
 Values a model cannot take are mapped to its nearest supported one rather than rejected.
 Multi-model generation: PromptBar allows selecting multiple models; `useImageGeneration` runs each model
-independently and packs references per model. Chat uses a single model per message.
+independently and packs references per model.
 
 ### The prompt editor
-Both PromptBar and ChatView run on `useMentionEditor`. It owns the contenteditable, the reference
-chips, the `@`-mention popup and `getPromptText()` — so a mention resolves identically in the gallery
-and in a chat. Two things to keep in mind when touching it:
-- The editor's text lives in the DOM, so typing causes **no** React update on its own. The hook
-  mirrors the text into `promptText` on every input; anything derived from the prompt (the Generate
-  button, `hasContent`) must read that, never call `getPromptText()` during render. Writing the
-  editor's `innerHTML` directly (the reuse-prompt path) fires no input event — call `syncPromptText()`.
-- Chip removal has no event of its own; `handleEditorInput` reconciles `collectionRefs` against the
-  chips actually present in the DOM.
-- Mentioning the same collection twice reuses the existing `CollectionRef` — both chips carry the
-  same `data-collection-ref-id`, the images upload once, and the ref only dies with its last chip.
-  `buildAttachments()` additionally dedupes by `collectionId` as a safety net, and the reuse-prompt
-  path in PromptBar keeps a per-run map for the same reason. Never create a second ref for a
-  collection that is already attached.
+PromptBar uses `useMentionEditor` for its contenteditable, inline chips, @ popup and `getPromptText()`.
+- Text lives in the DOM; the hook mirrors each input into `promptText` for reactive state such as the Generate button. Do not derive render state by calling `getPromptText()`.
+- Use shared `setDraftContent()` when restoring prompts/references or applying MCP drafts. It inserts actual image/collection chips at the specified marker positions and synchronizes text.
+- Repeated collection mentions share a single reference and upload once; removing the last chip removes its reference. `buildAttachments()` also deduplicates collection IDs.
+- Pending reuse/variant hydration reports loading and failure through visible UI and `get_draft.referenceLoadStatus`. Failed reference loading must not silently submit a generation without its source.
 
 ### References and @-mentions
 fal.ai takes a flat `image_urls` array plus one prompt string — there is no way to interleave labels
@@ -110,7 +107,7 @@ order the URLs are sent, which is what makes `[Image 1]` and `[@Collection]` men
 MCP callers must both attach media and mention it inline at the relevant prompt position. Return exact
 `promptReference` values from collection discovery and live drafts; `preview_generation.referenceMentions`
 reports whether each attached reference is mentioned. Individual image numbering follows the explicit
-reference list and is unaffected by collections, the automatic previous chat image or inpaint context.
+reference list and is unaffected by collections.
 This applies equally to imported files/URLs and earlier generated images. Video uses the supported
 single start-frame role and natural-language descriptions; do not suggest unsupported video/audio or
 end-frame inputs, or promise that video prompts resolve image/collection chips.
@@ -118,18 +115,13 @@ When references exceed a model's limit, `packReferencesForModel()` merges the la
 collages until they fit — nothing is dropped. Single-image slots are passed through untouched.
 
 ### Cost tracking
-fal.ai reports **no** per-request cost — not in the queue response, not via the client, not in the
-OpenAPI schema (checked; there is no pricing block). Every figure the app shows is therefore computed
-from the list prices in `AVAILABLE_MODELS[].pricing` by `estimateImageCost()`, and is labelled `≈`.
+Before generation, `estimateImageCost()` / `estimateVideoCost()` use canonical list prices and effective supported options. Completion initially stores this estimate. Never present a preview price as an actual charge.
 
-`fal-image.ts` computes it from the request it actually built, not from what the caller asked for —
-a resolution the model does not offer was already clamped by `buildInput()`. The value rides back on
-`GenerateResult.cost`, which `completeImage()` already stored, so gallery, lightbox and the running
-total all read the same number. Surcharges (web search, high thinking) are added per request.
+`src/main/services/fal-billing.ts` reads the official `GET https://api.fal.ai/v1/models/billing-events` endpoint, matching `falRequestId`. `cost_total` is the request total after discounts; the documented `cost_estimate_nano_usd` fallback carries the same total in nano USD. This endpoint requires an Admin API key. Settings optionally stores a separate `falBillingApiKey`; otherwise it tries the existing `falApiKey`. Neither secret belongs in ordinary discovery/status. Explicit MCP credential retrieval remains separate.
 
-Displayed in three places: `CostEstimate` in PromptBar and ChatView (before generating, per model),
-the lightbox details (after generating), and `SpendIndicator` in the TitleBar (today's total, all-time
-on hover). Images generated before this existed carry no `cost` and are excluded from the total.
+`lib/billing-sync.ts` is shared by Activity and MCP `refresh_costs`. It reconciles unconfirmed completed jobs after startup/completion/key changes with a debounce, and supports manual retries. Missing events, legacy records without provider IDs, and denied/unavailable API access remain explicitly estimated/unknown. The original list estimate is retained as `estimatedCost`; confirmed amounts persist as `cost`, `costSource: 'provider-reported'`, and `costCheckedAt`. A request total is counted once across its media.
+
+`getGalleryCosts()` supplies Activity/MCP with confirmed and unconfirmed subtotals, combined retained-gallery totals, local-day totals and missing-cost counts. These are not account balances or a complete invoice: deleted media are excluded. Viewer and Activity distinguish provider-reported costs, including zero, from estimates.
 
 When adding a model, fill in `pricing` — the type requires it, and a missing price silently reads as
 free. Prices come from `https://fal.ai/models/<id>`; re-check them when touching the registry.
@@ -140,7 +132,7 @@ Reference images go to fal.ai storage (`fal.storage.upload`) — the endpoints o
 models or several images of a batch is transferred once. The cache is cleared when the API key changes.
 
 ### Thumbnail Mode
-The third `AppMode` (`MainContent.tsx`), built around one fixed output: 16:9, 2K generated, exactly 1920 × 1080 exported.
+An `AppMode` (`MainContent.tsx`), built around one fixed output: 16:9, 2K generated, exactly 1920 × 1080 exported.
 `getThumbnailModels()` derives the model list from the registry (`uiResolutions` contains `'2K'`), which drops Nano Banana 2 Lite.
 It reuses `PromptBar` via the `thumbnailMode` prop — references, @-mentions, drag & drop and collections stay identical;
 only `ControlsRow` is swapped for `ThumbnailControls` and the format controls disappear.
@@ -161,7 +153,7 @@ Projects (`thumbnail-projects-store.ts`, persisted as `thumbnail-projects`) are 
 inside thumbnail mode. `GalleryImage` carries `projectId`, `thumbnailStyle` and `faceFidelity`.
 
 ### Logo Mode
-The fourth `AppMode` (`MainContent.tsx`), and the reason GPT Image 1.5 is in the registry at all: it is the
+An `AppMode` (`MainContent.tsx`), and the reason GPT Image 1.5 is in the registry at all: it is the
 only model with a `background` field, so it is the only route to a real alpha channel.
 `getLogoModels()` derives the model list from that capability rather than a hand-kept list.
 It reuses `PromptBar` via the `logoMode` prop — references, @-mentions, drag & drop and collections stay
@@ -176,8 +168,7 @@ Logo mode locks `background: 'transparent'` and `output_format: 'png'`, and keep
 (no separate project store — a logo is an ordinary asset with an alpha channel). `GalleryImage` carries
 `isLogo`, `logoStyle` and **`hasAlpha`**. `hasAlpha` is the load-bearing one: it is computed per model
 (`background === 'transparent' && model.supportsBackground`), it routes the image around the JPEG scrub,
-and it drives the `.alpha-checker` backdrop in `GalleryCard`/`ImageViewer`. `useChatGeneration` reads it
-off the chat's source image so an iteration does not silently lose its transparency.
+and it drives the `.alpha-checker` backdrop in `GalleryCard`/`ImageViewer`. `prepareImageVariant` preserves the alpha intent and selects a background-capable model when needed.
 
 `background` and `input_fidelity` are also offered in normal image mode via `ControlsRow`, gated on
 `getCombinedCapabilities().supportsBackground` / `.supportsInputFidelity` — they are ordinary model
@@ -185,7 +176,7 @@ capabilities, not mode-specific switches.
 
 ### Anti-Detection
 Every generated image runs through `prepareForStorage()` **before** `window.api.saveImage` — in
-`useImageGeneration`, `useChatGeneration` and the three derive actions in `ImageViewer` (zoom out,
+the shared `useImageGeneration` pipeline, including viewer transformations (zoom out,
 upscale, aspect ratio). Videos never do. Doing it before storage rather than on export is what makes
 gallery, export, clipboard and drag & drop all hand out the same processed file.
 
@@ -211,9 +202,17 @@ VALID_SETTINGS_KEYS, loadSettings) and `types/settings.ts` + `settings-store.ts`
 
 ### Video Models (fal.ai)
 Defined in `types/api.ts` as `AVAILABLE_VIDEO_MODELS`. Default: `fal-ai/bytedance/seedance/v1.5/pro/image-to-video` (Seedance 1.5 Pro).
-All image-to-video only (require start frame). VideoPromptBar uses single model select (no @mentions/collections — not supported by video API) and mirrors the image bar: prompt card, slim controls with a Tune panel (resolution, ratio, audio, camera lock), collapse to a summary row, cost in the hint row. `useVideoGeneration` fires via fal.ai queue API, stores estimated cost on completion.
+All image-to-video only (require start frame). VideoPromptBar uses single model select (no @mentions/collections — not supported by video API) with a persistent prompt card, start-frame control, Tune panel (resolution, ratio, audio, camera lock) and cost estimate. `useVideoGeneration` fires via fal.ai queue API, stores estimated cost on completion.
 Models: Kling v3 Standard, Kling v3 Pro, Seedance 1.5 Pro. Kling v3 Pro is the only model in the app that supports a negative prompt.
-Videos saved as MP4 in `{userData}/ImageStudio/videos/`. Gallery shows both images and videos (filterable). Videos auto-play on hover in grid view. Video export uses direct file copy (no Canvas conversion).
+Generated videos are stored in `{userData}/ImageStudio/videos/`; imported media retain their actual container/MIME type. Gallery shows both images and videos (filterable). Videos auto-play on hover in grid view. Video export uses direct file copy (no Canvas conversion).
+
+## Retired features and route parity
+
+Chat and Inpaint are removed from active UI, hooks, MCP tools/draft modes and provider mask plumbing. Do not reintroduce chat/inpaint tool names or navigation targets. Retain existing files, legacy history migration and gallery source metadata (`chatId`, `chatMessageId`, `inpaintSourceId`) for compatibility; these are not active features.
+
+MCP `navigate` supports all sidebar sections plus viewer/crop/canvas/compare/reuse and `create_variant`. `collections`, `presets` and `queue` are aliases for references, styles and activity. A variant uses the same `prepareImageVariant()` as UI, requires a completed image and only prepares a draft. Image editing, reference generation, canvas, export and video generation remain available.
+
+The real-app smoke test verifies new route highlighting and UI-to-MCP state, retired-tool rejection, actual inline chips, variant source settings and an image → image → video workflow with mocked providers. A successful build alone is insufficient.
 
 ## Critical Rules
 - Tailwind CSS v4: `@theme {}` in app.css — NEVER add `* {}` resets outside @layer
@@ -228,7 +227,20 @@ Videos saved as MP4 in `{userData}/ImageStudio/videos/`. Gallery shows both imag
 - Electron drag: use `no-drag` class on all interactive elements in top 48px
 - Image uploads: always compress via `compressImage()` (JPEG 75%, max 1000px)
 - Shared types: use `ImageRef` and `LabeledAttachment` from `types/api.ts` — don't redeclare locally
-- Export: ExportPopover supports PNG/JPEG/WebP with quality slider for images (Canvas conversion), MP4 direct file copy for videos
+- Export: ExportPopover supports PNG/JPEG/WebP with quality slider for images (Canvas conversion), original-container direct file copy for videos
 - Workspaces: optional image organization, `workspaceId` on GalleryImage, auto-tag on generation
-- Updates: electron-updater against GitHub Releases (`build.publish` in package.json). Check → download with progress → install on restart, all from Settings. Downloads never start on their own. The app version is baked in via `__APP_VERSION__` because `app.getVersion()` returns Electron's version in an unpackaged build
+- Updates: electron-updater against GitHub Releases (`build.publish` in package.json). Check → download with progress → install on restart, all from Settings. Downloads never start on their own. The app version is baked into both main and renderer via `__APP_VERSION__` because `app.getVersion()` returns Electron's version in an unpackaged build
 - License: MIT, fully open source
+
+App branding: `components/shared/BrandIcon.tsx` imports `resources/icon.png` directly for default app branding; the renderer favicon references the same source. Keep native packaging and UI artwork synchronized.
+
+Sidebar branding uses the approved light tile artwork `resources/icon-sidebar-light.png` through `BrandIcon variant="sidebar"`; default branding and native packaging retain `resources/icon.png`.
+
+## Navigation and UI regression coverage
+Creation-mode sidebar entries and MCP mode navigation open the corresponding overview, clearing the matching project/folder and gallery filters. Project/folder selection remains explicit. Breadcrumb ancestors are real no-drag buttons: mode goes to all media in that mode, Studio to the complete library. Thumbnail overview ignores working-folder selection; library is global. Settings drafts remain mounted across route changes. Viewer/preview lists reconcile against live gallery deletions.
+
+`npm run test:automation:app` additionally covers breadcrumb/sidebar exit, scope isolation, composer menus, export options, crop cancellation, thumbnail preview, deletion and exact mocked billing UI/MCP parity. `npm run test:ui:surfaces` exercises support-page CRUD, settings draft preservation, project overview navigation and real canvas drawing/undo/redo/local PNG export. Both use disposable profiles. Never use real user files or paid requests as test fixtures.
+
+Composer readability: `studio-composer-dock::before` in app.css provides the shared upward-fading scrim for every creation mode. Keep it pointer-events:none and behind the composer; it must not intercept gallery or composer controls.
+
+Read-only prompts use `PromptText` to highlight collection/image markers in gallery captions, the viewer and activity without changing copied or stored text. Gallery captions use a deeper bottom gradient. In image composers, pasting plain text restores exact, unambiguous live collection mentions (deduplicated), and image mentions already attached to the draft; unknown markers remain text. MCP prompt-only `update_draft` uses the same resolver. Explicit `collectionIds` still replaces the collection list. Text-only image markers cannot identify an unattached source image; use variant preparation or attach the source.

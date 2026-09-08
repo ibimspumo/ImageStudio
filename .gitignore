@@ -8,3 +8,6 @@ screenshots/
 imagestudio-settings.json
 test-screenshot.mjs
 test-readme-screenshots.mjs
+
+# Local design studies embed the private gallery snapshot.
+design/mockups/

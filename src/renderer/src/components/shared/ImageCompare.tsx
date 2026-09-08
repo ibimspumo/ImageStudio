@@ -50,7 +50,7 @@ export function ImageCompare({ imageA, imageB, onClose }: ImageCompareProps) {
   }, [onClose])
 
   return (
-    <div className="absolute inset-0 z-[60] bg-black/90 backdrop-blur-md flex flex-col animate-overlay-in" onClick={onClose}>
+    <div className="absolute inset-0 z-[60] bg-surface-0 flex flex-col animate-overlay-in" onClick={onClose}>
       {/* Top bar */}
       <div className="shrink-0 flex items-center justify-between px-5 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
@@ -60,10 +60,10 @@ export function ImageCompare({ imageA, imageB, onClose }: ImageCompareProps) {
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-all',
               mode === 'slider'
                 ? 'bg-accent-dim border-accent-main/30 text-accent-main'
-                : 'bg-white/5 border-white/10 text-white/60 hover:text-white/80'
+                : 'bg-white/5 border-white/10 text-white/75 hover:text-white/80'
             )}
           >
-            <SplitSquareHorizontal className="w-3.5 h-3.5" /> Slider
+            <SplitSquareHorizontal className="w-3.5 h-3.5" /> Schieberegler
           </button>
           <button
             onClick={() => setMode('side-by-side')}
@@ -71,20 +71,20 @@ export function ImageCompare({ imageA, imageB, onClose }: ImageCompareProps) {
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-all',
               mode === 'side-by-side'
                 ? 'bg-accent-dim border-accent-main/30 text-accent-main'
-                : 'bg-white/5 border-white/10 text-white/60 hover:text-white/80'
+                : 'bg-white/5 border-white/10 text-white/75 hover:text-white/80'
             )}
           >
-            <Columns2 className="w-3.5 h-3.5" /> Side by Side
+            <Columns2 className="w-3.5 h-3.5" /> Nebeneinander
           </button>
         </div>
 
         {/* Resolution labels */}
-        <div className="flex items-center gap-4 text-[10px] text-white/50">
+        <div className="flex items-center gap-4 text-[10px] text-white/75">
           <span>A: {imageA.resolution} ({getModelName(imageA.model)})</span>
           <span>B: {imageB.resolution} ({getModelName(imageB.model)})</span>
         </div>
 
-        <button onClick={onClose} className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+        <button aria-label="Vergleich schließen" onClick={onClose} className="p-2 rounded-lg text-white/75 hover:text-white hover:bg-white/10 transition-colors">
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -123,6 +123,8 @@ export function ImageCompare({ imageA, imageB, onClose }: ImageCompareProps) {
             <div
               className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)] cursor-col-resize z-10"
               style={{ left: `${sliderPos}%` }}
+              role="slider" tabIndex={0} aria-label="Vergleichsposition" aria-valuemin={2} aria-valuemax={98} aria-valuenow={Math.round(sliderPos)}
+              onKeyDown={(e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setSliderPos((v) => Math.max(2, Math.min(98, v + (e.key === 'ArrowRight' ? 2 : -2)))) } }}
               onMouseDown={() => setIsDragging(true)}
             >
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border-2 border-white shadow-lg flex items-center justify-center">

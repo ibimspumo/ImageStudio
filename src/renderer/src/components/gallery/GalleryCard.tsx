@@ -1,11 +1,13 @@
+import { PromptText } from '../shared/PromptText'
 import { useState, useRef, useCallback, memo } from 'react'
-import { Download, Copy, Maximize2, X, AlertCircle, MessageSquare, Trash2, FolderInput, Crop, Star, Play, Film, Youtube, Search } from 'lucide-react'
+import { Download, Copy, Maximize2, X, AlertCircle, WandSparkles, MoreHorizontal, Trash2, FolderInput, Crop, Star, Play, Film, Youtube, Search } from 'lucide-react'
 import { useGalleryStore, type GalleryImage, toDisplayUrl } from '../../stores/gallery-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
 import { useUiRecentsStore } from '../../stores/ui-recents-store'
 import { useSettingsStore } from '../../stores/settings-store'
 import { cn } from '../../lib/utils'
+import { requireExportSuccess } from '../../lib/export-result'
 import { logger } from '../../lib/logger'
 import { neutralImageName } from '../../lib/anti-detection'
 import { cancelImageJob } from '../../hooks/useImageGeneration'
@@ -13,14 +15,14 @@ import { cancelImageJob } from '../../hooks/useImageGeneration'
 interface GalleryCardProps {
   image: GalleryImage
   onClick: (imageId: string, filePath: string) => void
-  onStartChat?: (imageId: string) => void
+  onCreateVariant?: (imageId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
   onGenerateVideo?: (imageId: string) => void
   /** Thumbnail mode: open the YouTube preview instead of the plain lightbox. */
   onPreviewThumbnail?: (imageId: string) => void
 }
 
-export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartChat, onCropImage, onGenerateVideo, onPreviewThumbnail }: GalleryCardProps) {
+export const GalleryCard = memo(function GalleryCard({ image, onClick, onCreateVariant, onCropImage, onGenerateVideo, onPreviewThumbnail }: GalleryCardProps) {
   const removeImage = useGalleryStore((s) => s.removeImage)
   const toggleFavorite = useGalleryStore((s) => s.toggleFavorite)
   const moveToWorkspace = useGalleryStore((s) => s.moveToWorkspace)
@@ -31,6 +33,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
   const isThumbnailMode = !!onPreviewThumbnail
   const [showMoveMenu, setShowMoveMenu] = useState(false)
   const [moveQuery, setMoveQuery] = useState('')
+  const [actionError, setActionError] = useState('')
   const [cancelError, setCancelError] = useState('')
   const recentProjectIds = useUiRecentsStore((s) => s.recentProjectIds)
   const recentWorkspaceIds = useUiRecentsStore((s) => s.recentWorkspaceIds)
@@ -56,18 +59,18 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   if (image.isLoading) {
     return (
-      <div className="skeleton w-full h-full rounded-2xl relative">
+      <div className="skeleton w-full h-full rounded-xl relative">
         {!isVideo && image.requestId && (
           <button
             className="absolute top-2 right-2 z-10 rounded-lg bg-surface-2 px-2 py-1 text-[11px] text-text-secondary hover:text-danger disabled:opacity-50"
-            title="Cancel all unfinished images in this model batch. Already completed images are kept. Provider charges may still apply."
+            title="Alle laufenden Bilder dieser Modell-Serie abbrechen. Fertige Bilder bleiben erhalten. Anbieterkosten können trotzdem anfallen."
             disabled={image.cancelRequested}
             onClick={(event) => {
               event.stopPropagation()
               setCancelError('')
               void cancelImageJob(image.id).catch((error) => setCancelError(error instanceof Error ? error.message : 'Cancellation failed'))
             }}
-          >{image.cancelRequested ? 'Cancelling…' : 'Cancel batch'}</button>
+          >{image.cancelRequested ? 'Wird abgebrochen…' : 'Abbrechen'}</button>
         )}
         {cancelError && <p role="alert" className="absolute bottom-2 inset-x-2 text-[11px] text-danger">{cancelError}</p>}
         {image.statusText && (
@@ -86,7 +89,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
       <div className="w-full h-full rounded-xl bg-surface-2 border border-border-base flex items-center gap-2.5 px-3 py-3 relative group">
         <AlertCircle className="w-4 h-4 text-danger shrink-0" />
         <p className="text-[11px] text-danger leading-tight flex-1 line-clamp-2">{image.error}</p>
-        <button onClick={() => removeImage(image.id)} className="p-1 text-text-muted hover:text-danger transition-colors shrink-0 opacity-0 group-hover:opacity-100">
+        <button onClick={() => removeImage(image.id)} className="p-1 text-text-muted hover:text-danger transition-colors shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -97,36 +100,40 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation()
+    setActionError('')
     if (!image.filePath) return
     const filePath = image.filePath
     try {
       if (isVideo) {
         const extension = filePath.split('.').pop()?.toLowerCase() || 'mp4'
         const name = antiDetection ? neutralImageName(extension) : `imagestudio-${image.id}.${extension}`
-        await window.api.exportVideo(filePath, name)
+        requireExportSuccess(await window.api.exportVideo(filePath, name))
       } else {
         const result = await window.api.readImage(filePath)
-        if (result.success && result.base64DataUrl) {
+        if (!result.success || !result.base64DataUrl) throw new Error(result.error || 'Bild konnte nicht gelesen werden')
+      if (result.base64DataUrl) {
           // Keep the stored file's extension — with anti-detection on it is a JPEG.
           const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
-          const name = antiDetection ? neutralImageName(ext) : `imagestudio-${image.id}.png`
-          await window.api.exportImage(result.base64DataUrl, name)
+          const name = antiDetection ? neutralImageName(ext) : `imagestudio-${image.id}.${ext}`
+          requireExportSuccess(await window.api.exportImage(result.base64DataUrl, name))
         }
       }
-    } catch (err) { logger.error('GalleryCard', 'Operation failed', err) }
+    } catch (err) { setActionError(err instanceof Error ? err.message : 'Aktion fehlgeschlagen'); logger.error('GalleryCard', 'Operation failed', err) }
   }
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation()
+    setActionError('')
     if (!image.filePath) return
     try {
       const result = await window.api.readImage(image.filePath)
-      if (result.success && result.base64DataUrl) {
+      if (!result.success || !result.base64DataUrl) throw new Error(result.error || 'Bild konnte nicht gelesen werden')
+      if (result.base64DataUrl) {
         const response = await fetch(result.base64DataUrl)
         const blob = await response.blob()
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
       }
-    } catch (err) { logger.error('GalleryCard', 'Operation failed', err) }
+    } catch (err) { setActionError(err instanceof Error ? err.message : 'Aktion fehlgeschlagen'); logger.error('GalleryCard', 'Operation failed', err) }
   }
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -138,7 +145,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (window.confirm('Delete this image?')) {
+    if (window.confirm('Dieses Medium aus der Galerie löschen?')) {
       removeImage(image.id)
     }
   }
@@ -190,16 +197,21 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
   return (
     <div
       className={cn(
-        'img-card relative group rounded-2xl overflow-hidden cursor-pointer border border-border-dim/60 animate-fade-up w-full h-full',
+        'img-card relative group rounded-xl overflow-hidden cursor-pointer border border-border-dim/60 w-full h-full',
         // Without a ground behind it a transparent logo reads as a hole.
         image.hasAlpha && 'alpha-checker'
       )}
+      tabIndex={0}
+      role="group"
+      aria-label={image.prompt || "Medium öffnen"}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(image.id, image.filePath) } }}
       onClick={() => onClick(image.id, image.filePath)}
       draggable={!isVideo}
       onDragStart={isVideo ? undefined : handleDragStart}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {actionError && <div role="alert" className="absolute top-12 inset-x-3 z-20 rounded-lg bg-surface-1 p-3 text-[12px] text-danger" onClick={(e) => e.stopPropagation()}>{actionError}<button aria-label="Fehlermeldung schließen" className="ml-2 underline" onClick={() => setActionError('')}>Schließen</button></div>}
       {isVideo ? (
         <video
           ref={videoRef}
@@ -253,9 +265,9 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
         onClick={(e) => { e.stopPropagation(); toggleFavorite(image.id) }}
         className={cn(
           'btn-interactive absolute top-2 left-2 z-10 p-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors',
-          image.isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          image.isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
         )}
-        title="Favorite"
+        title="Favorisieren" aria-label="Favorisieren"
       >
         <Star className={cn('w-3.5 h-3.5', image.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-white')} />
       </button>
@@ -263,15 +275,20 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
       <button
         onClick={handleDelete}
         className={cn(
-          'btn-interactive absolute right-2 z-10 p-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/5 hover:bg-danger/80 transition-colors opacity-0 group-hover:opacity-100',
+          'btn-interactive absolute right-2 z-10 p-1.5 rounded-lg bg-black/50 backdrop-blur-md border border-white/5 hover:bg-danger/80 transition-colors opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
           isVideo && image.videoDuration ? 'top-10' : 'top-2'
         )}
-        title="Delete"
+        title="Löschen" aria-label="Löschen"
       >
         <Trash2 className="w-3.5 h-3.5 text-white" />
       </button>
 
-      <div className="img-overlay absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 transition-opacity duration-200 flex items-end p-3">
+      <div className="absolute bottom-0 inset-x-0 gallery-card-caption px-3 pb-3 pt-10 text-white group-hover:opacity-0 group-focus-within:opacity-0 pointer-events-none">
+        <p className="text-[12px] font-semibold truncate"><PromptText text={image.prompt || (isVideo ? 'Video' : 'Ohne Titel')} compact/></p>
+        <p className="text-[10px] text-white/90 mt-1">{image.aspectRatio} · {image.resolution}{currentWorkspace ? ` · ${'title' in currentWorkspace ? currentWorkspace.title : currentWorkspace.name}` : ''}</p>
+      </div>
+
+      <div className="img-overlay absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 flex items-end p-3">
         {/* Anchored to the card, not the button — the card clips its overflow,
             so a button-anchored menu loses whatever sticks out. */}
         {showMoveMenu && moveTargets.length > 0 && (
@@ -296,7 +313,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
                       handleMove(e as unknown as React.MouseEvent, filteredMoveTargets[0].id)
                     }
                   }}
-                  placeholder={isThumbnailMode ? 'Video suchen…' : 'Workspace suchen…'}
+                  placeholder={isThumbnailMode ? 'Video suchen…' : 'Ordner suchen…'}
                   className="flex-1 min-w-0 bg-transparent text-[11px] text-text-primary outline-none placeholder:text-text-muted"
                 />
               </div>
@@ -333,7 +350,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
                   )}
                 >
                   <div className="w-2 h-2 rounded-full bg-text-muted/40 shrink-0" />
-                  {isThumbnailMode ? 'Kein Video' : 'None'}
+                  {isThumbnailMode ? 'Kein Video' : 'Kein Ordner'}
                 </button>
               )}
               {filteredMoveTargets.map((target) => (
@@ -362,37 +379,16 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
         )}
 
         <div className="flex items-center gap-1.5 w-full flex-wrap">
-          <button onClick={handleSave} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Save">
+          <button onClick={handleSave} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Exportieren">
             <Download className="w-3.5 h-3.5 text-white" />
           </button>
-          <button onClick={handleCopy} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Copy">
-            <Copy className="w-3.5 h-3.5 text-white" />
-          </button>
-          {onStartChat && !isVideo && (
+          {onCreateVariant && !isVideo && (
             <button
-              onClick={(e) => { e.stopPropagation(); onStartChat(image.id) }}
+              onClick={(e) => { e.stopPropagation(); onCreateVariant(image.id) }}
               className="btn-interactive p-2 rounded-lg bg-accent-main/20 backdrop-blur-md border border-accent-main/20 hover:bg-accent-main/30 transition-colors"
-              title="Edit in chat"
+              title="Variante erstellen"
             >
-              <MessageSquare className="w-3.5 h-3.5 text-accent-bright" />
-            </button>
-          )}
-          {onCropImage && !isVideo && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onCropImage(image.id, image.filePath) }}
-              className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors"
-              title="Crop as reference"
-            >
-              <Crop className="w-3.5 h-3.5 text-white" />
-            </button>
-          )}
-          {onGenerateVideo && !isVideo && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onGenerateVideo(image.id) }}
-              className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors"
-              title="Generate video from this image"
-            >
-              <Film className="w-3.5 h-3.5 text-white" />
+              <WandSparkles className="w-3.5 h-3.5 text-accent-bright" />
             </button>
           )}
           {onPreviewThumbnail && (
@@ -414,14 +410,40 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
                     ? 'bg-white/20 border-white/10'
                     : 'bg-white/10 border-white/5 hover:bg-white/20'
                 )}
-                title={isThumbnailMode ? 'In Video verschieben' : 'Move to workspace'}
+                title={isThumbnailMode ? 'In Video verschieben' : 'In Ordner verschieben'}
               >
                 <FolderInput className="w-3.5 h-3.5 text-white" />
               </button>
             </div>
           )}
+          <details className="relative" onClick={(e) => e.stopPropagation()}>
+            <summary aria-label="Weitere Aktionen" className="list-none cursor-pointer p-2 rounded-lg bg-black/60 text-white hover:bg-black/80"><MoreHorizontal className="w-3.5 h-3.5" /></summary>
+            <div className="absolute bottom-10 right-0 flex gap-1 p-1.5 rounded-lg bg-surface-2 border border-border-base">
+          <button onClick={handleCopy} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Bild kopieren">
+            <Copy className="w-3.5 h-3.5 text-white" />
+          </button>
+          {onCropImage && !isVideo && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onCropImage(image.id, image.filePath) }}
+              className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors"
+              title="Ausschnitt als Referenz"
+            >
+              <Crop className="w-3.5 h-3.5 text-white" />
+            </button>
+          )}
+          {onGenerateVideo && !isVideo && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onGenerateVideo(image.id) }}
+              className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors"
+              title="Video aus diesem Bild erstellen"
+            >
+              <Film className="w-3.5 h-3.5 text-white" />
+            </button>
+          )}
+            </div>
+          </details>
           <div className="flex-1" />
-          <button onClick={(e) => { e.stopPropagation(); onClick(image.id, image.filePath) }} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Expand">
+          <button onClick={(e) => { e.stopPropagation(); onClick(image.id, image.filePath) }} className="btn-interactive p-2 rounded-lg bg-white/10 backdrop-blur-md border border-white/5 hover:bg-white/20 transition-colors" title="Öffnen">
             <Maximize2 className="w-3.5 h-3.5 text-white" />
           </button>
         </div>

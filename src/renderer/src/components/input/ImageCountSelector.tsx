@@ -13,8 +13,9 @@ export function ImageCountSelector({ value, onChange, max = 4 }: ImageCountSelec
   const increment = () => onChange(Math.min(max, value + 1))
 
   return (
-    <div className="no-drag shrink-0 flex items-center h-8 rounded-lg bg-surface-3 border border-border-base overflow-hidden">
+    <div className="no-drag shrink-0 flex items-center h-9 rounded-lg bg-surface-3 border border-border-base overflow-hidden">
       <button
+        aria-label="Weniger Bilder"
         onClick={decrement}
         disabled={value <= 1}
         className={cn(
@@ -26,9 +27,10 @@ export function ImageCountSelector({ value, onChange, max = 4 }: ImageCountSelec
       </button>
       <span className="flex items-center gap-1 px-1.5 text-[12px] font-medium text-text-secondary">
         <Layers className="w-3.5 h-3.5" />
-        {value}x
+        {value} {value === 1 ? 'Bild' : 'Bilder'}
       </span>
       <button
+        aria-label="Mehr Bilder"
         onClick={increment}
         disabled={value >= max}
         className={cn(

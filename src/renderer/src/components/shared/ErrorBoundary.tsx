@@ -44,9 +44,9 @@ export class ErrorBoundary extends Component<Props, State> {
             <AlertCircle className="w-6 h-6 text-danger" />
           </div>
           <div className="flex flex-col gap-1">
-            <h2 className="text-[15px] font-semibold text-text-primary">Something went wrong</h2>
+            <h2 className="text-[15px] font-semibold text-text-primary">Das hat leider nicht funktioniert</h2>
             <p className="text-[13px] text-text-muted max-w-md">
-              {this.state.error?.message || 'An unexpected error occurred.'}
+              {this.state.error?.message || 'Ein unerwarteter Fehler ist aufgetreten.'}
             </p>
           </div>
           <button
@@ -54,7 +54,7 @@ export class ErrorBoundary extends Component<Props, State> {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-[13px] font-medium text-text-secondary transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            Try Again
+            Erneut versuchen
           </button>
         </div>
       )

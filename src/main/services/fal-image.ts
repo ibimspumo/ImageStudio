@@ -49,8 +49,6 @@ export interface GenerateRequest {
   thinkingLevel?: 'minimal' | 'high'
   safetyTolerance?: string
   outputFormat?: 'png' | 'jpeg' | 'webp'
-  /** Inpaint mask, for the models that take one (see `maskField`). */
-  maskUrl?: string
 }
 
 export interface GenerateResult {
@@ -176,10 +174,6 @@ function buildInput(
     input.safety_tolerance = request.safetyTolerance
   }
 
-  if (model.maskField && request.maskUrl && imageUrls.length > 0) {
-    input[model.maskField] = request.maskUrl
-  }
-
   return input
 }
 
@@ -238,15 +232,9 @@ export async function generateImage(
     imageUrls = await uploadImagesToUrls(imageUrls, request.apiKey)
   }
 
-  let maskUrl = request.maskUrl
-  if (maskUrl && model.maskField) {
-    const [uploaded] = await uploadImagesToUrls([maskUrl], request.apiKey)
-    maskUrl = uploaded
-  }
-
   const prompt = buildReferencePreamble(groups) + request.prompt
   const endpoint = imageUrls.length > 0 ? model.editEndpoint : model.endpoint
-  const input = buildInput(model, { ...request, maskUrl }, imageUrls, prompt, 1)
+  const input = buildInput(model, request, imageUrls, prompt, 1)
 
   onProgress?.('Generating…')
 

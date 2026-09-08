@@ -14,9 +14,7 @@ import type { ImageRef, LabeledAttachment } from '../types/api'
  * Attached images and collections live as non-editable chips inside the editor;
  * `getPromptText()` turns them back into the `[Image 1]` / `[@Collection]`
  * markers that `buildReferencePreamble()` on the main side resolves against the
- * `image_urls` order. Shared by the main prompt bar and the chat view so both
- * produce byte-identical prompts — anything else would make a mention mean one
- * thing in the gallery and another in a chat.
+ * `image_urls` order. Human paste and MCP draft edits use the same resolver.
  */
 export function useMentionEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
@@ -108,12 +106,7 @@ export function useMentionEditor() {
     (ref: ImageRef) => {
       const range = consumeMentionQuery()
       if (!range) return
-      const chip = document.createElement('span')
-      chip.contentEditable = 'false'
-      chip.dataset.imageRefId = ref.id
-      chip.className =
-        'inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-surface-3 border border-border-base text-[12px] font-medium text-text-primary cursor-default select-none'
-      chip.innerHTML = `<img src="${ref.base64}" class="w-4 h-4 rounded object-cover inline-block align-middle" /><span class="align-middle">${ref.name}</span>`
+      const chip = referenceChip(ref, false)
       placeChip(range, chip)
     },
     [consumeMentionQuery, placeChip]
@@ -135,12 +128,7 @@ export function useMentionEditor() {
         images: collection.images,
       }
       if (!existing) setCollectionRefs((prev) => [...prev, cRef])
-      const chip = document.createElement('span')
-      chip.contentEditable = 'false'
-      chip.dataset.collectionRefId = cRef.id
-      chip.className =
-        'inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none'
-      chip.innerHTML = `${collectionChipThumbnail(cRef.thumbnail)}<span class="align-middle">@${collection.name}</span>`
+      const chip = referenceChip(cRef, true)
       placeChip(range, chip)
     },
     [consumeMentionQuery, placeChip, collectionRefs]
@@ -190,36 +178,13 @@ export function useMentionEditor() {
     if (!editor) throw new Error('Prompt editor is not mounted')
     const text = patch.prompt ?? getPromptText()
     const nextImages = patch.images ?? imageRefs
-    const nextCollections = patch.collections ?? collectionRefs
+    const nextCollections = patch.collections ?? resolvePromptCollections(text, collectionRefs, collections)
     if (patch.images) setImageRefs(nextImages)
-    if (patch.collections) setCollectionRefs(nextCollections)
-    editor.replaceChildren()
-    const mentioned = new Set<string>()
-    const appendChip = (label: string, id: string, collection: boolean) => {
-      const chip = document.createElement('span')
-      chip.contentEditable = 'false'
-      if (collection) { chip.dataset.collectionRefId = id; mentioned.add(id) }
-      else chip.dataset.imageRefId = id
-      chip.className = 'inline-flex items-center align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-surface-3 border border-border-base text-[12px] font-medium text-text-primary'
-      chip.textContent = label
-      editor.append(chip)
-    }
-    const markers = /\[@([^\]]+)\]|\[([^@\]][^\]]*)\]/g
-    let last = 0
-    for (const match of text.matchAll(markers)) {
-      editor.append(document.createTextNode(text.slice(last, match.index)))
-      const collection = match[1] ? nextCollections.find(ref => ref.name === match[1]) : undefined
-      const image = match[2] ? nextImages.find(ref => ref.name === match[2]) : undefined
-      if (collection) appendChip(`@${collection.name}`, collection.id, true)
-      else if (image) appendChip(image.name, image.id, false)
-      else editor.append(document.createTextNode(match[0]))
-      last = match.index! + match[0].length
-    }
-    editor.append(document.createTextNode(text.slice(last)))
+    setCollectionRefs(nextCollections)
+    editor.replaceChildren(promptFragment(text, nextImages, nextCollections))
     for (const collection of nextCollections) {
-      if (mentioned.has(collection.id)) continue
-      editor.append(document.createTextNode(' '))
-      appendChip(`@${collection.name}`, collection.id, true)
+      if (editor.querySelector(`[data-collection-ref-id="${collection.id}"]`)) continue
+      editor.append(document.createTextNode(' '), referenceChip(collection, true))
     }
     setPromptText(Array.from(editor.childNodes).map(node => {
       if (node instanceof HTMLElement && node.dataset.collectionRefId) {
@@ -232,7 +197,35 @@ export function useMentionEditor() {
       }
       return node.textContent ?? ''
     }).join('').trim())
-  }, [getPromptText, imageRefs, collectionRefs])
+  }, [getPromptText, imageRefs, collectionRefs, collections])
+
+  /** Insert plain clipboard text at the selection, restoring known reference chips. */
+  const handleEditorPaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
+    const text = event.clipboardData.getData('text/plain')
+    if (!text) return
+    const editor = editorRef.current
+    const selection = window.getSelection()
+    if (!editor || !selection?.rangeCount) return
+    const range = selection.getRangeAt(0)
+    if (!editor.contains(range.commonAncestorContainer)) return
+    event.preventDefault()
+    const nextCollections = resolvePromptCollections(text, collectionRefs, collections)
+    const fragment = promptFragment(text, imageRefs, nextCollections)
+    const end = document.createTextNode('')
+    fragment.append(end)
+    range.deleteContents()
+    range.insertNode(fragment)
+    range.setStartAfter(end)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    // Replacing a selection can remove the last occurrence of an existing chip.
+    const liveIds = new Set(Array.from(editor.querySelectorAll<HTMLElement>('[data-collection-ref-id]')).map(chip => chip.dataset.collectionRefId))
+    setCollectionRefs(nextCollections.filter(ref => liveIds.has(ref.id)))
+    setShowMentionPopup(false)
+    setMentionFilter('')
+    syncPromptText()
+  }, [imageRefs, collectionRefs, collections, syncPromptText])
 
   // `getPromptText` changes identity whenever a chip is added or removed, so
   // this also covers chip edits, which happen after their state update lands.
@@ -424,6 +417,7 @@ export function useMentionEditor() {
     showMentionPopup,
     handleMentionKeyDown,
     handleEditorInput,
+    handleEditorPaste,
     handleFileSelect,
     handleImageDrop,
   }
@@ -434,4 +428,53 @@ export function collectionChipThumbnail(thumbnail: string): string {
   return thumbnail
     ? `<img src="${toDisplayUrl(thumbnail)}" class="w-4 h-4 rounded object-cover inline-block align-middle" />`
     : '<span class="inline-flex w-4 h-4 items-center justify-center"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>'
+}
+
+/** Exact, unambiguous names only; unknown markers remain editable text. */
+function resolvePromptCollections(text: string, attached: CollectionRef[], available: AssetCollection[]): CollectionRef[] {
+  const result = [...attached]
+  for (const match of text.matchAll(/\[@([^\]\r\n]+)\]/g)) {
+    const name = match[1]
+    if (result.some(ref => ref.name === name)) continue
+    const matches = available.filter(collection => collection.name === name)
+    if (matches.length !== 1) continue
+    const collection = matches[0]
+    result.push({ id: crypto.randomUUID(), collectionId: collection.id, name, thumbnail: collection.images[0] || '', images: collection.images })
+  }
+  return result
+}
+
+function referenceChip(ref: CollectionRef | ImageRef, collection: boolean): HTMLSpanElement {
+  const chip = document.createElement('span')
+  chip.contentEditable = 'false'
+  if (collection) chip.dataset.collectionRefId = ref.id
+  else chip.dataset.imageRefId = ref.id
+  chip.className = `inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md border text-[12px] font-medium cursor-default select-none ${collection ? 'bg-accent-dim border-accent-main/30 text-accent-main' : 'bg-surface-3 border-border-base text-text-primary'}`
+  const source = collection ? (ref as CollectionRef).thumbnail : (ref as ImageRef).base64
+  if (source) {
+    const image = document.createElement('img')
+    image.src = toDisplayUrl(source)
+    image.className = 'w-4 h-4 rounded object-cover'
+    image.alt = ''
+    chip.append(image)
+  }
+  const label = document.createElement('span')
+  label.textContent = `${collection ? '@' : ''}${ref.name}`
+  chip.append(label)
+  return chip
+}
+
+function promptFragment(text: string, images: ImageRef[], collections: CollectionRef[]): DocumentFragment {
+  const fragment = document.createDocumentFragment()
+  const markers = /\[@([^\]\r\n]+)\]|\[([^@\]\r\n][^\]\r\n]*)\]/g
+  let last = 0
+  for (const match of text.matchAll(markers)) {
+    fragment.append(document.createTextNode(text.slice(last, match.index)))
+    const collection = match[1] ? collections.find(ref => ref.name === match[1]) : undefined
+    const image = match[2] ? images.find(ref => ref.name === match[2]) : undefined
+    fragment.append(collection ? referenceChip(collection, true) : image ? referenceChip(image, false) : document.createTextNode(match[0]))
+    last = match.index! + match[0].length
+  }
+  fragment.append(document.createTextNode(text.slice(last)))
+  return fragment
 }

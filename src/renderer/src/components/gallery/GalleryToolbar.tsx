@@ -1,236 +1,29 @@
-import { useState, useRef } from 'react'
-import { Search, SlidersHorizontal, Star, ArrowUpDown, X } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { SlidersHorizontal, ArrowDownWideNarrow, X } from 'lucide-react'
 import { useGalleryFilterStore } from '../../stores/gallery-filter-store'
-import { AVAILABLE_MODELS } from '../../types/api'
-import { cn } from '../../lib/utils'
-
-interface GalleryToolbarProps {
-  allTags: string[]
-  totalCount: number
-  filteredCount: number
-}
-
-export function GalleryToolbar({ allTags, totalCount, filteredCount }: GalleryToolbarProps) {
-  const [showFilters, setShowFilters] = useState(false)
-  const searchRef = useRef<HTMLInputElement>(null)
-
-  const {
-    searchQuery, setSearchQuery,
-    filterModels, setFilterModels,
-    filterAspectRatios, setFilterAspectRatios,
-    filterDateRange, setFilterDateRange,
-    sortBy, setSortBy,
-    favoritesOnly, setFavoritesOnly,
-    filterTags, setFilterTags,
-    clearFilters, hasActiveFilters,
-  } = useGalleryFilterStore()
-
-  const isFiltered = hasActiveFilters()
-  const activeFilterCount = [
-    filterModels.length > 0,
-    filterAspectRatios.length > 0,
-    !!filterDateRange,
-    filterTags.length > 0,
-  ].filter(Boolean).length
-
-  const toggleModel = (id: string) => {
-    setFilterModels(
-      filterModels.includes(id)
-        ? filterModels.filter((m) => m !== id)
-        : [...filterModels, id]
-    )
-  }
-
-  const toggleAspectRatio = (r: string) => {
-    setFilterAspectRatios(
-      filterAspectRatios.includes(r)
-        ? filterAspectRatios.filter((a) => a !== r)
-        : [...filterAspectRatios, r]
-    )
-  }
-
-  const toggleTag = (t: string) => {
-    setFilterTags(
-      filterTags.includes(t)
-        ? filterTags.filter((x) => x !== t)
-        : [...filterTags, t]
-    )
-  }
-
-  const RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '2:3', '3:2']
-  const DATE_RANGES = [
-    { value: 'today' as const, label: 'Today' },
-    { value: 'week' as const, label: 'This Week' },
-    { value: 'month' as const, label: 'This Month' },
-  ]
-
-  return (
-    <div className="shrink-0 px-5 pt-2 pb-1 flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        {/* Search */}
-        <div className="flex items-center gap-2 flex-1 max-w-[300px] h-8 px-3 rounded-lg bg-surface-2 border border-border-dim focus-within:border-border-base transition-colors">
-          <Search className="w-3.5 h-3.5 text-text-muted shrink-0" />
-          <input
-            ref={searchRef}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search prompts & tags..."
-            className="flex-1 bg-transparent text-[12px] text-text-primary outline-none placeholder:text-text-muted"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="p-0.5 text-text-muted hover:text-text-secondary">
-              <X className="w-3 h-3" />
-            </button>
-          )}
-        </div>
-
-        {/* Filter button */}
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className={cn(
-            'flex items-center gap-1.5 h-8 px-3 rounded-lg border text-[11px] font-medium transition-all',
-            showFilters || activeFilterCount > 0
-              ? 'bg-accent-dim border-accent-main/30 text-accent-main'
-              : 'bg-surface-2 border-border-dim text-text-secondary hover:text-text-primary hover:border-border-base'
-          )}
-        >
-          <SlidersHorizontal className="w-3.5 h-3.5" />
-          Filters
-          {activeFilterCount > 0 && (
-            <span className="ml-0.5 w-4 h-4 rounded-full bg-accent-main text-white text-[9px] flex items-center justify-center font-bold">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
-
-        {/* Favorites toggle */}
-        <button
-          onClick={() => setFavoritesOnly(!favoritesOnly)}
-          className={cn(
-            'flex items-center justify-center w-8 h-8 rounded-lg border transition-all',
-            favoritesOnly
-              ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-              : 'bg-surface-2 border-border-dim text-text-muted hover:text-text-secondary hover:border-border-base'
-          )}
-          title="Show favorites only"
-        >
-          <Star className="w-3.5 h-3.5" fill={favoritesOnly ? 'currentColor' : 'none'} />
-        </button>
-
-        {/* Sort */}
-        <button
-          onClick={() => setSortBy(sortBy === 'newest' ? 'oldest' : 'newest')}
-          className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-2 border border-border-dim text-text-secondary hover:text-text-primary hover:border-border-base transition-all text-[11px] font-medium"
-          title={`Sort: ${sortBy === 'newest' ? 'Newest first' : 'Oldest first'}`}
-        >
-          <ArrowUpDown className="w-3.5 h-3.5" />
-          {sortBy === 'newest' ? 'Newest' : 'Oldest'}
-        </button>
-
-        {/* Result count + clear */}
-        {isFiltered && (
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-[11px] text-text-muted">{filteredCount} of {totalCount}</span>
-            <button
-              onClick={clearFilters}
-              className="text-[11px] text-accent-main hover:text-accent-bright transition-colors"
-            >
-              Clear all
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Expanded filters panel */}
-      {showFilters && (
-        <div className="flex flex-col gap-3 p-3 rounded-xl bg-surface-2 border border-border-dim animate-fade-up">
-          {/* Models */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Model</span>
-            <div className="flex flex-wrap gap-1">
-              {AVAILABLE_MODELS.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => toggleModel(m.id)}
-                  className={cn(
-                    'px-2.5 py-1 rounded-md text-[10px] font-medium border transition-all',
-                    filterModels.includes(m.id)
-                      ? 'bg-accent-dim border-accent-main/30 text-accent-main'
-                      : 'bg-surface-3 border-border-dim text-text-muted hover:text-text-secondary'
-                  )}
-                >
-                  {m.name}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Aspect Ratios */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Aspect Ratio</span>
-            <div className="flex flex-wrap gap-1">
-              {RATIOS.map((r) => (
-                <button
-                  key={r}
-                  onClick={() => toggleAspectRatio(r)}
-                  className={cn(
-                    'px-2.5 py-1 rounded-md text-[10px] font-medium border transition-all',
-                    filterAspectRatios.includes(r)
-                      ? 'bg-accent-dim border-accent-main/30 text-accent-main'
-                      : 'bg-surface-3 border-border-dim text-text-muted hover:text-text-secondary'
-                  )}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Date range */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Date</span>
-            <div className="flex flex-wrap gap-1">
-              {DATE_RANGES.map((d) => (
-                <button
-                  key={d.value}
-                  onClick={() => setFilterDateRange(filterDateRange === d.value ? null : d.value)}
-                  className={cn(
-                    'px-2.5 py-1 rounded-md text-[10px] font-medium border transition-all',
-                    filterDateRange === d.value
-                      ? 'bg-accent-dim border-accent-main/30 text-accent-main'
-                      : 'bg-surface-3 border-border-dim text-text-muted hover:text-text-secondary'
-                  )}
-                >
-                  {d.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tags */}
-          {allTags.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Tags</span>
-              <div className="flex flex-wrap gap-1">
-                {allTags.slice(0, 20).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => toggleTag(t)}
-                    className={cn(
-                      'px-2.5 py-1 rounded-md text-[10px] font-medium border transition-all',
-                      filterTags.includes(t)
-                        ? 'bg-accent-dim border-accent-main/30 text-accent-main'
-                        : 'bg-surface-3 border-border-dim text-text-muted hover:text-text-secondary'
-                    )}
-                  >
-                    #{t}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+import { AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS } from '../../types/api'
+interface Props { allTags: string[]; totalCount: number; filteredCount: number }
+export function GalleryToolbar({ allTags, filteredCount }: Props) {
+  const [open,setOpen]=useState(false)
+  const dialog=useRef<HTMLDialogElement>(null)
+  const f=useGalleryFilterStore()
+  useEffect(()=>{if(open)dialog.current?.showModal()},[open])
+  const activeCount=[f.filterModels.length>0,f.filterAspectRatios.length>0,!!f.filterDateRange&&f.filterDateRange!=='all',f.filterTags.length>0,f.filterType!=='all',!!f.activeSmartAlbum].filter(Boolean).length
+  return <div className="shrink-0 px-4 md:px-7 pb-4 flex items-center gap-1.5 text-[13px] flex-wrap">
+    <button className={`px-3 py-1.5 rounded-md ${!f.favoritesOnly?'bg-surface-3 text-text-primary':'text-text-muted hover:bg-surface-3'}`} aria-pressed={!f.favoritesOnly} onClick={()=>{f.setFavoritesOnly(false);f.setActiveSmartAlbum(null)}}>Alle</button>
+    <button className={`px-3 py-1.5 rounded-md ${f.favoritesOnly?'bg-surface-3 text-text-primary':'text-text-muted hover:bg-surface-3'}`} aria-pressed={f.favoritesOnly} onClick={()=>f.setFavoritesOnly(!f.favoritesOnly)}>Favoriten</button>
+    <span className="ml-auto text-xs text-text-muted tabular-nums">{filteredCount} Ergebnisse</span>
+    <button onClick={()=>setOpen(true)} className={`flex gap-2 items-center px-3 py-1.5 rounded-md hover:bg-surface-3 ${activeCount?'text-accent-main':'text-text-secondary'}`}><SlidersHorizontal className="w-4 h-4"/>Filter{activeCount>0&&<span className="text-xs">{activeCount}</span>}</button>
+    <button onClick={()=>f.setSortBy(f.sortBy==='newest'?'oldest':'newest')} className="flex gap-2 items-center px-2 py-1.5 text-text-muted rounded-md hover:bg-surface-3" title="Sortierung ändern"><ArrowDownWideNarrow className="w-4 h-4"/><span className="hidden sm:inline">{f.sortBy==='newest'?'Neueste zuerst':'Älteste zuerst'}</span></button>
+    {f.hasActiveFilters()&&<button onClick={f.clearFilters} className="text-xs text-accent-main px-2 py-1.5 hover:underline">Zurücksetzen</button>}
+    {open&&createPortal(<dialog ref={dialog} aria-label="Mediathek filtern" onClose={()=>setOpen(false)} onClick={e=>{if(e.target===e.currentTarget)dialog.current?.close()}} className="m-auto w-[min(540px,92vw)] max-h-[85vh] overflow-auto rounded-xl border border-border-base bg-surface-1 text-text-primary p-6 backdrop:bg-black/70"><div className="flex items-center mb-6"><h2 className="text-lg font-semibold">Mediathek filtern</h2><button onClick={()=>dialog.current?.close()} aria-label="Filter schließen" className="ml-auto p-2 rounded-lg hover:bg-surface-3"><X className="w-5 h-5"/></button></div><div className="space-y-6">
+      <label className="block"><span className="text-text-secondary block mb-2">Medientyp</span><select value={f.filterType} onChange={e=>f.setFilterType(e.target.value as typeof f.filterType)} className="bg-surface-3 rounded-lg px-3 py-2 w-full"><option value="all">Bilder und Videos</option><option value="images">Nur Bilder</option><option value="videos">Nur Videos</option></select></label>
+      <fieldset><legend className="text-text-secondary mb-2">Modelle</legend><div className="grid grid-cols-2 gap-2">{[...AVAILABLE_MODELS,...AVAILABLE_VIDEO_MODELS].map(m=><label key={m.id} className="flex items-center gap-2 text-xs p-2 rounded-lg hover:bg-surface-3"><input type="checkbox" checked={f.filterModels.includes(m.id)} onChange={()=>f.setFilterModels(f.filterModels.includes(m.id)?f.filterModels.filter(x=>x!==m.id):[...f.filterModels,m.id])}/>{m.name}</label>)}</div></fieldset>
+      <fieldset><legend className="text-text-secondary mb-2">Seitenverhältnis</legend><div className="flex flex-wrap gap-2">{[...new Set(AVAILABLE_MODELS.flatMap(m=>m.aspectRatios??m.uiAspectRatios??[]))].filter(r=>r!=='auto').map(r=><button key={r} onClick={()=>f.setFilterAspectRatios(f.filterAspectRatios.includes(r)?f.filterAspectRatios.filter(x=>x!==r):[...f.filterAspectRatios,r])} aria-pressed={f.filterAspectRatios.includes(r)} className={`px-3 py-2 rounded-md border ${f.filterAspectRatios.includes(r)?'border-accent-main text-accent-main':'border-border-base text-text-secondary'}`}>{r}</button>)}</div></fieldset>
+      <label className="block"><span className="text-text-secondary block mb-2">Zeitraum</span><select value={f.filterDateRange??'all'} onChange={e=>f.setFilterDateRange(e.target.value==='all'?null:e.target.value as 'today'|'week'|'month')} className="bg-surface-3 rounded-lg px-3 py-2 w-full"><option value="all">Alle Zeiträume</option><option value="today">Heute</option><option value="week">Letzte 7 Tage</option><option value="month">Letzte 30 Tage</option></select></label>
+      {allTags.length>0&&<fieldset><legend className="text-text-secondary mb-2">Tags</legend><div className="flex flex-wrap gap-2">{allTags.map(t=><button key={t} onClick={()=>f.setFilterTags(f.filterTags.includes(t)?f.filterTags.filter(x=>x!==t):[...f.filterTags,t])} aria-pressed={f.filterTags.includes(t)} className={`px-3 py-2 rounded-md ${f.filterTags.includes(t)?'bg-accent-dim text-accent-main':'bg-surface-3'}`}>#{t}</button>)}</div></fieldset>}
+      <div className="flex justify-between items-center"><button onClick={f.clearFilters} className="text-text-secondary hover:text-text-primary">Zurücksetzen</button><button onClick={()=>dialog.current?.close()} className="bg-accent-main text-accent-ink px-4 py-2 rounded-lg font-medium">Ergebnisse ansehen</button></div>
+    </div></dialog>,document.body)}
+  </div>
 }

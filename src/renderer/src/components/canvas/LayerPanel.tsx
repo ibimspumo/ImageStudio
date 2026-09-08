@@ -48,12 +48,12 @@ export function LayerPanel() {
   return (
     <div className="w-[200px] bg-surface-1 border-r border-border-dim flex flex-col shrink-0">
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-dim">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Layers</span>
+        <span className="text-[12px] font-semibold text-text-muted">Ebenen</span>
         <button
           onClick={addLayer}
           disabled={layers.length >= 8}
           className="flex items-center justify-center w-6 h-6 rounded-md bg-surface-3 hover:bg-surface-4 border border-border-dim text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-          title={layers.length >= 8 ? 'Max 8 layers' : 'Add layer'}
+          title={layers.length >= 8 ? 'Maximal 8 Ebenen' : 'Ebene hinzufügen'}
         >
           <Plus className="w-3 h-3" />
         </button>
@@ -85,6 +85,7 @@ export function LayerPanel() {
               <GripVertical className="w-3 h-3 text-text-muted/50 shrink-0 cursor-grab" />
 
               <button
+                aria-label={layer.visible ? `Ebene ${layer.name} verbergen` : `Ebene ${layer.name} anzeigen`}
                 onClick={(e) => { e.stopPropagation(); toggleLayerVisibility(layer.id) }}
                 className="shrink-0 w-5 h-5 flex items-center justify-center text-text-muted hover:text-text-primary transition-colors"
               >
@@ -92,7 +93,7 @@ export function LayerPanel() {
               </button>
 
               <span className={cn(
-                'flex-1 text-[11px] font-medium truncate',
+                'flex-1 text-[12px] font-medium truncate',
                 isActive ? 'text-text-primary' : 'text-text-secondary'
               )}>
                 {layer.name}
@@ -106,14 +107,14 @@ export function LayerPanel() {
                 onChange={(e) => { e.stopPropagation(); setLayerOpacity(layer.id, parseInt(e.target.value) / 100) }}
                 onClick={(e) => e.stopPropagation()}
                 className="w-12 h-0.5 rounded-full appearance-none bg-surface-4 accent-accent-main cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-2 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent-main"
-                title={`Opacity: ${Math.round(layer.opacity * 100)}%`}
+                title={`Deckkraft: ${Math.round(layer.opacity * 100)}%`}
               />
 
               {layers.length > 1 && (
                 <button
                   onClick={(e) => { e.stopPropagation(); removeLayer(layer.id) }}
                   className="shrink-0 w-5 h-5 flex items-center justify-center text-text-muted hover:text-danger transition-colors"
-                  title="Delete layer"
+                  title="Ebene löschen"
                 >
                   <Trash2 className="w-3 h-3" />
                 </button>

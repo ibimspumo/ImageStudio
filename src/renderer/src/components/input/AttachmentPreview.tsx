@@ -20,7 +20,7 @@ export function AttachmentPreview({ attachments, onRemove }: AttachmentPreviewPr
           {/* Badge */}
           <div className="absolute bottom-0 left-0 right-0 bg-black/50 backdrop-blur-sm rounded-b-xl px-1.5 py-0.5 flex items-center gap-1">
             <ImageIcon className="w-2.5 h-2.5 text-white/70" />
-            <span className="text-[9px] text-white/70 font-medium">Ref {i + 1}</span>
+            <span className="text-[12px] text-white/70 font-medium">Ref {i + 1}</span>
           </div>
           {/* Remove button */}
           <button

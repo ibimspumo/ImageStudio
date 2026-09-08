@@ -5,12 +5,15 @@ import { cn } from '../../lib/utils'
 
 interface PresetsDialogProps {
   onClose: () => void
+  embedded?: boolean
+  onUsePreset?: (id: string) => void
 }
 
 type View = 'list' | 'create' | 'edit'
 
-export function PresetsDialog({ onClose }: PresetsDialogProps) {
+export function PresetsDialog({ onClose, embedded = false, onUsePreset }: PresetsDialogProps) {
   const { presets, addPreset, updatePreset, removePreset } = usePresetsStore()
+  const [search, setSearch] = useState('')
   const [view, setView] = useState<View>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -45,45 +48,49 @@ export function PresetsDialog({ onClose }: PresetsDialogProps) {
   }
 
   return (
-    <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center animate-overlay-in" onClick={onClose}>
-      <div className="bg-surface-1 border border-border-base rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.6)] w-full max-w-lg max-h-[80vh] flex flex-col animate-scale-in" onClick={(e) => e.stopPropagation()}>
+    <div className={embedded ? "h-full min-h-0 flex flex-col" : "absolute inset-0 z-50 bg-black/70 flex items-center justify-center animate-overlay-in"} onClick={embedded ? undefined : onClose}>
+      <div className={embedded ? "flex flex-col h-full min-h-0" : "bg-surface-1 border border-border-base rounded-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col animate-scale-in"} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border-dim">
+        <div className="flex items-center justify-between px-7 py-5 border-b border-border-dim">
           <div className="flex items-center gap-2">
             {view !== 'list' && (
               <button onClick={() => { setView('list'); setEditingId(null) }} className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-3 transition-colors">
                 <ArrowLeft className="w-4 h-4" />
               </button>
             )}
-            <h2 className="text-[15px] font-semibold text-text-primary">
-              {view === 'list' ? 'Style Presets' : view === 'create' ? 'New Preset' : 'Edit Preset'}
+            <h2 className="text-2xl font-semibold text-text-primary">
+              {view === 'list' ? 'Stile' : view === 'create' ? 'Neuer Stil' : 'Stil bearbeiten'}
             </h2>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-3 transition-colors">
+          <button hidden={embedded} aria-label="Schließen" onClick={onClose} className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-3 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
 
+        {view === 'list' && <div className="px-7 pt-5 space-y-4"><p className="text-[13px] leading-relaxed text-text-secondary max-w-2xl">Speichere wiederkehrende Bildstile. Die Stilbeschreibung ergänzt deinen Prompt beim Erstellen.</p><input aria-label="Stile suchen" value={search} onChange={event => setSearch(event.target.value)} placeholder="Stile suchen…" className="w-full max-w-md bg-surface-2 border border-border-base rounded-lg px-3 py-2.5 text-[13px] text-text-primary placeholder:text-text-secondary outline-none focus:border-accent-main" /></div>}
+
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-7">
           {view === 'list' && (
             <div className="space-y-2">
-              {presets.map((preset) => (
-                <div key={preset.id} className="flex items-center gap-3 p-3 rounded-xl bg-surface-2 border border-border-dim group hover:border-border-base transition-colors">
+              {search && !presets.some(item => item.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())) && <p className="py-6 text-[13px] text-text-secondary">Keine Stile gefunden.</p>}
+              {presets.filter(item => item.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map((preset) => (
+                <div key={preset.id} className="flex items-center gap-3 p-4 rounded-xl bg-surface-2 border border-border-dim group hover:border-border-base transition-colors">
                   <span className="text-[16px] w-6 text-center">{preset.icon || '✦'}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-medium text-text-primary">{preset.name}</span>
                       {preset.isBuiltIn && <Lock className="w-3 h-3 text-text-muted" />}
                     </div>
-                    <p className="text-[11px] text-text-muted truncate">{preset.suffix}</p>
+                    <p className="text-[13px] text-text-secondary line-clamp-2">{preset.suffix}</p>
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => startEdit(preset)} className="p-1.5 rounded-lg hover:bg-surface-3 text-text-muted hover:text-text-primary transition-colors">
+                  <div className="flex items-center gap-1 opacity-100 transition-opacity">
+                      {onUsePreset && <button onClick={() => onUsePreset(preset.id)} className="px-3 py-2 rounded-lg text-[12px] font-medium text-accent-main hover:bg-surface-4">Verwenden</button>}
+                    <button aria-label={`Stil ${preset.name} bearbeiten`} onClick={() => startEdit(preset)} className="p-1.5 rounded-lg hover:bg-surface-3 text-text-muted hover:text-text-primary transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     {!preset.isBuiltIn && (
-                      <button onClick={() => removePreset(preset.id)} className="p-1.5 rounded-lg hover:bg-surface-3 text-text-muted hover:text-danger transition-colors">
+                      <button aria-label={`Stil ${preset.name} löschen`} onClick={() => removePreset(preset.id)} className="p-1.5 rounded-lg hover:bg-surface-3 text-text-muted hover:text-danger transition-colors">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
@@ -92,11 +99,11 @@ export function PresetsDialog({ onClose }: PresetsDialogProps) {
               ))}
 
               <button
-                onClick={() => setView('create')}
+                onClick={() => { setEditingId(null); setName(''); setSuffix(''); setIcon(''); setView('create') }}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-border-dim text-text-muted hover:text-text-secondary hover:border-border-base transition-all text-[13px] font-medium"
               >
                 <Plus className="w-4 h-4" />
-                New Custom Preset
+                Eigenen Stil erstellen
               </button>
             </div>
           )}
@@ -104,7 +111,7 @@ export function PresetsDialog({ onClose }: PresetsDialogProps) {
           {(view === 'create' || view === 'edit') && (
             <div className="space-y-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Icon (emoji)</label>
+                <label className="text-[13px] font-medium text-text-muted">Symbol (Emoji)</label>
                 <input
                   value={icon}
                   onChange={(e) => setIcon(e.target.value)}
@@ -114,17 +121,17 @@ export function PresetsDialog({ onClose }: PresetsDialogProps) {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Name</label>
+                <label className="text-[13px] font-medium text-text-muted">Name</label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="My Style"
+                  placeholder="Mein Stil"
                   className="h-10 px-3 rounded-lg bg-surface-2 border border-border-base text-[13px] text-text-primary outline-none focus:border-accent-main/40 transition-colors placeholder:text-text-muted"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Suffix (appended to prompt)</label>
+                <label className="text-[13px] font-medium text-text-muted">Stilbeschreibung (wird an den Prompt angehängt)</label>
                 <textarea
                   value={suffix}
                   onChange={(e) => setSuffix(e.target.value)}
@@ -140,11 +147,11 @@ export function PresetsDialog({ onClose }: PresetsDialogProps) {
                 className={cn(
                   'w-full py-2.5 rounded-xl text-[13px] font-medium transition-all',
                   name.trim() && suffix.trim()
-                    ? 'bg-accent-main text-white hover:bg-accent-bright'
+                    ? 'bg-accent-main text-surface-0 hover:bg-accent-bright'
                     : 'bg-surface-3 text-text-muted cursor-not-allowed'
                 )}
               >
-                {view === 'create' ? 'Create Preset' : 'Save Changes'}
+                {view === 'create' ? 'Stil erstellen' : 'Änderungen speichern'}
               </button>
             </div>
           )}

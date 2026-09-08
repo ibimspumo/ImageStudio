@@ -1,3 +1,4 @@
+import { ComposerPopover } from './ComposerPopover'
 import { FolderOpen } from 'lucide-react'
 import type { AssetCollection } from '../../stores/collections-store'
 import type { ImageRef } from '../../types/api'
@@ -17,7 +18,7 @@ export function MentionPopup({ items, onSelectImage, onSelectCollection }: Menti
   if (items.length === 0) return null
 
   return (
-    <div className="absolute bottom-full left-4 mb-2 modal-glass border border-border-base rounded-xl p-1.5 z-30 animate-scale-in min-w-[220px] max-h-[240px] overflow-y-auto">
+    <ComposerPopover className="absolute bottom-full left-4 mb-2 modal-glass border border-border-base rounded-xl p-1.5 animate-scale-in min-w-[220px] max-h-[240px] overflow-y-auto">
       {items.map((item) =>
         item.type === 'image' ? (
           <button
@@ -43,11 +44,11 @@ export function MentionPopup({ items, onSelectImage, onSelectCollection }: Menti
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[13px] font-medium text-text-primary truncate">@{item.collection.name}</span>
-              <span className="text-[10px] text-text-muted">{item.collection.images.length} images</span>
+              <span className="text-[12px] text-text-muted">{item.collection.images.length} images</span>
             </div>
           </button>
         )
       )}
-    </div>
+    </ComposerPopover>
   )
 }

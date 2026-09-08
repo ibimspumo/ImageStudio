@@ -12,6 +12,7 @@ interface SettingsStore extends AppSettings {
 
 export const useSettingsStore = create<SettingsStore>((set) => ({
   falApiKey: '',
+  falBillingApiKey: '',
   defaultModel: DEFAULT_MODEL,
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
@@ -37,12 +38,14 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   },
 
   setFalApiKey: async (key: string) => {
-    await window.api.setSetting('falApiKey', key)
+    const result = await window.api.setSetting('falApiKey', key)
+    if (!result.success) throw new Error('Der API-Schlüssel konnte nicht gespeichert werden. Bitte erneut versuchen.')
     set({ falApiKey: key })
   },
 
   setSetting: async <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
-    await window.api.setSetting(key, value)
+    const result = await window.api.setSetting(key, value)
+    if (!result.success) throw new Error(`Die Einstellung ${key} konnte nicht gespeichert werden. Bitte erneut versuchen.`)
     set({ [key]: value } as Partial<AppSettings>)
   }
 }))

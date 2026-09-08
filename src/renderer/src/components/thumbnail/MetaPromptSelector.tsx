@@ -1,3 +1,5 @@
+import { ComposerPopover } from '../input/ComposerPopover'
+import { useDismissOnEscape } from '../input/useDismissOnEscape'
 import { useState } from 'react'
 import { BookmarkPlus, Check, FileText, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useThumbnailMetaPromptsStore } from '../../stores/thumbnail-meta-prompts-store'
@@ -10,6 +12,7 @@ import { cn } from '../../lib/utils'
  */
 export function MetaPromptSelector() {
   const [open, setOpen] = useState(false)
+  useDismissOnEscape(open, () => setOpen(false))
   /** null = list view, 'new' = create form, otherwise the id being edited. */
   const [editing, setEditing] = useState<string | 'new' | null>(null)
   const [draftName, setDraftName] = useState('')
@@ -55,7 +58,7 @@ export function MetaPromptSelector() {
       <button
         onClick={() => (open ? close() : setOpen(true))}
         className={cn(
-          'no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg border transition-all text-[12px] font-medium max-w-[180px]',
+          'no-drag flex items-center gap-1.5 h-9 px-3 rounded-lg border transition-all text-[12px] font-medium max-w-[180px]',
           active
             ? 'border-accent-main/30 bg-accent-dim text-accent-main'
             : 'bg-surface-3 hover:bg-surface-4 border-border-base text-text-secondary hover:text-text-primary'
@@ -68,11 +71,11 @@ export function MetaPromptSelector() {
 
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={close} />
-          <div className="absolute bottom-full left-0 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-2 z-30 animate-scale-in w-[320px]">
+          <div className="fixed inset-0 z-[79]" onClick={close} />
+          <ComposerPopover className="bg-surface-3 border border-border-base rounded-xl shadow-sm p-2 animate-scale-in w-[320px]">
             {editing !== null ? (
               <div className="flex flex-col gap-2 p-1">
-                <div className="px-1 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                <div className="px-1 text-[12px] font-medium text-text-muted">
                   {editing === 'new' ? 'Neuer Meta-Prompt' : 'Meta-Prompt bearbeiten'}
                 </div>
                 <input
@@ -92,7 +95,7 @@ export function MetaPromptSelector() {
                 <div className="flex items-center justify-end gap-1.5">
                   <button
                     onClick={() => setEditing(null)}
-                    className="no-drag h-7 px-2.5 rounded-lg text-[11px] font-medium text-text-secondary hover:text-text-primary hover:bg-surface-4 transition-all"
+                    className="no-drag h-7 px-2.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-text-primary hover:bg-surface-4 transition-all"
                   >
                     Abbrechen
                   </button>
@@ -100,9 +103,9 @@ export function MetaPromptSelector() {
                     onClick={saveDraft}
                     disabled={!draftName.trim() || !draftText.trim()}
                     className={cn(
-                      'no-drag flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-semibold transition-all',
+                      'no-drag flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-semibold transition-all',
                       draftName.trim() && draftText.trim()
-                        ? 'bg-accent-main hover:bg-accent-bright text-white'
+                        ? 'bg-accent-main hover:bg-accent-bright text-[#171a11]'
                         : 'bg-surface-4 text-text-muted cursor-not-allowed'
                     )}
                   >
@@ -113,7 +116,7 @@ export function MetaPromptSelector() {
               </div>
             ) : (
               <>
-                <div className="px-2 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                <div className="px-2 pb-1.5 text-[12px] font-medium text-text-muted">
                   Meta-Prompt
                 </div>
 
@@ -139,7 +142,7 @@ export function MetaPromptSelector() {
                   </div>
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-[12px] font-medium">Keiner</span>
-                    <span className="text-[10px] text-text-muted">Nur System-Prompt und dein Prompt</span>
+                    <span className="text-[12px] text-text-muted">Nur System-Prompt und dein Prompt</span>
                   </div>
                 </button>
 
@@ -172,7 +175,7 @@ export function MetaPromptSelector() {
                           </div>
                           <div className="flex flex-col min-w-0 flex-1">
                             <span className="text-[12px] font-medium truncate">{prompt.name}</span>
-                            <span className="text-[10px] text-text-muted truncate">
+                            <span className="text-[12px] text-text-muted truncate">
                               {prompt.text.replace(/\s+/g, ' ').slice(0, 60)}
                             </span>
                           </div>
@@ -206,7 +209,7 @@ export function MetaPromptSelector() {
                 </button>
               </>
             )}
-          </div>
+          </ComposerPopover>
         </>
       )}
     </div>

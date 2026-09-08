@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { FalBackground } from '../types/api'
 
 interface PendingCropRef {
   id: string
@@ -7,7 +8,14 @@ interface PendingCropRef {
   name: string
 }
 
-interface PendingReuse {
+export interface ReuseOptions {
+  background?: FalBackground
+  model?: string
+  aspectRatio?: string
+  resolution?: string
+}
+
+interface PendingReuse extends ReuseOptions {
   prompt: string
   attachmentFilePaths?: string[]  // file paths to load as references
   negativePrompt?: string
@@ -19,7 +27,7 @@ interface CropStore {
   pendingReuse: PendingReuse | null
   addPendingRef: (base64: string, sourceImageId: string) => void
   consumePendingRef: () => PendingCropRef | null
-  setPendingReuse: (prompt: string, attachmentFilePaths?: string[], negativePrompt?: string, seed?: number) => void
+  setPendingReuse: (prompt: string, attachmentFilePaths?: string[], negativePrompt?: string, seed?: number, options?: ReuseOptions) => void
   consumePendingReuse: () => PendingReuse | null
 }
 
@@ -45,8 +53,8 @@ export const useCropStore = create<CropStore>((set, get) => ({
     return ref
   },
 
-  setPendingReuse: (prompt, attachmentFilePaths, negativePrompt, seed) => {
-    set({ pendingReuse: { prompt, attachmentFilePaths, negativePrompt, seed } })
+  setPendingReuse: (prompt, attachmentFilePaths, negativePrompt, seed, options) => {
+    set({ pendingReuse: { prompt, attachmentFilePaths, negativePrompt, seed, ...options } })
   },
 
   consumePendingReuse: () => {

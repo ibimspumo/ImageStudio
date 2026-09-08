@@ -21,7 +21,7 @@ Object.assign(globalThis, { window: { api: {
 let generated: GenerateOptions | undefined
 const registry = createAutomationTools({
   generate: options => { generated = options; return ['new-job'] },
-  generateVideo: () => 'video-job', generateChat: () => ({ chatId: 'chat', messageId: 'message' }),
+  generateVideo: () => 'video-job',
   navigate: () => {}, getView: () => ({ mode: 'image' }),
 })
 async function call(name: string, args: Record<string, unknown> = {}) {
@@ -32,7 +32,18 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 test('renderer automation boundary and generation contracts', async () => {
   const names = registry.definitions.map(d => d.name)
   assert.equal(new Set(names).size, names.length, 'tool names are unique')
-  for (const name of ['get_capabilities', 'get_draft', 'canvas_draw', 'image_inpaint', 'import_media', 'generate_video', 'wait_for_jobs']) assert.ok(names.includes(name), name)
+  for (const name of ['get_capabilities', 'get_draft', 'canvas_draw', 'image_crop', 'import_media', 'generate_video', 'wait_for_jobs']) assert.ok(names.includes(name), name)
+  for (const name of ['chats', 'chat_generate', 'image_inpaint']) {
+    assert.ok(!names.includes(name), `${name} is removed from discovery`)
+    assert.equal((await call(name)).error, true, `${name} cannot execute`)
+  }
+  for (const mode of ['chat', 'inpaint']) {
+    assert.equal((await call('get_draft', { mode })).error, true)
+    assert.equal((await call('update_draft', { mode, patch: { prompt: 'removed' } })).error, true)
+    assert.equal((await call('generate_draft', { mode })).error, true)
+    assert.equal((await call('navigate', { target: mode })).error, true)
+  }
+  for (const target of ['library', 'references', 'styles', 'projects', 'activity']) assert.equal((await call('navigate', { target })).error, false)
   assert.equal((await call('update_settings', { imaginaryField: true })).error, true)
   assert.equal((await call('update_settings', { defaultImageCount: 100000 })).error, true)
   assert.equal((await call('generate', { prompt: 'test', extraCode: 'alert(1)' })).error, true)
@@ -73,6 +84,8 @@ test('renderer automation boundary and generation contracts', async () => {
   assert.equal(useQueueStore.getState().items[0].quality, 'medium')
 
   useGalleryStore.setState({ images: [{ id: 'known', prompt: 'test', filePath: '/known-image.png', timestamp: 1, aspectRatio: '1:1', resolution: '1K', model: DEFAULT_THUMBNAIL_MODEL, generationOptions: { ...generated!, attachments: ['data:image/png;base64,SHOULD_NOT_LEAK'] }, generationRequest: { endpoint: 'test', input: { prompt: 'exact prompt', image_urls: ['data:image/png;base64,SHOULD_NOT_LEAK'] } } }] })
+  assert.equal((await call('navigate', { target: 'create_variant', id: 'known' })).error, false)
+  assert.equal((await call('navigate', { target: 'create_variant', id: 'missing' })).error, true)
   assert.ok(!(await call('list_images')).text.includes('SHOULD_NOT_LEAK'))
   assert.ok(!(await call('wait_for_jobs', { ids: ['known'], timeoutMs: 0 })).text.includes('SHOULD_NOT_LEAK'))
   const details = await call('generation_details', { id: 'known' })
@@ -110,6 +123,7 @@ test('inline collection and image references remain bound at their prompt positi
   const vague = await call('preview_generation', { ...args, prompt: 'A portrait of Timo from the reference collection' })
   assert.ok(vague.data.referenceMentions.every((ref: { mentionedInPrompt: boolean }) => !ref.mentionedInPrompt))
   const capabilities = (await call('get_capabilities')).data
+  assert.ok(capabilities.models.every((model: Record<string, unknown>) => !('maskField' in model)))
   assert.ok(capabilities.referencePrompting.example.includes('[@Timo]'))
   assert.ok(registry.definitions.find(tool => tool.name === 'generate')?.inputSchema.properties?.prompt.description?.includes('inline'))
 })

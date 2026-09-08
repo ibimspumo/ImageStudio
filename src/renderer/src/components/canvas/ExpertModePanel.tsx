@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { RefreshCw, Send, Sparkles } from 'lucide-react'
 import { useCanvasStore } from '../../stores/canvas-store'
 import { useSharedCanvasRenderer } from './CanvasRendererContext'
@@ -13,6 +13,8 @@ import { ImageCountSelector } from '../input/ImageCountSelector'
 import { cn } from '../../lib/utils'
 
 export function ExpertModePanel() {
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const colorMappings = useCanvasStore((s) => s.colorMappings)
   const setColorMappings = useCanvasStore((s) => s.setColorMappings)
   const updateColorDescription = useCanvasStore((s) => s.updateColorDescription)
@@ -56,11 +58,16 @@ export function ExpertModePanel() {
     const canvasBase64 = exportComposite()
     if (!canvasBase64) return
 
+    setSubmitting(true)
+    setError('')
+    try {
     const options = await buildCanvasExpertRequest({ canvasBase64, colorMappings, generalPrompt,
       generalAttachments, collectionsByField, aspectRatio, customRatio, resolution, imageCount, selectedModels })
     generate(options)
 
     close()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setSubmitting(false) }
   }, [falApiKey, exportComposite, colorMappings, generalPrompt, generalAttachments, collectionsByField, aspectRatio, customRatio, resolution, imageCount, selectedModels, generate, close])
 
   const hasColorDescriptions = colorMappings.some((m) => m.description.trim())
@@ -70,7 +77,7 @@ export function ExpertModePanel() {
     <div className="w-[300px] bg-surface-1 border-l border-border-dim flex flex-col shrink-0 h-full">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border-dim">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Expert Mode</span>
+        <span className="text-[12px] font-semibold text-text-muted">Farbbereiche</span>
       </div>
 
       {/* Scrollable content */}
@@ -79,13 +86,13 @@ export function ExpertModePanel() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleDetectColors}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-dim text-[11px] font-medium text-text-secondary hover:text-text-primary transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-dim text-[12px] font-medium text-text-secondary hover:text-text-primary transition-all"
           >
             <RefreshCw className="w-3 h-3" />
-            Detect Colors
+            Farben erkennen
           </button>
           {colorMappings.length > 0 && (
-            <span className="text-[11px] text-text-muted">{colorMappings.length} found</span>
+            <span className="text-[12px] text-text-muted">{colorMappings.length } gefunden</span>
           )}
         </div>
 
@@ -96,7 +103,7 @@ export function ExpertModePanel() {
               <ColorFieldEditor
                 key={mapping.color}
                 colorHex={mapping.color}
-                placeholder={`What does ${mapping.color} represent?`}
+                placeholder={`Was stellt ${mapping.color} dar?`}
                 value={mapping.description}
                 onChange={(v) => updateColorDescription(mapping.color, v)}
                 collectionMentions={collectionsByField[mapping.color] ?? []}
@@ -111,15 +118,15 @@ export function ExpertModePanel() {
         {colorMappings.length === 0 && (
           <div className="flex items-center gap-2 px-3 py-3 rounded-lg bg-surface-2 border border-border-dim">
             <Sparkles className="w-4 h-4 text-text-muted shrink-0" />
-            <p className="text-[12px] text-text-muted leading-relaxed">Draw on the canvas, then click "Detect Colors" to map each color to a description.</p>
+            <p className="text-[12px] text-text-muted leading-relaxed">Zeichne deine Skizze und wähle „Farben erkennen“. Beschreibe dann, was jeder Farbbereich darstellt.</p>
           </div>
         )}
 
         {/* General prompt */}
         <div className="border-t border-border-dim pt-3">
-          <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted mb-1.5">General Description</div>
+          <div className="text-[12px] font-medium text-text-muted mb-1.5">Gesamte Szene</div>
           <ColorFieldEditor
-            placeholder="Overall scene description..."
+            placeholder="Beschreibe die gesamte Szene…"
             value={generalPrompt}
             onChange={setGeneralPrompt}
             collectionMentions={collectionsByField.__general__ ?? []}
@@ -140,18 +147,20 @@ export function ExpertModePanel() {
           <ImageCountSelector value={imageCount} onChange={setImageCount} max={caps.maxImagesPerRequest} />
         </div>
 
+        {error && <p role="alert" className="text-[12px] text-danger break-words">{error}</p>}
+        {!falApiKey && <p className="text-[12px] text-text-secondary">Hinterlege deinen API-Schlüssel in den Einstellungen.</p>}
         <button
           onClick={handleSubmit}
-          disabled={!canSend}
+          disabled={!canSend || submitting}
           className={cn(
             'no-drag btn-interactive flex items-center justify-center h-9 rounded-xl transition-all w-full',
             canSend
-              ? 'bg-accent-main hover:bg-accent-bright text-white gap-2 glow-accent shadow-lg'
+              ? 'bg-accent-main hover:bg-accent-bright text-surface-0 gap-2'
               : 'bg-surface-3 text-text-muted cursor-not-allowed'
           )}
         >
           <Send className="w-4 h-4" />
-          <span className="text-[12px] font-semibold tracking-wide">Generate</span>
+          <span className="text-[12px] font-semibold tracking-wide">{submitting ? 'Wird vorbereitet…' : 'Bild erstellen'}</span>
         </button>
       </div>
     </div>

@@ -48,6 +48,7 @@ export interface ElectronAPI {
   automationExportMedia(options: { filePath: string; destination: string; overwrite?: boolean; metadata?: Record<string, string> }): Promise<{ success: true; filePath: string; size: number }>
   automationReadMedia(options: { filePath: string }): Promise<{ success: true; filePath: string; uri: string; mimeType: string; kind: 'image' | 'video'; size: number }>
 
+  refreshBilling(requests: import('../shared/billing').BillingRequest[]): Promise<import('../shared/billing').BillingResult>
   generateImage(request: {
     prompt: string
     model: string
@@ -68,7 +69,6 @@ export interface ElectronAPI {
     thinkingLevel?: 'minimal' | 'high'
     safetyTolerance?: string
     outputFormat?: 'png' | 'jpeg' | 'webp'
-    maskUrl?: string
   }): Promise<{
     success: boolean
     results?: Array<{

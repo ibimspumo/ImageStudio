@@ -6,10 +6,10 @@ import { AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, LOGO_STYLES, THUMBNAIL_STYLES
 import { useGalleryStore } from '../stores/gallery-store'
 import { REFERENCE_PROMPT_DESCRIPTION, REFERENCE_PROMPT_GUIDANCE } from '../../../shared/reference-mentions'
 
-const modeSchema = choice(['image', 'thumbnail', 'logo', 'video', 'inpaint', 'canvas', 'chat'])
+const modeSchema = choice(['image', 'thumbnail', 'logo', 'video', 'canvas'])
 const referenceSchema = { ...str('Existing gallery image ID or image data URL. Import file/URL sources with import_media first. In references, entries become [Image 1], [Image 2], etc.; mention them inline where you describe their role. The video startFrame is a dedicated input instead.'), maxLength: 30000000 }
 export const draftPatchSchema = object({
-  prompt: str(`Replaces editor text. For image editors, recognized inline mentions become real UI chips at that text position. ${REFERENCE_PROMPT_DESCRIPTION} ${REFERENCE_PROMPT_GUIDANCE.chat} ${REFERENCE_PROMPT_GUIDANCE.video}`),
+  prompt: str(`Replaces editor text. For image editors, recognized inline mentions become real UI chips at that text position. When collectionIds is omitted, exact unambiguous [@Collection name] markers automatically attach matching live collections, like human paste. Explicit collectionIds replaces that list; unknown or ambiguous names remain text. Image markers resolve only against attached references. ${REFERENCE_PROMPT_DESCRIPTION} ${REFERENCE_PROMPT_GUIDANCE.video}`),
   models: { ...array(choice(AVAILABLE_MODELS.map(m => m.id)), 8), minItems: 1 },
   aspectRatio: { type: 'string', pattern: '^(auto|[1-9][0-9]{0,3}:[1-9][0-9]{0,3})$' },
   resolution: str(), imageCount: integer(1, Math.max(...AVAILABLE_MODELS.map(model => model.maxImagesPerRequest))), quality: choice(['auto', 'low', 'medium', 'high']),
@@ -39,17 +39,14 @@ export function registerDraftTools(add: RegisterTool): void {
     flushSync(() => {})
     return getLiveDraft(args.mode).read()
   })
-  add<{ mode: DraftMode }>('generate_draft', 'PAID: submit the current live app draft using the exact UI Generate action, including references, presets, thumbnail meta prompts and open inpaint/canvas/chat context. Returns new gallery job IDs or chatId/messageId immediately after local preparation; poll get_status or chats read. Configure with update_draft first.', object({ mode: modeSchema }, ['mode']), async args => {
+  add<{ mode: DraftMode }>('generate_draft', 'PAID: submit the current live app draft using the exact UI Generate action, including references, presets, thumbnail meta prompts and open canvas context. Returns new gallery job IDs immediately after local preparation; poll get_status. Configure with update_draft first.', object({ mode: modeSchema }, ['mode']), async args => {
     const draft = getLiveDraft(args.mode)
     const result = await draft.submit()
-    if (result && typeof result === 'object' && 'chatId' in result && 'messageId' in result) {
-      return { ...result, mode: args.mode, status: 'submitted', pollWith: 'chats action=read id=chatId; messageId identifies the assistant job' }
-    }
     const jobIds = typeof result === 'string' ? [result] : Array.isArray(result) && result.every(id => typeof id === 'string') ? result as string[] : []
-    if (!jobIds.length) throw new Error('Draft was not submitted. Supply a non-empty prompt and provider key; video also needs a start frame, inpaint a mask, and canvas a non-empty sketch. Read get_draft and correct the missing input.')
+    if (!jobIds.length) throw new Error('Draft was not submitted. Supply a non-empty prompt and provider key; video also needs a start frame, canvas a non-empty sketch. Read get_draft and correct the missing input.')
     return { jobIds, mode: args.mode, status: 'submitted' }
   })
-  add<{ mode: DraftMode; referenceId: string }>('read_draft_reference', 'View an attached draft image video start frame, or chat automatic reference as native MCP image content. Read get_draft for reference IDs; for collections use collection tools. No paid request.', object({ mode: modeSchema, referenceId: str() }, ['mode', 'referenceId']), async args => {
+  add<{ mode: DraftMode; referenceId: string }>('read_draft_reference', 'View an attached draft image or video start frame as native MCP image content. Read get_draft for reference IDs; for collections use collection tools. No paid request.', object({ mode: modeSchema, referenceId: str() }, ['mode', 'referenceId']), async args => {
     const source = await getLiveDraft(args.mode).readReference(args.referenceId)
     const match = source && /^data:([^;]+);base64,(.+)$/s.exec(source)
     if (!match) throw new Error('Draft reference not found; read get_draft for current reference IDs')

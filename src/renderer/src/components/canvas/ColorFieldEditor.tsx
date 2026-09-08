@@ -185,8 +185,8 @@ export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attac
           {collectionMentions.length > 0 && (
             <div className="flex gap-1.5 px-2.5 pt-2 flex-wrap">
               {collectionMentions.map((mention) => (
-                <button key={mention.collectionId} title="Remove collection reference"
-                  className="text-[11px] rounded bg-accent-dim px-1.5 py-0.5 text-text-secondary"
+                <button key={mention.collectionId} title="Sammlungsreferenz entfernen"
+                  className="text-[12px] rounded bg-accent-dim px-1.5 py-0.5 text-text-secondary"
                   onClick={() => onCollectionsChange(collectionMentions.filter((item) => item.collectionId !== mention.collectionId))}>
                   @{mention.name} ×
                 </button>
@@ -217,7 +217,7 @@ export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attac
               suppressContentEditableWarning
               onInput={handleInput}
               onKeyDown={handleKeyDown}
-              data-placeholder={placeholder || 'Describe this color region...'}
+              data-placeholder={placeholder || 'Beschreibe diesen Farbbereich…'}
               className={cn(
                 'flex-1 min-h-[28px] max-h-[60px] overflow-y-auto text-[13px] text-text-primary leading-relaxed outline-none',
                 'empty:before:content-[attr(data-placeholder)] empty:before:text-text-muted/50'
@@ -227,7 +227,7 @@ export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attac
             <button
               onClick={() => fileInputRef.current?.click()}
               className="shrink-0 w-6 h-6 rounded flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-4 transition-all"
-              title="Attach image"
+              title="Bild anhängen"
             >
               <Plus className="w-3 h-3" />
             </button>

@@ -1,5 +1,6 @@
 // Real Electron + MCP smoke test. Uses a disposable profile; never calls fal.ai.
 import assert from 'node:assert/strict'
+import { runCreationUiChecks } from './ui-creation-checks.mjs'
 import { mkdir, mkdtemp, writeFile, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -37,12 +38,35 @@ try {
   await client.connect(transport)
   const { tools } = await client.listTools()
   for (const name of ['get_capabilities', 'get_status', 'generate', 'generate_video', 'collections', 'import_media', 'read_image', 'get_draft', 'update_draft']) assert.ok(tools.some(tool => tool.name === name), name)
+  for (const name of ['chats', 'chat_generate', 'image_inpaint']) {
+    assert.ok(!tools.some(tool => tool.name === name), `${name} is absent from discovery`)
+    assert.equal((await client.callTool({ name, arguments: {} })).isError, true)
+  }
+  for (const mode of ['chat', 'inpaint']) {
+    for (const name of ['get_draft', 'generate_draft']) assert.equal((await client.callTool({ name, arguments: { mode } })).isError, true)
+    assert.equal((await client.callTool({ name: 'navigate', arguments: { target: mode } })).isError, true)
+  }
   async function call(name, args = {}) {
     const result = await client.callTool({ name, arguments: args })
     assert.ok(!result.isError, `${name}: ${JSON.stringify(result.content)}`)
     const text = result.content.find(item => item.type === 'text')?.text
     return text ? JSON.parse(text) : result
   }
+  // Both directions observe one route state: agent navigation highlights the UI,
+  // and human sidebar clicks are immediately visible in MCP status.
+  for (const section of ['library', 'references', 'styles', 'projects', 'activity', 'settings']) {
+    await call('navigate', { target: section })
+    await page.locator(`[data-studio-section="${section}"][aria-current="page"]`).waitFor()
+    assert.equal((await call('get_status')).view.section, section)
+    await page.locator('[data-studio-section="image"]').click()
+    assert.equal((await call('get_status')).view.section, 'image')
+  }
+  for (const [target, section] of [['collections', 'references'], ['presets', 'styles'], ['queue', 'activity']]) {
+    await call('navigate', { target })
+    await page.locator(`[data-studio-section="${section}"][aria-current="page"]`).waitFor()
+    assert.equal((await call('get_status')).view.section, section)
+  }
+  await call('navigate', { target: 'image' })
   const settings = await call('get_settings')
   assert.equal(settings.apiKeyConfigured, false)
   const folder = await call('workspaces', { action: 'create', name: 'MCP smoke folder' })
@@ -58,11 +82,73 @@ try {
   const collectionPreview = await client.callTool({ name: 'collections', arguments: { action: 'view_image', id: collection.id, imageIndex: 0 } })
   assert.ok(collectionPreview.content.some(item => item.type === 'image'))
   const project = await call('projects', { action: 'create', title: 'Smoke thumbnail' })
+  // Regression: leave a selected thumbnail project through breadcrumbs and sidebar.
+  // A working folder must never silently constrain the thumbnail overview or library.
+  const otherProject = await call('projects', { action: 'create', title: 'Other thumbnail' })
+  const otherImport = await call('import_media', { source: `http://127.0.0.1:${mediaServer.address().port}/other.png`, name: 'Other reference' })
+  const otherImageId = otherImport.id ?? otherImport.image?.id
+  await call('update_image', { id: imageId, projectId: project.id })
+  await call('update_image', { id: otherImageId, projectId: otherProject.id, workspaceId: '' })
+  await call('navigate', { target: 'thumbnail' })
+  await call('workspaces', { action: 'select', id: folder.id })
+  await call('projects', { action: 'select', id: project.id })
+  await page.getByRole('heading', { name: 'Smoke thumbnail', exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Öffnen', exact: true }).count(), 1)
+  await page.getByRole('button', { name: 'Alle Thumbnails anzeigen', exact: true }).click()
+  await page.getByRole('heading', { name: 'Deine Thumbnails', exact: true }).waitFor()
+  assert.equal((await call('get_status')).activeProjectId, null)
+  assert.equal(await page.getByRole('button', { name: 'Öffnen', exact: true }).count(), 2)
+  await page.getByRole('button', { name: 'Smoke thumbnail', exact: true }).click()
+  await page.getByRole('heading', { name: 'Smoke thumbnail', exact: true }).waitFor()
+  await page.locator('[data-studio-section="thumbnail"]').click()
+  await page.getByRole('heading', { name: 'Deine Thumbnails', exact: true }).waitFor()
+  assert.equal((await call('get_status')).activeProjectId, null)
+  await call('projects', { action: 'select', id: project.id })
+  await call('navigate', { target: 'thumbnail' })
+  assert.equal((await call('get_status')).activeProjectId, null)
+  await page.getByRole('button', { name: 'Studio', exact: true }).click()
+  await page.getByRole('heading', { name: 'Deine Mediathek', exact: true }).waitFor()
+  assert.equal((await call('get_status')).activeWorkspaceId, null)
+  assert.equal(await page.getByRole('button', { name: 'Öffnen', exact: true }).count(), 2)
+  await call('navigate', { target: 'image' })
+  await call('workspaces', { action: 'select', id: folder.id })
+  await page.getByRole('heading', { name: 'MCP smoke folder', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Alle Bilder anzeigen', exact: true }).click()
+  await page.getByRole('heading', { name: 'Deine Bilder', exact: true }).waitFor()
+  assert.equal((await call('get_status')).activeWorkspaceId, null)
+  await call('update_image', { id: imageId, projectId: '' })
+  await call('delete_images', { ids: [otherImageId] })
+  await call('projects', { action: 'delete', id: otherProject.id })
   const meta = await call('meta_prompts', { action: 'create', name: 'Smoke rules', text: 'Keep the headline readable.' })
   const preview = await call('preview_generation', { prompt: 'A studio portrait', mode: 'thumbnail', projectId: project.id, metaPromptId: meta.id, collectionIds: [collection.id] })
   assert.ok(JSON.stringify(preview).includes('Keep the headline readable.'))
   await call('navigate', { target: 'image' })
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  // Clipboard text restores real collections; unknown references stay plain text.
+  await call('update_draft', { mode: 'image', patch: { prompt: 'Before AFTER', references: [], collectionIds: [] } })
+  const pasteEditor = page.getByRole('textbox', { name: 'Bildbeschreibung', exact: true }).last()
+  const pastedPrompt = '[@Smoke references] and [@Smoke references]\n[@Missing] [Image 9] <b>plain</b>'
+  await pasteEditor.evaluate((node, text) => {
+    node.focus()
+    const range = document.createRange()
+    range.setStart(node.firstChild, 7); range.setEnd(node.firstChild, 12)
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range)
+    const data = new DataTransfer(); data.setData('text/plain', text)
+    node.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }))
+  }, pastedPrompt)
+  await page.waitForFunction(() => document.querySelectorAll('[contenteditable="true"] [data-collection-ref-id]').length === 2)
+  let pastedDraft = await call('get_draft', { mode: 'image' })
+  assert.equal(pastedDraft.prompt, `Before ${pastedPrompt}`)
+  assert.equal(pastedDraft.collections.length, 1)
+  assert.equal(pastedDraft.collections[0].collectionId, collection.id)
+  assert.equal(await pasteEditor.locator('b').count(), 0)
+  await page.keyboard.type(' End.')
+  assert.equal((await call('get_draft', { mode: 'image' })).prompt, `Before ${pastedPrompt} End.`)
+  // A prompt-only MCP edit uses the same name resolution as human paste.
+  await call('update_draft', { mode: 'image', patch: { prompt: '', references: [], collectionIds: [] } })
+  await call('update_draft', { mode: 'image', patch: { prompt: 'Again [@Smoke references]' } })
+  pastedDraft = await call('get_draft', { mode: 'image' })
+  assert.equal(pastedDraft.collections.length, 1)
+  assert.equal(pastedDraft.prompt, 'Again [@Smoke references]')
   const inlinePrompt = 'Portrait of [@Smoke references] wearing the outfit from [Image 1], holding the prop from [Image 2], in the room from [Image 3]. Preserve [@Smoke references].'
   await call('update_draft', { mode: 'image', patch: { prompt: inlinePrompt, references: [imageId, imageId, imageId], collectionIds: [collection.id] } })
   const draft = await call('get_draft', { mode: 'image' })
@@ -112,12 +198,21 @@ try {
   await writeFile(mockVideoPath, Buffer.from(videoData, 'base64'))
   await app.evaluate(({ ipcMain }, { png, videoPath }) => {
     globalThis.__automationTestCalls = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(String(input))
+      if (url.hostname === 'api.fal.ai' && url.pathname === '/v1/models/billing-events') {
+        const ids = (url.searchParams.get('request_id') || '').split(',')
+        return new Response(JSON.stringify({ billing_events: ids.filter(id => id.startsWith('mock-image-1-')).map(id => ({ request_id: id, cost_total: 0.017 })), has_more: false, next_cursor: null }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return originalFetch(input, init)
+    }
     ipcMain.removeHandler('image:upload-urls')
     ipcMain.handle('image:upload-urls', (_event, { images }) => ({ success: true, urls: images.map((_, index) => `https://test.invalid/reference-${index}.png`) }))
     ipcMain.removeHandler('image:generate')
     ipcMain.handle('image:generate', (_event, request) => {
       globalThis.__automationTestCalls.push({ kind: 'image', hasReferences: !!request.attachments?.length, prompt: request.prompt, referenceLabels: request.labeledAttachments?.map(group => group.label) })
-      return { success: true, results: Array.from({ length: request.count }, (_, index) => ({ status: 'complete', result: { id: `mock-${index}`, imageBase64: `data:image/png;base64,${png}`, cost: 0.1 } })) }
+      return { success: true, results: Array.from({ length: request.count }, (_, index) => ({ status: 'complete', result: { id: `mock-image-${globalThis.__automationTestCalls.length}-${index}`, imageBase64: `data:image/png;base64,${png}`, cost: 0.1 } })) }
     })
     ipcMain.removeHandler('video:generate')
     ipcMain.handle('video:generate', (_event, request) => {
@@ -143,35 +238,48 @@ try {
   assert.equal(providerCalls[0].prompt, `${inlinePrompt} Soft lighting.`)
   assert.deepEqual(providerCalls[0].referenceLabels, ['Image 1', 'Image 2', 'Image 3', 'Collection "@Smoke references" (1 image)'])
   assert.equal(providerCalls[1].prompt, 'Use the person from [Image 1] in a new scene')
-  const chat = await call('chats', { action: 'create', imageId })
-  const chatId = chat.chatId ?? chat.id
-  await call('chats', { action: 'open', id: chatId })
-  await page.locator('[contenteditable="true"]').last().waitFor()
-  await call('update_draft', { mode: 'chat', patch: { prompt: 'Edit with collection references', collectionIds: [collection.id] } })
-  assert.equal((await call('get_draft', { mode: 'chat' })).chatId, chatId)
-  const automaticReference = await client.callTool({ name: 'read_draft_reference', arguments: { mode: 'chat', referenceId: 'automaticReference' } })
-  assert.ok(automaticReference.content.some(item => item.type === 'image'))
-  const chatJob = await call('generate_draft', { mode: 'chat' })
-  assert.ok(chatJob.messageId)
-  let completedChat
-  for (let attempt = 0; attempt < 50; attempt++) {
-    completedChat = await call('chats', { action: 'read', id: chatId })
-    if (!completedChat.messages.some(message => message.isLoading)) break
-    await new Promise(resolve => setTimeout(resolve, 100))
-  }
-  assert.ok(completedChat.messages.find(message => message.id === chatJob.messageId)?.imageFilePath)
+  await call('navigate', { target: 'create_variant', id: second.jobIds[0] })
+  await page.waitForFunction(() => [...document.querySelectorAll('[contenteditable="true"]')].some(node => node.textContent.includes('als Ausgangsbild verwenden') && node.querySelectorAll('[data-image-ref-id]').length === 1))
+  const variant = await call('get_draft', { mode: 'image' })
+  assert.equal(variant.references.length, 1)
+  assert.equal(variant.references[0].promptReference, '[Image 1]')
+  const variantSource = (await call('list_images')).images.find(image => image.id === second.jobIds[0])
+  assert.deepEqual(variant.models, [variantSource.model])
+  assert.equal(variant.aspectRatio, variantSource.aspectRatio)
+  assert.equal(variant.resolution, variantSource.resolution)
+  assert.equal((await app.evaluate(() => globalThis.__automationTestCalls)).length, 3, 'Preparing a variant never calls a paid provider')
   await call('navigate', { target: 'close_panels' })
-  await call('update_settings', { falApiKey: '' })
+  const billingSecret = 'billing-admin-test-never-sent'
+  await call('update_settings', { falBillingApiKey: billingSecret })
+  assert.ok(!JSON.stringify(await call('get_settings')).includes(billingSecret), 'Ordinary settings never reveal billing secret')
+  const billing = await call('refresh_costs', { ids: [...first.jobIds, ...second.jobIds] })
+  assert.equal(billing.success, true)
+  const billedImages = (await call('list_images')).images
+  const confirmed = billedImages.find(image => image.id === first.jobIds[0])
+  const estimated = billedImages.find(image => image.id === second.jobIds[0])
+  assert.equal(confirmed.cost, 0.017)
+  assert.equal(confirmed.costSource, 'provider-reported')
+  assert.equal(confirmed.estimatedCost, 0.1, 'Original list estimate retained')
+  assert.equal(estimated.costSource, 'list-price-estimate', 'Absent event remains an estimate')
+  const billingStatus = await call('get_status')
+  assert.equal(billingStatus.costs.confirmedSpendUsd, 0.017)
+  assert.ok(!JSON.stringify(billingStatus).includes(billingSecret), 'Status never reveals billing secret')
+  await call('navigate', { target: 'activity' })
+  await page.getByText(/0\.017 USD von fal\.ai bestätigt/).waitFor()
+  await page.getByRole('button', { name: 'Kosten mit fal.ai abgleichen', exact: true }).click()
+  await page.getByText(/0\.017 USD von fal\.ai bestätigt/).waitFor()
+  await call('update_settings', { falApiKey: '', falBillingApiKey: '' })
+  await runCreationUiChecks(page, { call, imageId })
   // UI sees the same imported media and project/collection changes.
   await call('navigate', { target: 'settings' })
-  await page.getByRole('heading', { name: 'AI connection' }).scrollIntoViewIfNeeded()
-  await page.getByRole('button', { name: 'Copy setup prompt' }).waitFor({ state: 'visible' })
+  await page.getByRole('button', { name: 'KI-Verbindung', exact: true }).click()
+  await page.getByRole('heading', { name: 'KI-Verbindung' }).scrollIntoViewIfNeeded()
+  await page.getByRole('button', { name: 'Einrichtung kopieren' }).waitFor({ state: 'visible' })
   await page.screenshot({ path: join(temp, 'settings.png') })
   if (process.env.IMAGESTUDIO_TEST_SCREENSHOT) await writeFile(process.env.IMAGESTUDIO_TEST_SCREENSHOT, await readFile(join(temp, 'settings.png')))
   await call('collections', { action: 'delete', id: collection.id })
   await call('projects', { action: 'delete', id: project.id })
   await call('meta_prompts', { action: 'delete', id: meta.id })
-  await call('chats', { action: 'delete', id: chatId })
   await call('delete_images', { ids: [imageId, ...first.jobIds, ...second.jobIds, videoId] })
   await call('workspaces', { action: 'delete', id: folder.id })
   assert.deepEqual(errors, [])

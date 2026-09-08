@@ -1,3 +1,5 @@
+import { ComposerPopover } from './ComposerPopover'
+import { useDismissOnEscape } from './useDismissOnEscape'
 import { useState } from 'react'
 import { Gauge } from 'lucide-react'
 import type { GptImageQuality } from '../../types/api'
@@ -12,13 +14,14 @@ interface QualitySelectorProps {
 /** GPT Image 2's quality tier — it has no resolution parameter of its own. */
 export function QualitySelector({ value, onChange, available }: QualitySelectorProps) {
   const [open, setOpen] = useState(false)
+  useDismissOnEscape(open, () => setOpen(false))
 
   return (
     <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
-        className="no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium capitalize"
-        title="Quality tier — affects cost"
+        className="no-drag flex items-center gap-1.5 h-9 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium capitalize"
+        title="Qualitätsstufe · beeinflusst den Preis"
       >
         <Gauge className="w-3.5 h-3.5" />
         <span>{value}</span>
@@ -26,9 +29,9 @@ export function QualitySelector({ value, onChange, available }: QualitySelectorP
 
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1.5 z-30 animate-scale-in min-w-[130px]">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted px-2 pb-1">Quality</div>
+          <div className="fixed inset-0 z-[79]" onClick={() => setOpen(false)} />
+          <ComposerPopover className="bg-surface-3 border border-border-base rounded-xl shadow-sm p-1.5 animate-scale-in min-w-[130px]">
+            <div className="text-[12px] font-medium text-text-muted px-2 pb-1">Qualität</div>
             {available.map((q) => (
               <button
                 key={q}
@@ -43,7 +46,7 @@ export function QualitySelector({ value, onChange, available }: QualitySelectorP
                 {q}
               </button>
             ))}
-          </div>
+          </ComposerPopover>
         </>
       )}
     </div>

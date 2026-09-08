@@ -1,3 +1,5 @@
+import { ComposerPopover } from './ComposerPopover'
+import { useDismissOnEscape } from './useDismissOnEscape'
 import { useState } from 'react'
 import { Diamond } from 'lucide-react'
 import type { Resolution, FalResolution } from '../../types/api'
@@ -14,12 +16,13 @@ interface ResolutionSelectorProps {
 
 export function ResolutionSelector({ value, onChange, available, notes }: ResolutionSelectorProps) {
   const [open, setOpen] = useState(false)
+  useDismissOnEscape(open, () => setOpen(false))
 
   // Every selected model has a fixed output size — nothing to choose.
   if (available.length === 0) {
     return (
       <div
-        className="no-drag shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 border border-border-dim text-text-muted text-[12px] font-medium"
+        className="no-drag shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-lg bg-surface-3 border border-border-dim text-text-muted text-[12px] font-medium"
         title={notes?.join('\n') || 'This model has a fixed output size'}
       >
         <Diamond className="w-3.5 h-3.5" />
@@ -32,7 +35,7 @@ export function ResolutionSelector({ value, onChange, available, notes }: Resolu
     <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
-        className="no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium"
+        className="no-drag flex items-center gap-1.5 h-9 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium"
       >
         <Diamond className="w-3.5 h-3.5" />
         <span>{value}</span>
@@ -40,8 +43,8 @@ export function ResolutionSelector({ value, onChange, available, notes }: Resolu
 
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1.5 z-30 animate-scale-in min-w-[120px]">
+          <div className="fixed inset-0 z-[79]" onClick={() => setOpen(false)} />
+          <ComposerPopover className="bg-surface-3 border border-border-base rounded-xl shadow-sm p-1.5 animate-scale-in min-w-[120px]">
             {available.map((res) => (
               <button
                 key={res}
@@ -60,11 +63,11 @@ export function ResolutionSelector({ value, onChange, available, notes }: Resolu
             {notes && notes.length > 0 && (
               <div className="border-t border-border-dim mt-1.5 pt-1.5 px-2 pb-0.5 space-y-0.5">
                 {notes.map((note) => (
-                  <p key={note} className="text-[10px] text-text-muted/70 leading-snug">{note}</p>
+                  <p key={note} className="text-[12px] text-text-muted leading-snug">{note}</p>
                 ))}
               </div>
             )}
-          </div>
+          </ComposerPopover>
         </>
       )}
     </div>

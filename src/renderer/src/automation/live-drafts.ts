@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react'
 import type { GptImageQuality, ThumbnailStyle, LogoStyle, FalBackground, FalInputFidelity } from '../types/api'
 
-export type DraftMode = 'image' | 'thumbnail' | 'logo' | 'video' | 'inpaint' | 'canvas' | 'chat'
+export type DraftMode = 'image' | 'thumbnail' | 'logo' | 'video' | 'canvas'
 export interface DraftPatch {
   prompt?: string
   models?: string[]
@@ -57,6 +57,6 @@ export function useLiveDraft(draft: LiveDraft): void {
 export function mountedDraftModes(): DraftMode[] { return [...drafts.keys()] }
 export function getLiveDraft(mode: DraftMode): LiveDraft {
   const draft = drafts.get(mode)?.at(-1)
-  if (!draft) throw new Error(`The ${mode} editor is not mounted. Use navigate to open its app area first; inpaint/canvas require their editor to be opened.`)
+  if (!draft) throw new Error(`The ${mode} editor is not mounted. Use navigate to open its app area first; canvas requires its editor to be opened.`)
   return draft
 }

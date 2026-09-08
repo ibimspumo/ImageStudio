@@ -13,16 +13,16 @@ function createWindow(): void {
   const isMac = process.platform === 'darwin'
 
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1440,
+    height: 900,
     minWidth: 900,
     minHeight: 700,
     ...(isMac
       ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 14 } }
-      : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#09090b', symbolColor: '#a1a1aa', height: 48 } }
+      : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#111213', symbolColor: '#c1c4c4', height: 44 } }
     ),
     icon: join(__dirname, '../../resources/icon.png'),
-    backgroundColor: '#09090b',
+    backgroundColor: '#111213',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

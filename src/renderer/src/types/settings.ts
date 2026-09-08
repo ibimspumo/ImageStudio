@@ -1,6 +1,8 @@
 export interface AppSettings {
-  /** fal.ai API key — the app's only credential (images, video, uploads) */
+  /** fal.ai API key — used for images, video and uploads */
   falApiKey: string
+  /** Optional Admin key used only for read-only billing reconciliation. */
+  falBillingApiKey: string
   defaultModel: string
   defaultAspectRatio: string
   defaultResolution: string

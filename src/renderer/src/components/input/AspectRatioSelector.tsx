@@ -1,3 +1,5 @@
+import { ComposerPopover } from './ComposerPopover'
+import { useDismissOnEscape } from './useDismissOnEscape'
 import { useState, useRef, useEffect } from 'react'
 import type { AspectRatio, FalAspectRatio } from '../../types/api'
 import { cn } from '../../lib/utils'
@@ -45,6 +47,7 @@ interface AspectRatioSelectorProps {
 
 export function AspectRatioSelector({ value, onChange, customRatio, onCustomRatioChange, available }: AspectRatioSelectorProps) {
   const [open, setOpen] = useState(false)
+  useDismissOnEscape(open, () => setOpen(false))
   const [customW, setCustomW] = useState('4')
   const [customH, setCustomH] = useState('3')
   const wInputRef = useRef<HTMLInputElement>(null)
@@ -80,7 +83,7 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
     <div className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
-        className="no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium"
+        className="no-drag flex items-center gap-1.5 h-9 px-3 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[12px] font-medium"
       >
         {currentDims ? <RatioBox w={currentDims.w} h={currentDims.h} size={14} active /> : null}
         <span>{displayLabel}</span>
@@ -88,9 +91,9 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
 
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-2 z-30 animate-scale-in min-w-[220px]">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted px-2 pb-1.5">Aspect Ratio</div>
+          <div className="fixed inset-0 z-[79]" onClick={() => setOpen(false)} />
+          <ComposerPopover className="bg-surface-3 border border-border-base rounded-xl shadow-sm p-2 animate-scale-in min-w-[220px]">
+            <div className="text-[12px] font-medium text-text-muted px-2 pb-1.5">Aspect Ratio</div>
 
             <div className="grid grid-cols-2 gap-1">
               {available.map((ratio) => {
@@ -118,7 +121,7 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
             {/* Custom ratio — mapped to the closest ratio each model supports */}
             <div className="border-t border-border-dim mt-2 pt-2">
               <div className="flex items-center gap-2 px-1">
-                <span className="text-[11px] text-text-muted font-medium shrink-0">Custom</span>
+                <span className="text-[12px] text-text-muted font-medium shrink-0">Eigenes</span>
                 <div className="flex items-center gap-1.5 flex-1">
                   <input
                     ref={wInputRef}
@@ -129,7 +132,7 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
                     onChange={(e) => setCustomW(e.target.value)}
                     className="w-10 h-7 rounded-md bg-surface-4 border border-border-base text-center text-[12px] text-text-primary outline-none focus:border-accent-main transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
-                  <span className="text-[11px] text-text-muted">:</span>
+                  <span className="text-[12px] text-text-muted">:</span>
                   <input
                     type="number"
                     min="1"
@@ -143,7 +146,7 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
                     onClick={handleCustomApply}
                     disabled={!customValid}
                     className={cn(
-                      'ml-auto px-2.5 h-7 rounded-md text-[11px] font-medium transition-colors',
+                      'ml-auto px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors',
                       customValid
                         ? 'bg-accent-dim text-accent-main hover:bg-accent-main/20'
                         : 'bg-surface-4 text-text-muted cursor-not-allowed'
@@ -153,11 +156,11 @@ export function AspectRatioSelector({ value, onChange, customRatio, onCustomRati
                   </button>
                 </div>
               </div>
-              <p className="text-[10px] text-text-muted/70 px-1 pt-1.5 leading-snug">
+              <p className="text-[12px] text-text-muted px-1 pt-1.5 leading-snug">
                 A ratio a model cannot produce is mapped to its closest supported one.
               </p>
             </div>
-          </div>
+          </ComposerPopover>
         </>
       )}
     </div>

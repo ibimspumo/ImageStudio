@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AutomationRequest, AutomationReply } from '../shared/automation'
 
 const api = {
+  refreshBilling: (requests: import('../shared/billing').BillingRequest[]) => ipcRenderer.invoke('billing:refresh', requests),
   getAutomationStatus: () => ipcRenderer.invoke('automation:get-status'),
   configureAutomation: (config: { enabled?: boolean; port?: number }) => ipcRenderer.invoke('automation:configure', config),
   rotateAutomationToken: () => ipcRenderer.invoke('automation:rotate-token'),
@@ -36,7 +37,6 @@ const api = {
     thinkingLevel?: 'minimal' | 'high'
     safetyTolerance?: string
     outputFormat?: 'png' | 'jpeg' | 'webp'
-    maskUrl?: string
   }) => ipcRenderer.invoke('image:generate', request),
 
   cancelImageGeneration: (requestId: string) =>

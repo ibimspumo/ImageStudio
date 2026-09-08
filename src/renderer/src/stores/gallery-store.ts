@@ -50,6 +50,8 @@ export interface GalleryImage {
   cancelled?: boolean
   progressPercent?: number     // stage estimate, not provider completion percentage
   completedAt?: number
+  costCheckedAt?: number
+  estimatedCost?: number
   costCurrency?: 'USD'
   costSource?: 'list-price-estimate' | 'provider-reported'
   /** Immutable submitted options, never includes credentials. */
@@ -95,7 +97,7 @@ interface GalleryStore {
   images: GalleryImage[]
   addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: Partial<GalleryImage>) => string
   addVideoPlaceholder: (prompt: string, aspectRatio: string, model: string, attachments?: string[], workspaceId?: string, extra?: Partial<GalleryImage>) => string
-  updateMetadata: (id: string, metadata: Partial<Pick<GalleryImage, 'requestId' | 'falRequestId' | 'cancelRequested' | 'cancelled' | 'generationOptions' | 'generationRequest' | 'seed' | 'progressPercent' | 'costCurrency' | 'costSource'>>) => void
+  updateMetadata: (id: string, metadata: Partial<Pick<GalleryImage, 'requestId' | 'falRequestId' | 'cancelRequested' | 'cancelled' | 'generationOptions' | 'generationRequest' | 'seed' | 'progressPercent' | 'costCurrency' | 'costSource' | 'cost' | 'costCheckedAt' | 'estimatedCost'>>) => void
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
   completeVideo: (id: string, filePath: string, durationMs: number, videoDuration: number, thumbnailPath?: string, cost?: number) => void
   updateStatus: (id: string, statusText: string | undefined) => void

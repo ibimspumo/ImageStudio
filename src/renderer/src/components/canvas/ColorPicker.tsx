@@ -45,7 +45,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
       <button
         onClick={() => setOpen(!open)}
         className="no-drag flex items-center gap-1.5 h-8 px-2 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base transition-all"
-        title="Color"
+        title="Farbe"
       >
         <div
           className="w-5 h-5 rounded-md border border-white/20 shadow-sm"
@@ -55,7 +55,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
 
       {open && (
         <div className="absolute top-full left-0 mt-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-3 z-30 animate-scale-in min-w-[220px]">
-          <div className="text-[10px] font-medium uppercase tracking-wider text-text-muted px-0.5 pb-2">Color</div>
+          <div className="text-[12px] font-medium text-text-muted px-0.5 pb-2">Farbe</div>
 
           <div className="grid grid-cols-6 gap-1.5 mb-3">
             {PALETTE.map((color) => (

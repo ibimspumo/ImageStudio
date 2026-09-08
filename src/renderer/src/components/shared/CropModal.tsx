@@ -254,16 +254,18 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
   return (
     <div
       className="absolute inset-0 z-[70] bg-black/92 backdrop-blur-sm flex flex-col animate-overlay-in"
+      role="dialog" aria-modal="true" aria-label="Ausschnitt als Referenz"
       style={{ cursor: getCursor() }}
     >
       {/* Top bar */}
       <div className="shrink-0 h-12 flex items-center justify-between px-5 z-10">
         <div className="flex items-center gap-2">
           <Crop className="w-4 h-4 text-accent-main" />
-          <span className="text-[13px] font-medium text-text-secondary">Crop to Reference</span>
+          <span className="text-[13px] font-medium text-text-secondary">Ausschnitt als Referenz</span>
         </div>
         <button
           onClick={onClose}
+          aria-label="Ausschnitt schließen"
           className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-white/5 transition-colors"
         >
           <X className="w-4 h-4" />
@@ -281,7 +283,7 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
         <img
           ref={imgRef}
           src={imageSrc}
-          alt="Crop"
+          alt="Ausschnitt auswählen"
           className="max-w-[85vw] max-h-[70vh] object-contain rounded-lg"
           draggable={false}
           onLoad={() => setImgLoaded(true)}
@@ -331,7 +333,7 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
                 top: imgRect.y + crop!.y,
                 width: crop!.w,
                 height: crop!.h,
-                boxShadow: '0 0 12px rgba(167,139,250,0.3), 0 0 30px rgba(167,139,250,0.1)',
+
               }}
             >
               {/* Rule of thirds */}
@@ -356,7 +358,7 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
             ].map((h) => (
               <div
                 key={h.mode}
-                className="absolute w-2.5 h-2.5 bg-accent-main rounded-sm border border-accent-bright shadow-[0_0_6px_rgba(167,139,250,0.5)]"
+                className="absolute w-2.5 h-2.5 bg-accent-main rounded-sm border border-accent-bright"
                 style={{
                   left: imgRect.x + crop!.x + h.x - 5,
                   top: imgRect.y + crop!.y + h.y - 5,
@@ -370,7 +372,7 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
         {/* Hint */}
         {!hasCrop && imgLoaded && (
           <div className="absolute bottom-12 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg bg-white/8 border border-white/10 backdrop-blur-md pointer-events-none animate-fade-up">
-            <span className="text-[12px] text-white/70">Click and drag to select a crop area</span>
+            <span className="text-[12px] text-white/70">Ziehen, um einen Ausschnitt auszuwählen</span>
           </div>
         )}
       </div>
@@ -388,7 +390,7 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
               </span>
             </>
           ) : (
-            <span className="text-[12px] text-text-muted">No selection</span>
+            <span className="text-[12px] text-text-muted">Noch kein Ausschnitt</span>
           )}
         </div>
 
@@ -397,7 +399,7 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
             onClick={onClose}
             className="px-4 py-1.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-text-primary hover:bg-surface-3 transition-colors"
           >
-            Cancel
+            Abbrechen
           </button>
           <button
             onClick={handleConfirm}
@@ -405,12 +407,12 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
             className={cn(
               'flex items-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-medium transition-all',
               hasCrop
-                ? 'bg-accent-main text-white hover:bg-accent-bright glow-accent shadow-lg'
+                ? 'bg-accent-main text-surface-0 hover:bg-accent-bright'
                 : 'bg-surface-3 text-text-muted cursor-not-allowed'
             )}
           >
             <Check className="w-3.5 h-3.5" />
-            Use as Reference
+            Als Referenz verwenden
           </button>
         </div>
       </div>

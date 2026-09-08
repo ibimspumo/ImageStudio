@@ -6,6 +6,7 @@ import { ThumbnailFrame, type FrameChecks } from './ThumbnailFrame'
 import { useSettingsStore } from '../../stores/settings-store'
 import { renderThumbnailExport } from '../../lib/image-export'
 import { neutralImageName } from '../../lib/anti-detection'
+import { requireExportSuccess } from '../../lib/export-result'
 import { logger } from '../../lib/logger'
 import { cn } from '../../lib/utils'
 
@@ -84,7 +85,10 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
         : antiDetection
           ? neutralImageName('jpg')
           : 'thumbnail-1920x1080.jpg'
-      await window.api.exportImage(rendered.dataUrl, name)
+      if (!requireExportSuccess(await window.api.exportImage(rendered.dataUrl, name))) {
+        setExportState({ busy: false })
+        return
+      }
 
       setExportState({
         busy: false,
@@ -99,6 +103,7 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
+      if ((e.target as HTMLElement)?.closest('input, textarea, [contenteditable=true]')) return
       if (e.key === 'ArrowLeft' && index > 0) onNavigate(index - 1)
       if (e.key === 'ArrowRight' && index < images.length - 1) onNavigate(index + 1)
     }
@@ -112,13 +117,13 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
     { key: 'safeZones', label: 'Safe Zones', icon: Ruler, title: '5 %-Rand und Zeitstempel-Ecke einblenden' },
     { key: 'thirds', label: 'Drittel', icon: Grid3x3, title: 'Drittel-Raster' },
     { key: 'grayscale', label: 'Graustufen', icon: Contrast, title: 'Trägt das Bild ohne Farbe?' },
-    { key: 'squint', label: 'Squint', icon: Eye, title: 'Unscharf — überlebt es den schnellen Blick?' },
+    { key: 'squint', label: 'Schneller Blick', icon: Eye, title: 'Unscharf — überlebt es den schnellen Blick?' },
   ]
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-sm flex flex-col animate-fade-in">
+    <div className="fixed inset-0 z-[80] bg-surface-0 flex flex-col animate-fade-in">
       {/* Header */}
-      <div className="no-drag shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-dim/60">
+      <div className="no-drag shrink-0 flex flex-wrap items-center gap-2 px-5 py-4 border-b border-border-dim/60">
         <span className="text-[13px] font-semibold text-text-primary">YouTube-Vorschau</span>
         <span className="text-[11px] text-text-muted">
           {index + 1} / {images.length}
@@ -138,7 +143,7 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
               )}
             >
               {t === 'light' ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
-              {t === 'light' ? 'Light' : 'Dark'}
+              {t === 'light' ? 'Hell' : 'Dunkel'}
             </button>
           ))}
         </div>
@@ -167,12 +172,13 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
         <button
           onClick={handleExport}
           disabled={exportState.busy}
-          className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent-main hover:bg-accent-bright disabled:opacity-50 text-white text-[12px] font-semibold transition-all"
+          className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent-main hover:bg-accent-bright disabled:opacity-50 text-surface-0 text-[12px] font-semibold transition-all"
         >
           <Download className="w-3.5 h-3.5" />
           {exportState.busy ? 'Rendert…' : '1920 × 1080 exportieren'}
         </button>
         <button
+          aria-label="Vorschau schließen"
           onClick={onClose}
           className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-3 transition-all"
         >
@@ -181,10 +187,11 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
       </div>
 
       {/* Body */}
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex overflow-auto">
         {/* Left: the image itself, large */}
         <div className="flex-1 min-w-0 flex flex-col items-center justify-center gap-4 p-6 relative">
           <button
+            aria-label="Vorheriges Thumbnail"
             onClick={() => onNavigate(index - 1)}
             disabled={index === 0}
             className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-surface-2/80 border border-border-dim flex items-center justify-center text-text-secondary hover:text-text-primary disabled:opacity-25 transition-all"
@@ -192,6 +199,7 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
+            aria-label="Nächstes Thumbnail"
             onClick={() => onNavigate(index + 1)}
             disabled={index >= images.length - 1}
             className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-surface-2/80 border border-border-dim flex items-center justify-center text-text-secondary hover:text-text-primary disabled:opacity-25 transition-all"
@@ -244,7 +252,7 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
 
         {/* Right: the surfaces */}
         <div
-          className="w-[440px] shrink-0 border-l border-border-dim/60 overflow-y-auto"
+          className="w-[340px] xl:w-[440px] shrink-0 border-l border-border-dim/60 overflow-y-auto"
           style={{ backgroundColor: c.bg }}
         >
           {/* Editable video title — thumbnail and title are read together */}

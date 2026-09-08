@@ -1,10 +1,8 @@
-import { prepareInpaintReferences, buildInpaintPrompt } from '../../lib/image-editing'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Plus, Send } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
-import { useMentionEditor, collectionChipThumbnail } from '../../hooks/useMentionEditor'
+import { useMentionEditor } from '../../hooks/useMentionEditor'
 import { useSettingsStore } from '../../stores/settings-store'
-import { type AssetCollection } from '../../stores/collections-store'
 import { collectionMention, imageMention } from '../../../../shared/reference-mentions'
 import type {
   AspectRatio,
@@ -20,7 +18,7 @@ import {
   DEFAULT_THUMBNAIL_MODEL,
   DEFAULT_LOGO_MODEL,
   getCombinedCapabilities,
-  getModelName,
+  getModel,
   normalizeModelId,
   isThumbnailModel,
   isLogoModel,
@@ -51,14 +49,6 @@ import { MentionPopup } from './MentionPopup'
 import { ControlsRow } from './ControlsRow'
 import { usePresetsStore } from '../../stores/presets-store'
 
-export interface InpaintContext {
-  imageId: string
-  filePath: string
-  sourcePrompt: string
-  getOverlayBase64: () => string | null
-  onClose: () => void
-}
-
 export interface CanvasContext {
   getCanvasBase64: () => string | null
   onClose: () => void
@@ -69,7 +59,6 @@ interface PromptBarProps {
   onCollectionsClick?: () => void
   onPresetsManage?: () => void
   onQueueClick?: () => void
-  inpaintContext?: InpaintContext
   canvasContext?: CanvasContext
   initialModels?: string[]
   onCanvasClick?: () => void
@@ -88,7 +77,7 @@ interface PromptBarProps {
   logoMode?: boolean
 }
 
-export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, inpaintContext, canvasContext, initialModels, onCanvasClick, thumbnailMode, logoMode }: PromptBarProps = {}) {
+export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, canvasContext, initialModels, onCanvasClick, thumbnailMode, logoMode }: PromptBarProps = {}) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(
     thumbnailMode ? '16:9' : logoMode ? (LOGO_DEFAULT_ASPECT_RATIO as AspectRatio) : useSettingsStore.getState().defaultAspectRatio as AspectRatio
   )
@@ -130,7 +119,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     fileInputRef,
     imageRefs,
     collectionRefs,
-    setCollectionRefs,
     collections,
     addImageRef,
     removeImageRef,
@@ -140,56 +128,18 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     insertCollectionChipAtCursor,
     getPromptText,
     promptText,
-    syncPromptText,
     setDraftContent,
     buildAttachments,
     mentionItems,
     showMentionPopup,
     handleMentionKeyDown,
     handleEditorInput,
+    handleEditorPaste,
     handleFileSelect,
     handleImageDrop,
   } = useMentionEditor()
 
   const dragCountRef = useRef(0)
-
-  // ── Collapse ──────────────────────────────────────────────────────
-  // The bar shrinks to a single summary row when the focus is elsewhere and
-  // expands on click — the gallery gets its height back between prompts. The
-  // editor stays mounted throughout (its text lives in the DOM), only hidden
-  // behind an animated 0fr grid row.
-  const [expanded, setExpanded] = useState(true)
-  const cardWrapRef = useRef<HTMLDivElement>(null)
-
-  const expandAndFocus = useCallback(() => {
-    setExpanded(true)
-    requestAnimationFrame(() => editorRef.current?.focus())
-  }, [editorRef])
-
-  useEffect(() => {
-    if (inpaintContext || canvasContext) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (!cardWrapRef.current) return
-      if (!cardWrapRef.current.contains(e.target as Node)) setExpanded(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [inpaintContext, canvasContext])
-
-  // Popovers escape the card upwards — the content wrapper may only clip
-  // while the collapse animation runs, never in the resting expanded state.
-  const [contentOverflow, setContentOverflow] = useState<'hidden' | 'visible'>('visible')
-  const collapsedNow = !expanded && !inpaintContext && !canvasContext && !isDragOver
-  useEffect(() => {
-    if (collapsedNow) {
-      setContentOverflow('hidden')
-      return
-    }
-    // transitionend restores this sooner; the timer covers reduced motion,
-    // where the transition (and its event) never happens.
-    const t = setTimeout(() => setContentOverflow('visible'), 400)
-    return () => clearTimeout(t)
-  }, [collapsedNow])
 
   const { generate } = useImageGeneration()
   const falApiKey = useSettingsStore((s) => s.falApiKey)
@@ -231,128 +181,75 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   const pendingReuse = useCropStore((s) => s.pendingReuse)
   const consumePendingReuse = useCropStore((s) => s.consumePendingReuse)
 
+  const [referenceLoading, setReferenceLoading] = useState(false)
+  const [referenceError, setReferenceError] = useState<string | null>(null)
+  const referenceLoadVersion = useRef(0)
+  const lastReuseRef = useRef<typeof pendingReuse>(null)
+
   useEffect(() => {
-    if (pendingReuse) {
-      const reuse = consumePendingReuse()
-      if (!reuse) return
-
-      clearRefs()
-
-      const collectionMentionRegex = /\[@([^\]]+)\]/g
-      const imageMentionRegex = /\[([^@\]][^\]]*)\]/g
-      const matchedCollections: AssetCollection[] = []
-      let match: RegExpExecArray | null
-
-      while ((match = collectionMentionRegex.exec(reuse.prompt)) !== null) {
-        const col = collections.find((c) => c.name === match![1])
-        if (col) matchedCollections.push(col)
-      }
-
-      let individualImageCount = 0
-      while ((match = imageMentionRegex.exec(reuse.prompt)) !== null) {
-        individualImageCount++
-      }
-
-      if (editorRef.current) {
-        let html = ''
-        let lastIndex = 0
-        const allMentionRegex = /\[@([^\]]+)\]|\[([^@\]][^\]]*)\]/g
-        // A collection mentioned twice in the reused prompt still gets ONE ref
-        // \u2014 both chips point at it, mirroring the live editor's dedupe.
-        const reusedRefs = new Map<string, CollectionRef>()
-
-        while ((match = allMentionRegex.exec(reuse.prompt)) !== null) {
-          const textBefore = reuse.prompt.substring(lastIndex, match.index)
-          if (textBefore) html += textBefore.replace(/\n/g, '<br>')
-
-          if (match[1]) {
-            const col = collections.find((c) => c.name === match![1])
-            if (col) {
-              let cRef = reusedRefs.get(col.id)
-              if (!cRef) {
-                cRef = {
-                  id: crypto.randomUUID(),
-                  collectionId: col.id,
-                  name: col.name,
-                  thumbnail: col.images[0] || '',
-                  images: col.images,
-                }
-                reusedRefs.set(col.id, cRef)
-                setCollectionRefs((prev) => [...prev, cRef!])
-              }
-              html += `<span contenteditable="false" data-collection-ref-id="${cRef.id}" class="inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none">${collectionChipThumbnail(cRef.thumbnail)}<span class="align-middle">@${col.name}</span></span>\u00A0`
-            } else {
-              html += match[0]
-            }
-          } else if (match[2]) {
-            html += match[0]
-          }
-          lastIndex = match.index + match[0].length
-        }
-
-        const remaining = reuse.prompt.substring(lastIndex)
-        if (remaining) html += remaining.replace(/\n/g, '<br>')
-
-        editorRef.current.innerHTML = html
-        syncPromptText()
-
-        const range = document.createRange()
-        range.selectNodeContents(editorRef.current)
-        range.collapse(false)
-        const sel = window.getSelection()
-        sel?.removeAllRanges()
-        sel?.addRange(range)
-      }
-
-      // Restore negative prompt and seed if available
-      if (reuse.seed != null) {
-        setSeed(reuse.seed)
-      }
-
-      if (reuse.attachmentFilePaths && reuse.attachmentFilePaths.length > 0) {
-        const individualPaths = reuse.attachmentFilePaths.slice(0, individualImageCount)
-        ;(async () => {
-          for (const fp of individualPaths) {
-            try {
-              const result = await window.api.readImage(fp)
-              if (result.success && result.base64DataUrl) {
-                const compressed = await compressImage(result.base64DataUrl)
-                addImageRef(compressed)
-              }
-            } catch (err) {
-              logger.error('PromptBar', 'Failed to load reuse attachment', err)
-            }
-          }
-        })()
+    if (!pendingReuse) return
+    const reuse = consumePendingReuse()
+    if (!reuse) return
+    lastReuseRef.current = reuse
+    const version = ++referenceLoadVersion.current
+    setReferenceError(null)
+    setReferenceLoading(true)
+    // Show the incoming prompt immediately, but never submit before its source loads.
+    setDraftContent({ prompt: reuse.prompt, images: [], collections: [] })
+    if (!thumbnailMode && !logoMode) {
+      const model = normalizeModelId(reuse.model)
+      const config = getModel(model)
+      const caps = getCombinedCapabilities([model])
+      setSelectedModels([model])
+      setImageCount(count => Math.min(count, caps.maxImagesPerRequest))
+      setResolution(reuse.resolution && caps.resolutions.includes(reuse.resolution as Resolution)
+        ? reuse.resolution as Resolution : config.defaultResolution ?? caps.resolutions[0] ?? '1K')
+      setBackground(caps.supportsBackground ? reuse.background ?? 'auto' : 'auto')
+      setQuality(config.defaultQuality ?? 'high')
+      setSeed(caps.supportsSeed ? reuse.seed : undefined)
+      if (reuse.aspectRatio === 'auto' || caps.aspectRatios.includes(reuse.aspectRatio as never)) {
+        setAspectRatio(reuse.aspectRatio as AspectRatio)
+      } else if (reuse.aspectRatio && /^[1-9]\d*:[1-9]\d*$/.test(reuse.aspectRatio)) {
+        setAspectRatio('custom')
+        setCustomRatio(reuse.aspectRatio)
+      } else {
+        setAspectRatio(config.defaultAspectRatio ?? caps.aspectRatios[0] ?? '1:1')
       }
     }
-  }, [pendingReuse, consumePendingReuse, addImageRef, collections, clearRefs, setCollectionRefs, syncPromptText])
+    const imageNames = [...new Set([...reuse.prompt.matchAll(/\[([^@\]][^\]]*)\]/g)].map(match => match[1]))]
+    const collectionNames = [...new Set([...reuse.prompt.matchAll(/\[@([^\]]+)\]/g)].map(match => match[1]))]
+    const nextCollections: CollectionRef[] = collectionNames.flatMap(name => {
+      const collection = collections.find(item => item.name === name)
+      return collection ? [{ id: crypto.randomUUID(), collectionId: collection.id, name: collection.name,
+        thumbnail: collection.images[0] || '', images: collection.images }] : []
+    })
+    const paths = (reuse.attachmentFilePaths ?? []).slice(0, imageNames.length)
+    void (async () => {
+      try {
+        const images = await Promise.all(paths.map(async (path, index) => {
+          const result = await window.api.readImage(path)
+          if (!result.success || !result.base64DataUrl) throw new Error(`Referenz „${imageNames[index]}“ konnte nicht geladen werden.`)
+          return { id: crypto.randomUUID(), name: imageNames[index], base64: await compressImage(result.base64DataUrl, 1000, 0.75, reuse.background === 'transparent' ? 'png' : 'jpeg') }
+        }))
+        if (referenceLoadVersion.current !== version) return
+        setDraftContent({ prompt: reuse.prompt, images, collections: nextCollections })
+        setReferenceLoading(false)
+      } catch (error) {
+        if (referenceLoadVersion.current !== version) return
+        logger.error('PromptBar', 'Failed to load reuse attachment', error)
+        setReferenceError('Das Ausgangsbild konnte nicht geladen werden. Prüfe, ob die Datei noch verfügbar ist, und versuche es erneut.')
+        setReferenceLoading(false)
+      }
+    })()
+  }, [pendingReuse, consumePendingReuse, collections, setDraftContent, thumbnailMode, logoMode])
 
   // ── Submit ────────────────────────────────────────────────────────
 
   const handleSubmit = useCallback(async () => {
     const text = getPromptText()
-    if (!text || !falApiKey) return
+    if (!text || !falApiKey || referenceLoading || referenceError) return
 
     const { attachments, labeledAttachments } = await buildAttachments()
-
-    // Inject inpaint context if present
-    if (inpaintContext) {
-      const overlayBase64 = inpaintContext.getOverlayBase64()
-      if (!overlayBase64) return // no mask drawn
-
-      try {
-        const readResult = await window.api.readImage(inpaintContext.filePath)
-        if (!readResult.success || !readResult.base64DataUrl) return
-
-        const groups = await prepareInpaintReferences(readResult.base64DataUrl, overlayBase64)
-        attachments.unshift(...groups.flatMap((group) => group.images))
-        labeledAttachments.unshift(...groups)
-      } catch (err) {
-        console.error('Failed to prepare inpaint images', err)
-        return
-      }
-    }
 
     // Inject canvas context if present
     let canvasSketchPath: string | undefined
@@ -379,12 +276,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     const activePreset = activePresetId ? presets.find(p => p.id === activePresetId) : null
     const finalPrompt = activePreset ? `${text}, ${activePreset.suffix}` : text
 
-    // Build separate API prompt for inpaint mode
     let apiPromptText: string | undefined
-    if (inpaintContext) {
-      const hasUserRefs = imageRefs.length > 0 || collectionRefs.length > 0
-      apiPromptText = buildInpaintPrompt(finalPrompt, inpaintContext.sourcePrompt, hasUserRefs)
-    }
 
     // Build separate API prompt for canvas mode
     if (canvasContext) {
@@ -420,7 +312,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       : undefined
 
     const jobIds = generate({
-      prompt: inpaintContext ? `Inpaint: ${text}` : canvasContext ? `Canvas: ${text}` : finalPrompt,
+      prompt: canvasContext ? `Canvas: ${text}` : finalPrompt,
       apiPrompt: apiPromptText || undefined,
       aspectRatio: thumbnailMode ? THUMBNAIL_ASPECT_RATIO : resolvedAspectRatio,
       resolution: thumbnailMode ? THUMBNAIL_RESOLUTION : logoMode ? '1K' : resolution,
@@ -430,7 +322,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       models: selectedModels,
       seed,
       quality,
-      inpaintSourceId: inpaintContext?.imageId,
       canvasSketchPath,
       systemPrompt: thumbnailSystemPrompt ?? logoSystemPrompt,
       imageSize: thumbnailMode ? { ...THUMBNAIL_GPT_IMAGE_SIZE } : undefined,
@@ -445,27 +336,22 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       logoStyle: logoMode ? logoStyle : undefined,
     })
 
-    // Close inpaint modal after generating
-    if (inpaintContext) {
-      inpaintContext.onClose()
-    }
-
     // Close canvas modal after generating
     if (canvasContext) {
       canvasContext.onClose()
     }
     return jobIds
-  }, [getPromptText, falApiKey, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, inpaintContext, canvasContext, thumbnailMode, thumbnailStyle, logoMode, logoStyle, background, inputFidelity])
+  }, [getPromptText, falApiKey, referenceLoading, referenceError, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, canvasContext, thumbnailMode, thumbnailStyle, logoMode, logoStyle, background, inputFidelity])
 
   useLiveDraft({
-    mode: inpaintContext ? 'inpaint' : canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : 'image',
+    mode: canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : 'image',
     read: () => {
       const project = thumbnailMode ? useThumbnailProjectsStore.getState().getActiveProject() : null
       const hasRefs = imageRefs.length > 0 || collectionRefs.length > 0
       const text = getPromptText()
       const preset = usePresetsStore.getState().presets.find(p => p.id === usePresetsStore.getState().activePresetId)
       return {
-        mode: inpaintContext ? 'inpaint' : canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : 'image',
+        mode: canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : 'image',
         prompt: text, models: selectedModels, aspectRatio: thumbnailMode ? '16:9' : aspectRatio === 'custom' ? customRatio : aspectRatio,
         resolution: thumbnailMode ? '2K' : logoMode ? '1K' : resolution, imageCount, quality, seed: seed ?? null,
         background, inputFidelity, thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined, logoStyle: logoMode ? logoStyle : undefined,
@@ -476,9 +362,10 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         systemPrompt: thumbnailMode ? buildThumbnailSystemPrompt({ style: thumbnailStyle, faceFidelity: hasRefs, videoTitle: project?.title, videoAngle: project?.angle, customMetaPrompt: useThumbnailMetaPromptsStore.getState().getActiveText() })
           : logoMode ? buildLogoSystemPrompt({ style: logoStyle, transparent: background === 'transparent', hasReferences: hasRefs }) : undefined,
         capabilities: getCombinedCapabilities(selectedModels),
-        ready: !!text && !!useSettingsStore.getState().falApiKey,
-        inpaintSourceId: inpaintContext?.imageId,
-        contextRequirement: inpaintContext ? 'Draw a mask before submitting' : canvasContext ? 'Canvas must contain a sketch' : undefined,
+        ready: !!text && !!useSettingsStore.getState().falApiKey && !referenceLoading && !referenceError,
+        referenceLoadStatus: referenceLoading ? 'loading' : referenceError ? 'error' : 'ready',
+        referenceError,
+          contextRequirement: canvasContext ? 'Canvas must contain a sketch' : undefined,
       }
     },
     update: async patch => {
@@ -504,6 +391,11 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         if (!collection) throw new Error(`Collection not found: ${id}`)
         return { id: crypto.randomUUID(), collectionId: id, name: collection.name, thumbnail: collection.images[0] || '', images: collection.images }
       })
+      if (nextImages) {
+        referenceLoadVersion.current++
+        setReferenceLoading(false)
+        setReferenceError(null)
+      }
       if (patch.prompt !== undefined || nextImages || nextCollections) setDraftContent({ prompt: patch.prompt, images: nextImages, collections: nextCollections })
       if (patch.models) setSelectedModels(patch.models)
       if (patch.aspectRatio !== undefined) {
@@ -518,9 +410,12 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       if (patch.logoStyle !== undefined) setLogoStyle(patch.logoStyle)
       if (patch.background !== undefined) setBackground(patch.background)
       if (patch.inputFidelity !== undefined) setInputFidelity(patch.inputFidelity)
-      setExpanded(true)
     },
-    submit: handleSubmit,
+    submit: () => {
+      if (referenceLoading) throw new Error('Ausgangsbild wird noch geladen. Lies get_draft erneut, bis referenceLoadStatus ready meldet.')
+      if (referenceError) throw new Error(`${referenceError} Mit update_draft.references kannst du die Referenz ersetzen.`)
+      return handleSubmit()
+    },
     readReference: id => imageRefs.find(ref => ref.id === id)?.base64,
   })
 
@@ -566,6 +461,10 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   // ── Clear ─────────────────────────────────────────────────────────
 
   const clearPrompt = useCallback(() => {
+    referenceLoadVersion.current++
+    setReferenceLoading(false)
+    setReferenceError(null)
+    lastReuseRef.current = null
     clearRefs()
     setSeed(undefined)
   }, [clearRefs])
@@ -573,7 +472,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   // ── Render ────────────────────────────────────────────────────────
 
   const hasContent = promptText || imageRefs.length > 0 || collectionRefs.length > 0
-  const canSend = !!promptText && !!falApiKey
+  const canSend = !!promptText && !!falApiKey && !referenceLoading && !referenceError
   const resolvedRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
 
   // Warn when references exceed the strictest selected model's limit — they are
@@ -582,130 +481,53 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     imageRefs.length + collectionRefs.reduce((sum, c) => sum + c.images.length, 0)
   const refLimit = getCombinedCapabilities(selectedModels).minReferenceLimit
   const willCollage = totalRefImages > refLimit
-  const isInpaintMode = !!inpaintContext
-  const isCanvasMode = !!canvasContext
-  const isEmbeddedMode = isInpaintMode || isCanvasMode
-
-  // Embedded modes (inpaint, canvas) live in a modal and never collapse; a
-  // drag keeps the bar open so the drop targets stay visible.
-  const showExpanded = expanded || isEmbeddedMode || isDragOver
-
-  const editorPlaceholder = isInpaintMode
-    ? 'Describe what should appear in the masked area...'
-    : isCanvasMode
-      ? 'Describe what to generate from your sketch...'
-      : thumbnailMode
-        ? 'Die eine Idee: Motiv, Emotion, Situation…'
-        : logoMode
-          ? 'Die Marke und die eine Form: „Kaffeerösterei, Bohne als Sonne…"'
-          : 'Describe your image...'
-
-  const collapsedSummary = [
-    selectedModels.length > 1 ? `${selectedModels.length} Models` : getModelName(selectedModels[0]),
-    thumbnailMode ? '16:9' : logoMode ? null : resolvedRatio,
-    `${imageCount}×`,
-    totalRefImages > 0 ? `${totalRefImages} Ref${totalRefImages === 1 ? '' : 's'}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const isEmbeddedMode = !!canvasContext
+  const editorPlaceholder = canvasContext
+    ? 'Was soll aus deiner Skizze entstehen?'
+    : thumbnailMode
+      ? 'Deine Thumbnail-Idee: Motiv, Emotion und Situation …'
+      : logoMode
+        ? 'Beschreibe die Marke und dein Logo: „Kaffeerösterei, Bohne als Sonne …“'
+        : 'Was möchtest du erschaffen? Beschreibe Motiv, Licht und Stil …'
 
   return (
     <div className={cn("shrink-0 flex flex-col items-center", isEmbeddedMode ? "px-6 pb-4 pt-3" : "px-6 pb-6 pt-3")}>
-      <div ref={cardWrapRef} className="w-full max-w-[800px] relative">
+      <div className="w-full max-w-[1100px] relative">
         <div
           className={cn(
-            'prompt-card grain relative border rounded-2xl transition-all',
-            isDragOver ? 'border-accent-main/60 glow-accent-strong' : 'border-border-base',
-            !showExpanded && 'cursor-text hover:border-border-bright'
+            'prompt-card studio-composer relative border rounded-xl transition-colors',
+            isDragOver ? 'border-accent-main' : 'border-border-base'
           )}
-          onClick={!showExpanded ? expandAndFocus : undefined}
           onDragOver={handleDragOver}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {/* Top luminous edge */}
-          <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
-
           {/* Drag overlay */}
           {isDragOver && (
             <div className="absolute inset-0 z-10 rounded-2xl bg-accent-main/8 backdrop-blur-sm flex items-center justify-center pointer-events-none border-2 border-dashed border-accent-main/40">
               <div className="flex flex-col items-center gap-2">
                 <Plus className="w-6 h-6 text-accent-main" />
-                <span className="text-[13px] font-medium text-accent-main">Drop as reference</span>
+                <span className="text-[13px] font-medium text-accent-main">Als Referenz hinzufügen</span>
               </div>
             </div>
           )}
-
-          {/* Collapsed summary row — crossfades with the full content below. */}
-          {!isEmbeddedMode && (
-            <div
-              className="collapse-seg"
-              style={{ gridTemplateRows: showExpanded ? '0fr' : '1fr', opacity: showExpanded ? 0 : 1 }}
-              aria-hidden={showExpanded}
-            >
-              <div>
-                <div className="flex items-center gap-3 pl-4 pr-2.5 h-[52px]">
-                  <span
-                    className={cn(
-                      'flex-1 min-w-0 truncate text-[13.5px]',
-                      promptText ? 'text-text-primary' : 'text-text-muted'
-                    )}
-                  >
-                    {promptText || editorPlaceholder}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-text-muted whitespace-nowrap">
-                    {collapsedSummary}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleSubmit()
-                    }}
-                    disabled={!canSend}
-                    tabIndex={showExpanded ? -1 : 0}
-                    className={cn(
-                      'no-drag btn-interactive shrink-0 w-8 h-8 rounded-[10px] flex items-center justify-center transition-all',
-                      canSend
-                        ? 'bg-accent-main hover:bg-accent-bright text-white glow-accent'
-                        : 'bg-surface-3 text-text-muted cursor-not-allowed'
-                    )}
-                    title="Generate"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Full content — stays mounted while collapsed (the editor's text
-              lives in the DOM), hidden behind an animated 0fr grid row. */}
-          <div
-            className="collapse-seg"
-            style={{ gridTemplateRows: showExpanded ? '1fr' : '0fr', opacity: showExpanded ? 1 : 0 }}
-            aria-hidden={!showExpanded}
-            onTransitionEnd={() => {
-              if (showExpanded) setContentOverflow('visible')
-            }}
-          >
-            <div style={{ overflow: contentOverflow }}>
 
           {/* What comes out of here, stated once so the format is never a surprise. */}
           {logoMode && (
             <div className="flex items-center gap-2 px-4 pt-2.5 -mb-1">
               <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-accent-main" />
-              <span className="text-[11px] text-text-secondary">
+              <span className="text-[12px] text-text-secondary">
                 {background === 'transparent'
                   ? 'Transparentes PNG'
                   : background === 'opaque'
                     ? 'PNG mit deckendem Hintergrund'
                     : 'PNG, Hintergrund entscheidet das Modell'}
               </span>
-              <span className="text-[10px] text-text-muted/70 shrink-0">
+              <span className="text-[12px] text-text-muted shrink-0">
                 {background === 'transparent'
-                  ? '— wird ohne JPEG-Kompression gespeichert, Alphakanal bleibt erhalten'
-                  : '— nur „Transparent" liefert einen Alphakanal'}
+                  ? '· Hintergrund frei wählbar unter Optionen'
+                  : '· Transparenz unter Optionen wählen'}
               </span>
             </div>
           )}
@@ -719,18 +541,55 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
                     className="w-1.5 h-1.5 rounded-full shrink-0"
                     style={{ backgroundColor: activeProject.color }}
                   />
-                  <span className="text-[11px] text-text-secondary truncate">{activeProject.title}</span>
-                  <span className="text-[10px] text-text-muted/70 shrink-0">
-                    — Titel geht als Kontext mit, der Bildtext wiederholt ihn nicht
+                  <span className="text-[12px] text-text-secondary truncate">{activeProject.title}</span>
+                  <span className="text-[12px] text-text-muted shrink-0">
+                    · Videotitel wird als Kontext verwendet
                   </span>
                 </>
               ) : (
-                <span className="text-[11px] text-text-muted/70">
+                <span className="text-[12px] text-text-muted">
                   Kein Video gewählt — landet unter „Alle Thumbnails"
                 </span>
               )}
             </div>
           )}
+
+          {/* ContentEditable editor */}
+          <div className="flex items-start gap-3 px-5 pt-5 pb-4">
+            {imageRefs.length === 0 && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="no-drag shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center border border-border-base text-text-secondary hover:text-text-primary hover:bg-surface-4 hover:border-border-bright transition-all"
+                title="Referenzbilder hinzufügen"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            )}
+            <div
+              ref={editorRef}
+              role="textbox"
+              aria-label="Bildbeschreibung"
+              aria-multiline="true"
+              contentEditable
+              suppressContentEditableWarning
+              onInput={handleEditorInput}
+              onPaste={handleEditorPaste}
+              onKeyDown={handleEditorKeyDown}
+              data-placeholder={editorPlaceholder}
+              className="prompt-editor flex-1 min-h-[60px] max-h-[160px] overflow-y-auto text-[15px] text-text-primary leading-relaxed outline-none pt-1"
+            />
+          </div>
+
+
+          {referenceLoading && <p role="status" className="px-5 pb-3 text-[13px] text-text-muted">Ausgangsbild wird geladen …</p>}
+          {referenceError && <div role="alert" className="mx-5 mb-3 p-3 rounded-lg border border-danger/40 text-[13px] text-text-primary">
+            <p>{referenceError}</p>
+            <button className="mt-2 text-accent-main underline underline-offset-4" onClick={() => {
+              const reuse = lastReuseRef.current
+              if (reuse) useCropStore.getState().setPendingReuse(reuse.prompt, reuse.attachmentFilePaths, reuse.negativePrompt, reuse.seed, reuse)
+            }}>Erneut versuchen</button>
+            <button className="mt-2 ml-4 text-text-secondary underline underline-offset-4" onClick={clearPrompt}>Eingabe verwerfen</button>
+          </div>}
 
           {/* Attachments */}
           <AttachmentStrip
@@ -742,28 +601,6 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           />
 
           <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
-
-          {/* ContentEditable editor */}
-          <div className={cn('flex items-start gap-2 pb-3', imageRefs.length > 0 ? 'px-5 pt-3' : 'px-4 pt-4')}>
-            {imageRefs.length === 0 && (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="no-drag shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center border border-border-base text-text-secondary hover:text-text-primary hover:bg-surface-4 hover:border-border-bright transition-all"
-                title="Attach images"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            )}
-            <div
-              ref={editorRef}
-              contentEditable
-              suppressContentEditableWarning
-              onInput={handleEditorInput}
-              onKeyDown={handleEditorKeyDown}
-              data-placeholder={editorPlaceholder}
-              className="prompt-editor flex-1 min-h-[44px] max-h-[140px] overflow-y-auto text-[14px] text-text-primary leading-relaxed outline-none pt-1"
-            />
-          </div>
 
 
           {/* Separator */}
@@ -852,32 +689,27 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
             onCanvasClick={isEmbeddedMode ? undefined : onCanvasClick}
           />
           )}
-            </div>
-          </div>
         </div>
 
         {/* Hint - only show when not in embedded mode; fades out with the bar */}
         {!isEmbeddedMode && (
           <div
-            className={cn(
-              'flex justify-center mt-2.5 transition-opacity duration-200',
-              !showExpanded && 'opacity-0 pointer-events-none'
-            )}
+            className="flex flex-wrap justify-between mt-2.5 px-1"
           >
-            <p className="text-[11px] text-text-muted/70">
+            <p className="text-[12px] text-text-muted">
               {hydrated && !falApiKey ? (
                 <button onClick={onSettingsClick} className="text-danger/80 hover:text-danger transition-colors cursor-pointer">
-                  fal.ai API key missing — click to open Settings
+                  fal.ai API-Schlüssel fehlt · Einstellungen öffnen
                 </button>
               ) : (
                 <>
-                  <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mr-0.5">&#x2318;</kbd>
-                  <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">&#x23CE;</kbd>
+                  <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[12px] mr-0.5">&#x2318;</kbd>
+                  <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[12px] mx-0.5">&#x23CE;</kbd>
                   {'  ·  '}
                   <CostEstimate
                     models={selectedModels}
                     aspectRatio={thumbnailMode ? THUMBNAIL_ASPECT_RATIO : resolvedRatio}
-                    resolution={thumbnailMode ? THUMBNAIL_RESOLUTION : resolution}
+                    resolution={thumbnailMode ? THUMBNAIL_RESOLUTION : logoMode ? '1K' : resolution}
                     imageCount={imageCount}
                     quality={quality}
                     imageSize={thumbnailMode ? THUMBNAIL_GPT_IMAGE_SIZE : undefined}
@@ -885,15 +717,15 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
                   {(imageRefs.length > 0 || collections.length > 0) && (
                     <>
                       {'  \u00B7  '}
-                      <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[10px] mx-0.5">@</kbd>
-                      {' references'}
+                      <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border-dim text-[12px] mx-0.5">@</kbd>
+                      {' Referenzen im Text'}
                     </>
                   )}
                   {willCollage && (
                     <>
                       {'  \u00B7  '}
                       <span className="text-accent-main/80">
-                        {totalRefImages} references &gt; {refLimit} \u2014 extras are merged into numbered collages
+                        {totalRefImages} Referenzen · ab {refLimit} Bildern werden nummerierte Collagen erstellt
                       </span>
                     </>
                   )}

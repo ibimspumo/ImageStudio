@@ -1,7 +1,7 @@
+import { startBillingSync } from '../lib/billing-sync'
 import { useEffect, useRef } from 'react'
 import { useImageGeneration } from '../hooks/useImageGeneration'
 import { useVideoGeneration } from '../hooks/useVideoGeneration'
-import { useChatGeneration } from '../hooks/useChatGeneration'
 import { useGalleryStore } from '../stores/gallery-store'
 import { useQueueStore } from '../stores/queue-store'
 import { useSettingsStore } from '../stores/settings-store'
@@ -45,17 +45,16 @@ function startQueueRunner(context: AutomationContext): () => void {
 }
 
 export function useAutomationBridge(ready: boolean, ui: Pick<AutomationContext, 'navigate' | 'getView'>): void {
+  useEffect(() => { if (ready) return startBillingSync() }, [ready])
   const { generate } = useImageGeneration()
   const { generateVideo } = useVideoGeneration()
-  const { generate: generateChat } = useChatGeneration()
-  const live = useRef<AutomationContext>({ ...ui, generate, generateVideo, generateChat })
-  live.current = { ...ui, generate, generateVideo, generateChat }
+  const live = useRef<AutomationContext>({ ...ui, generate, generateVideo })
+  live.current = { ...ui, generate, generateVideo }
   useEffect(() => {
     if (!ready) return
     const context: AutomationContext = {
       generate: options => live.current.generate(options),
       generateVideo: options => live.current.generateVideo(options),
-      generateChat: options => live.current.generateChat(options),
       navigate: (target, id) => live.current.navigate(target, id),
       getView: () => live.current.getView(),
     }

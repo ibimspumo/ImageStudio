@@ -10,7 +10,7 @@ import { build } from 'esbuild'
 const directory = await mkdtemp(join(process.cwd(), 'node_modules', '.generation-tests-'))
 const fixture = join(directory, 'fixture.cjs')
 await build({
-  stdin: { contents: `export * from './src/renderer/src/hooks/useImageGeneration'; export * from './src/renderer/src/hooks/useVideoGeneration'; export * from './src/renderer/src/hooks/useChatGeneration'; export * from './src/renderer/src/stores/chat-store'; export * from './src/renderer/src/stores/gallery-store'; export * from './src/renderer/src/stores/settings-store'; export * from './src/renderer/src/stores/workspace-store'; export { AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS } from './src/renderer/src/types/api'`, resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: `export * from './src/renderer/src/hooks/useImageGeneration'; export * from './src/renderer/src/hooks/useVideoGeneration'; export * from './src/renderer/src/stores/gallery-store'; export * from './src/renderer/src/stores/settings-store'; export * from './src/renderer/src/stores/workspace-store'; export { AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS } from './src/renderer/src/types/api'`, resolveDir: process.cwd(), loader: 'ts' },
   outfile: fixture, bundle: true, packages: 'external', platform: 'node', format: 'cjs', logLevel: 'silent',
   plugins: [{ name: 'renderer-boundaries', setup(build) {
     build.onResolve({ filter: /^(react|zustand)$/ }, args => ({ path: args.path, namespace: 'mock' }))
@@ -40,7 +40,6 @@ beforeEach(() => {
   progress = videoProgress = resolveImage = resolveVideo = sentImage = sentVideo = undefined
   unsubscribed = 0
   app.useGalleryStore.setState({ images: [] })
-  app.useChatStore.setState({ chats: [], activeChatId: null })
   app.useSettingsStore.setState({ falApiKey: 'test-key-never-persist', antiDetection: false })
   app.useWorkspaceStore.setState({ activeWorkspaceId: 'active-folder' })
   global.window = { api: {
@@ -129,53 +128,4 @@ test('aborting an enqueued image requests provider cancellation rather than only
   assert.equal(calls.length, 1)
   assert.equal(calls[0][1].requestId, 'provider-queue-id')
   assert.ok(progressEvents.some(([, requestId]) => requestId === 'provider-queue-id'))
-})
-
-
-test('chat returns stable IDs before reference reads, locks concurrent requests, uses live settings and preserves source metadata', async () => {
-  const model = app.AVAILABLE_MODELS.find(model => model.supportsBackground)
-  const store = app.useGalleryStore.getState()
-  const sourceId = store.addPlaceholder('source logo', '1:1', '2K', model.id, undefined, 'source-folder', { hasAlpha: true, isLogo: true, logoStyle: 'minimal', projectId: 'source-project', thumbnailStyle: 'bold', faceFidelity: true })
-  store.completeImage(sourceId, '/gallery/source.png')
-  const chatId = app.useChatStore.getState().startChat(sourceId, '/gallery/source.png', 'source logo')
-  const { generate } = app.useChatGeneration()
-  app.useSettingsStore.setState({ falApiKey: 'updated-key-never-persist' })
-  let readReference
-  window.api.readImage = () => new Promise(resolve => { readReference = resolve })
-  window.api.uploadToUrls = async images => ({ success: true, urls: images.map((_, index) => `https://fal.example/reference-${index}.png`) })
-  const options = { chatId, prompt: 'Change the logo color', aspectRatio: '1:1', resolution: '2K', model: model.id, quality: 'high', seed: 5 }
-  const job = generate(options)
-  assert.equal(job.chatId, chatId)
-  assert.equal(typeof job.messageId, 'string')
-  assert.equal(sentImage, undefined)
-  const messages = app.useChatStore.getState().chats[0].messages
-  assert.equal(messages.length, 3)
-  assert.equal(messages.at(-1).id, job.messageId)
-  assert.equal(messages.at(-1).isLoading, true)
-  assert.throws(() => generate(options), /already generating/)
-  assert.equal(app.useChatStore.getState().chats[0].messages.length, 3)
-  readReference({ success: true, base64DataUrl: 'data:image/png;base64,AAAA' })
-  await tick()
-  assert.equal(sentImage.apiKey, 'updated-key-never-persist')
-  assert.equal(sentImage.background, 'transparent')
-  assert.equal(sentImage.labeledAttachments[0].images[0], 'https://fal.example/reference-0.png')
-  const generationRequest = { endpoint: model.editEndpoint, input: { prompt: 'actual reference preamble and prompt', background: 'transparent' } }
-  resolveImage({ success: true, results: [{ status: 'complete', result: { id: 'provider-chat-job', imageBase64: 'data:image/png;base64,AAAA', seed: 88, cost: 0.25, generationRequest } }] })
-  await tick()
-  const result = app.useGalleryStore.getState().images.find(image => image.chatMessageId === job.messageId)
-  assert.ok(result)
-  assert.equal(result.chatId, chatId)
-  assert.equal(result.parentImageId, sourceId)
-  assert.equal(result.workspaceId, 'source-folder')
-  assert.equal(result.projectId, 'source-project')
-  assert.equal(result.thumbnailStyle, 'bold')
-  assert.equal(result.hasAlpha, true)
-  assert.equal(result.isLogo, true)
-  assert.equal(result.seed, 88)
-  assert.equal(result.costSource, 'list-price-estimate')
-  assert.equal(result.requestId, sentImage.requestId)
-  assert.deepEqual(result.generationRequest, generationRequest)
-  assert.equal(app.useChatStore.getState().chats[0].messages.at(-1).imageFilePath, result.filePath)
-  assert.equal(app.useChatStore.getState().chats[0].messages.at(-1).isLoading, false)
-  assert.equal(JSON.stringify(app.useGalleryStore.getState().images).includes('updated-key-never-persist'), false)
 })

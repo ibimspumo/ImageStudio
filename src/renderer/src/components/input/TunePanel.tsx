@@ -1,3 +1,5 @@
+import { ComposerPopover } from './ComposerPopover'
+import { useDismissOnEscape } from './useDismissOnEscape'
 import { useEffect, useState, type ReactNode } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { cn } from '../../lib/utils'
@@ -12,14 +14,17 @@ import { cn } from '../../lib/utils'
 export function TuneMenu({
   badge,
   width = 340,
+  summary,
   children,
 }: {
   badge: number
   width?: number
+  summary?: string
   /** Render prop — `close` lets tool rows shut the panel after acting. */
   children: (close: () => void) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  useDismissOnEscape(open, () => setOpen(false))
   const close = () => setOpen(false)
 
   return (
@@ -27,23 +32,24 @@ export function TuneMenu({
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'no-drag flex items-center gap-1.5 h-8 px-3 rounded-lg border transition-all text-[12px] font-medium',
+          'no-drag flex items-center gap-1.5 h-9 px-3 rounded-lg border transition-all text-[12px] font-medium',
           open
             ? 'bg-surface-4 border-border-bright text-text-primary'
             : badge > 0
               ? 'bg-surface-3 border-accent-main/30 text-text-secondary hover:text-text-primary hover:bg-surface-4'
               : 'bg-surface-3 border-border-base text-text-secondary hover:text-text-primary hover:bg-surface-4'
         )}
+        aria-expanded={open}
         title="Alle weiteren Einstellungen"
       >
         <SlidersHorizontal
           className={cn('w-3.5 h-3.5 transition-transform duration-200', open && 'rotate-90')}
         />
-        Tune
+        <span>{summary || 'Optionen'}</span>
         {badge > 0 && (
           <span
             key={badge}
-            className="animate-scale-in min-w-4 h-4 px-1 rounded-full bg-accent-main/25 text-accent-bright text-[10px] font-semibold flex items-center justify-center tabular-nums"
+            className="animate-scale-in min-w-4 h-4 px-1 rounded-full bg-accent-main/25 text-accent-bright text-[12px] font-semibold flex items-center justify-center tabular-nums"
           >
             {badge}
           </span>
@@ -52,13 +58,13 @@ export function TuneMenu({
 
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={close} />
-          <div
-            className="absolute bottom-full left-0 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-2.5 z-30 animate-scale-in max-w-[min(92vw,480px)]"
+          <div className="fixed inset-0 z-[79]" onClick={close} />
+          <ComposerPopover
+            className="bg-surface-3 border border-border-base rounded-xl shadow-sm p-2.5 animate-scale-in max-w-[min(92vw,480px)]"
             style={{ width }}
           >
             {children(close)}
-          </div>
+          </ComposerPopover>
         </>
       )}
     </div>
@@ -69,7 +75,7 @@ export function TuneMenu({
 export function TuneGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="pt-2 first:pt-0 pb-2.5 last:pb-0 border-t border-border-dim first:border-t-0">
-      <div className="px-0.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+      <div className="px-0.5 pb-1.5 text-[12px] font-medium text-text-muted">
         {label}
       </div>
       <div className="flex flex-wrap items-center gap-1">{children}</div>
@@ -95,11 +101,12 @@ export function TuneOption({
     <button
       onClick={onClick}
       disabled={disabled}
+      aria-pressed={selected}
       title={title}
       className={cn(
-        'flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-[11px] font-medium transition-all',
+        'flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-[12px] font-medium transition-all',
         disabled
-          ? 'border-border-dim text-text-muted/40 cursor-not-allowed'
+          ? 'border-border-dim text-text-muted cursor-not-allowed'
           : selected
             ? 'bg-accent-dim border-accent-main/40 text-accent-main'
             : 'bg-surface-4/60 border-border-base text-text-secondary hover:text-text-primary hover:bg-surface-4'
@@ -125,7 +132,7 @@ export function TuneRow({
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[11.5px] font-medium text-text-secondary hover:bg-surface-4 hover:text-text-primary transition-all text-left"
+      className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium text-text-secondary hover:bg-surface-4 hover:text-text-primary transition-all text-left"
     >
       {icon && <span className="shrink-0 opacity-80 flex items-center">{icon}</span>}
       <span className="flex-1 min-w-0 truncate">{children}</span>
@@ -136,7 +143,7 @@ export function TuneRow({
 
 /**
  * Aspect-ratio chips plus a live custom `W:H` input — the same Format group
- * in the image bar, the chat and the video bar. Omit `onCustomRatioChange`
+ * in the image bar and the video bar. Omit `onCustomRatioChange`
  * to drop the custom row (video models take fixed ratios only).
  */
 export function TuneRatioOptions({
@@ -172,7 +179,7 @@ export function TuneRatioOptions({
   }
 
   const inputClass =
-    'w-9 h-7 rounded-md bg-surface-4 border border-border-base text-center text-[11px] text-text-primary outline-none focus:border-accent-main transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+    'w-9 h-7 rounded-md bg-surface-4 border border-border-base text-center text-[12px] text-text-primary outline-none focus:border-accent-main transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
 
   return (
     <>
@@ -187,13 +194,14 @@ export function TuneRatioOptions({
           className="flex items-center gap-1.5 pl-1.5"
           title="Eigenes Verhältnis — wird auf das nächste unterstützte gemappt"
         >
-          <span className={cn('text-[10px] font-medium', value === 'custom' ? 'text-accent-main' : 'text-text-muted')}>
-            Custom
+          <span className={cn('text-[12px] font-medium', value === 'custom' ? 'text-accent-main' : 'text-text-muted')}>
+            Eigenes
           </span>
           <input
             type="number"
             min="1"
             max="32"
+            aria-label="Breite des Seitenverhältnisses"
             value={customW}
             onChange={(e) => {
               setCustomW(e.target.value)
@@ -201,11 +209,12 @@ export function TuneRatioOptions({
             }}
             className={inputClass}
           />
-          <span className="text-[11px] text-text-muted">:</span>
+          <span className="text-[12px] text-text-muted">:</span>
           <input
             type="number"
             min="1"
             max="32"
+            aria-label="Höhe des Seitenverhältnisses"
             value={customH}
             onChange={(e) => {
               setCustomH(e.target.value)

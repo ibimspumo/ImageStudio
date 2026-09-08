@@ -42,7 +42,7 @@ export function UpdateSection() {
         <div className="flex items-center gap-2">
           <RotateCw className="w-3.5 h-3.5 text-accent-main" />
           <span className="text-[13px] font-medium text-text-primary">Updates</span>
-          <span className="text-[10px] text-text-muted px-1.5 py-0.5 rounded bg-surface-3">
+          <span className="text-[12px] text-text-muted px-1.5 py-0.5 rounded bg-surface-3">
             v{status?.currentVersion ?? '—'}
           </span>
         </div>
@@ -50,22 +50,22 @@ export function UpdateSection() {
         <button
           onClick={handleCheck}
           disabled={busy}
-          className="no-drag flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="no-drag flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <RefreshCw className={cn('w-3 h-3', state === 'checking' && 'animate-spin')} />
-          {state === 'checking' ? 'Checking…' : 'Check now'}
+          {state === 'checking' ? 'Prüft…' : 'Jetzt prüfen'}
         </button>
       </div>
 
       {state === 'not-available' && (
-        <p className="text-[11px] text-text-muted flex items-center gap-1.5">
+        <p className="text-[12px] text-text-muted flex items-center gap-1.5">
           <Check className="w-3 h-3 text-emerald-400" />
-          You are on the latest version.
+          Du verwendest die aktuelle Version.
         </p>
       )}
 
       {state === 'error' && (
-        <p className="text-[11px] text-red-400 flex items-start gap-1.5">
+        <p className="text-[12px] text-red-400 flex items-start gap-1.5">
           <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
           <span>{status?.error}</span>
         </p>
@@ -74,23 +74,23 @@ export function UpdateSection() {
       {(state === 'available' || state === 'downloading' || state === 'downloaded') && (
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] text-text-secondary">
-              Version <span className="font-medium text-text-primary">{status?.version}</span> is available.
+            <p className="text-[12px] text-text-secondary">
+              Version <span className="font-medium text-text-primary">{status?.version}</span> ist verfügbar.
             </p>
             {status?.releaseUrl && (
               <a
                 href={status.releaseUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="text-[10px] text-text-muted hover:text-accent-main flex items-center gap-1 shrink-0"
+                className="text-[12px] text-text-muted hover:text-accent-main flex items-center gap-1 shrink-0"
               >
-                Release notes <ExternalLink className="w-2.5 h-2.5" />
+                Versionshinweise <ExternalLink className="w-2.5 h-2.5" />
               </a>
             )}
           </div>
 
           {status?.releaseNotes && state === 'available' && (
-            <p className="text-[10px] text-text-muted leading-relaxed max-h-[80px] overflow-y-auto whitespace-pre-wrap">
+            <p className="text-[12px] text-text-muted leading-relaxed max-h-[80px] overflow-y-auto whitespace-pre-wrap">
               {status.releaseNotes.slice(0, 600)}
             </p>
           )}
@@ -103,7 +103,7 @@ export function UpdateSection() {
                   style={{ width: `${status?.progress ?? 0}%` }}
                 />
               </div>
-              <div className="flex justify-between text-[10px] text-text-muted">
+              <div className="flex justify-between text-[12px] text-text-muted">
                 <span>{status?.progress ?? 0}%</span>
                 <span>
                   {formatBytes(status?.transferred ?? 0)} / {formatBytes(status?.total ?? 0)}
@@ -116,16 +116,16 @@ export function UpdateSection() {
           {state === 'available' && status?.canInstall && (
             <button
               onClick={handleDownload}
-              className="btn-interactive w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium bg-accent-main text-white hover:bg-accent-bright transition-colors"
+              className="btn-interactive w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium bg-accent-main text-surface-0 hover:bg-accent-bright transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
-              Download update
+              Update herunterladen
             </button>
           )}
 
           {state === 'available' && !status?.canInstall && (
-            <p className="text-[10px] text-text-muted">
-              Running from source — install the update from the packaged app or the release page.
+            <p className="text-[12px] text-text-muted">
+              Entwicklungsversion: Installiere Updates über die installierte App oder die Release-Seite.
             </p>
           )}
 
@@ -133,17 +133,17 @@ export function UpdateSection() {
             <>
               <button
                 onClick={handleInstall}
-                className="btn-interactive w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium bg-accent-main text-white hover:bg-accent-bright transition-colors"
+                className="btn-interactive w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium bg-accent-main text-surface-0 hover:bg-accent-bright transition-colors"
               >
                 {status?.installMode === 'restart' ? (
                   <>
                     <RotateCw className="w-3.5 h-3.5" />
-                    Restart &amp; install
+                    Neu starten und installieren
                   </>
                 ) : (
                   <>
                     <FolderOpen className="w-3.5 h-3.5" />
-                    Open installer
+                    Installationsdatei öffnen
                   </>
                 )}
               </button>
@@ -152,15 +152,14 @@ export function UpdateSection() {
                   by itself — say so instead of pretending it restarts. */}
               {status?.installMode === 'open-installer' && (
                 <div className="space-y-1">
-                  <p className="text-[10px] text-text-muted leading-relaxed">
-                    Opens the disk image — drag ImageStudio into Applications, replacing the
-                    current version, then reopen it.
+                  <p className="text-[12px] text-text-muted leading-relaxed">
+                    Öffnet das Disk-Image. Ziehe ImageStudio in Programme, ersetze die bestehende Version und öffne die App erneut.
                   </p>
                   <button
                     onClick={() => window.api.revealUpdate()}
-                    className="text-[10px] text-text-muted hover:text-accent-main transition-colors"
+                    className="text-[12px] text-text-muted hover:text-accent-main transition-colors"
                   >
-                    Show the downloaded file
+                    Heruntergeladene Datei anzeigen
                   </button>
                 </div>
               )}

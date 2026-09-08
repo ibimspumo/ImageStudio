@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { DollarSign } from 'lucide-react'
 import { useGalleryStore } from '../../stores/gallery-store'
+import { getGalleryCosts } from '../../lib/gallery-costs'
 import { formatCost } from '../../types/api'
 
 /**
@@ -14,26 +15,13 @@ import { formatCost } from '../../types/api'
 export function SpendIndicator() {
   const images = useGalleryStore((s) => s.images)
 
-  const { total, today, tracked } = useMemo(() => {
-    const dayStart = new Date()
-    dayStart.setHours(0, 0, 0, 0)
-    const startMs = dayStart.getTime()
-
-    let total = 0
-    let today = 0
-    let tracked = 0
-    for (const image of images) {
-      if (!image.cost) continue
-      tracked++
-      total += image.cost
-      if (image.timestamp >= startMs) today += image.cost
-    }
-    return { total, today, tracked }
-  }, [images])
+  const costs = useMemo(() => getGalleryCosts(images), [images])
+  const total = costs.gallerySpendUsd
+  const today = costs.todaySpendUsd
 
   if (total <= 0) return null
 
-  const untracked = images.length - tracked
+  const untracked = costs.missingCostCount
 
   return (
     <div
@@ -42,7 +30,7 @@ export function SpendIndicator() {
         `Today: ${formatCost(today)}`,
         `Total: ${formatCost(total)}`,
         untracked > 0 ? `${untracked} older item(s) without a recorded cost` : null,
-        'Estimated from fal.ai list prices — fal reports no per-request cost.',
+        `${formatCost(costs.confirmedSpendUsd)} von fal.ai bestätigt; ${formatCost(costs.estimatedSpendUsd)} noch geschätzt.`,
       ]
         .filter(Boolean)
         .join('\n')}

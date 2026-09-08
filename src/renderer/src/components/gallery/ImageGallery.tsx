@@ -1,3 +1,4 @@
+import { isThumbnailImage } from '../../stores/gallery-store'
 import { useRef, useEffect, useMemo, useCallback, useState } from 'react'
 import { GalleryCard } from './GalleryCard'
 import { useJustifiedLayout, parseAspectRatio } from '../../hooks/useJustifiedLayout'
@@ -6,17 +7,17 @@ import type { GalleryImage } from '../../stores/gallery-store'
 interface ImageGalleryProps {
   images: GalleryImage[]
   onImageClick: (images: GalleryImage[], index: number) => void
-  onStartChat?: (imageId: string) => void
+  onCreateVariant?: (imageId: string) => void
   onCropImage?: (imageId: string, filePath: string) => void
   onGenerateVideo?: (imageId: string) => void
   /** Thumbnail mode: open the YouTube preview for this image. */
   onPreviewThumbnail?: (images: GalleryImage[], index: number) => void
 }
 
-const TARGET_ROW_HEIGHT = 240
-const GAP = 8
+const TARGET_ROW_HEIGHT = 280
+const GAP = 12
 
-export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, onGenerateVideo, onPreviewThumbnail }: ImageGalleryProps) {
+export function ImageGallery({ images, onImageClick, onCreateVariant, onCropImage, onGenerateVideo, onPreviewThumbnail }: ImageGalleryProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
@@ -68,8 +69,9 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, o
   const handlePreview = useCallback(
     (imageId: string) => {
       if (!onPreviewThumbnail) return
-      const idx = completedImages.findIndex((img) => img.id === imageId)
-      onPreviewThumbnail(completedImages, idx >= 0 ? idx : 0)
+      const thumbnails = completedImages.filter((img) => img.type !== 'video' && isThumbnailImage(img))
+      const idx = thumbnails.findIndex((img) => img.id === imageId)
+      if (idx >= 0) onPreviewThumbnail(thumbnails, idx)
     },
     [completedImages, onPreviewThumbnail]
   )
@@ -77,11 +79,11 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, o
   return (
     <div
       ref={scrollRef}
-      className="flex-1 overflow-y-auto px-6"
+      className="flex-1 min-h-0 overflow-y-auto px-5 md:px-8 pt-2"
       // Measured live in MainContent — the last row always clears the bar.
       style={{ paddingBottom: 'calc(var(--prompt-bar-h, 160px) + 24px)' }}
     >
-      <div ref={containerRef} className="max-w-6xl mx-auto relative" style={{ height: totalHeight }}>
+      <div ref={containerRef} className="w-full relative" style={{ height: totalHeight }}>
         {rows.flatMap((row) =>
           row.items.map((item) => {
             const image = images[item.index]
@@ -100,10 +102,10 @@ export function ImageGallery({ images, onImageClick, onStartChat, onCropImage, o
                 <GalleryCard
                   image={image}
                   onClick={handleCardClick}
-                  onStartChat={onStartChat}
+                  onCreateVariant={onCreateVariant}
                   onCropImage={onCropImage}
                   onGenerateVideo={onGenerateVideo}
-                  onPreviewThumbnail={onPreviewThumbnail ? handlePreview : undefined}
+                  onPreviewThumbnail={onPreviewThumbnail && isThumbnailImage(image) ? handlePreview : undefined}
                 />
               </div>
             )

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Download, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { requireExportSuccess } from '../../lib/export-result'
 import { logger } from '../../lib/logger'
 
 import { convertImage, type ExportFormat } from '../../lib/image-export'
@@ -29,6 +30,7 @@ function formatFileSize(bytes: number): string {
 
 
 export function ExportPopover({ imageSrc, defaultName, className, metadata, isVideo, videoFilePath }: ExportPopoverProps) {
+  const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
   const [format, setFormat] = useState<ExportFormat>('png')
   const [embedMetadata, setEmbedMetadata] = useState(true)
@@ -71,39 +73,43 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
   }, [recalculate])
 
   const handleQuickSave = async () => {
+    setError('')
     try {
       if (isVideo && videoFilePath) {
-        await window.api.exportVideo(videoFilePath, defaultName)
+        requireExportSuccess(await window.api.exportVideo(videoFilePath, defaultName))
       } else {
         // Follow the extension the caller asked for — writing PNG bytes into a
         // .jpg would produce a file no viewer expects.
         const ext = defaultName.split('.').pop()?.toLowerCase()
         const quickFormat: ExportFormat = ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : ext === 'webp' ? 'webp' : 'png'
         const { dataUrl } = await convertImage(imageSrc, quickFormat, 95)
-        await window.api.exportImage(dataUrl, defaultName)
+        requireExportSuccess(await window.api.exportImage(dataUrl, defaultName))
       }
     } catch (err) {
+      setError('Export fehlgeschlagen. Bitte erneut versuchen.')
       logger.error('ExportPopover', 'Quick save failed', err)
     }
   }
 
   const handleExportWithOptions = async () => {
+    setError('')
     try {
       if (isVideo && videoFilePath) {
-        await window.api.exportVideo(videoFilePath, defaultName)
+        requireExportSuccess(await window.api.exportVideo(videoFilePath, defaultName))
         setOpen(false)
         return
       }
       const { dataUrl } = await convertImage(imageSrc, format, quality)
       const ext = format === 'jpeg' ? 'jpg' : format
       const name = defaultName.replace(/\.\w+$/, '') + '.' + ext
-      if (metadata && embedMetadata) {
-        await window.api.exportImageWithMetadata(dataUrl, name, metadata)
+      if (metadata && embedMetadata && format === 'png') {
+        requireExportSuccess(await window.api.exportImageWithMetadata(dataUrl, name, metadata))
       } else {
-        await window.api.exportImage(dataUrl, name)
+        requireExportSuccess(await window.api.exportImage(dataUrl, name))
       }
       setOpen(false)
     } catch (err) {
+      setError('Export fehlgeschlagen. Bitte erneut versuchen.')
       logger.error('ExportPopover', 'Export with options failed', err)
     }
   }
@@ -120,8 +126,9 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium"
         >
           <Download className="w-3.5 h-3.5" />
-          Save {videoFilePath?.split('.').pop()?.toUpperCase() || 'Video'}
+          Export {videoFilePath?.split('.').pop()?.toUpperCase() || 'Video'}
         </button>
+        {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
       </div>
     )
   }
@@ -135,9 +142,11 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
           className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-l-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium"
         >
           <Download className="w-3.5 h-3.5" />
-          Save
+          Exportieren
         </button>
         <button
+          aria-label="Exportoptionen"
+          aria-expanded={open}
           onClick={() => setOpen(!open)}
           className={cn(
             'flex items-center justify-center px-1.5 py-2 rounded-r-lg border-l border-border-dim transition-colors',
@@ -150,11 +159,11 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
         </button>
       </div>
 
-      {/* Export options popover */}
+      {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
+      {/* Export options */}
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 right-0 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-3 z-30 animate-scale-in">
+          <div className="mt-2 min-w-[220px] bg-surface-3 border border-border-base rounded-xl p-3">
             {/* Format selector */}
             <div className="flex flex-col gap-2 mb-3">
               <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Format</span>
@@ -180,10 +189,11 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
             {showQuality && (
               <div className="flex flex-col gap-2 mb-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Quality</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Qualität</span>
                   <span className="text-[11px] font-medium text-text-secondary tabular-nums">{quality}%</span>
                 </div>
                 <input
+                  aria-label="Exportqualität"
                   type="range"
                   min="10"
                   max="100"
@@ -193,15 +203,15 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
                   className="w-full h-1 rounded-full appearance-none bg-surface-4 accent-accent-main cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent-main [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(167,139,250,0.4)]"
                 />
                 <div className="flex justify-between text-[9px] text-text-muted">
-                  <span>Smaller file</span>
-                  <span>Higher quality</span>
+                  <span>Kleinere Datei</span>
+                  <span>Höhere Qualität</span>
                 </div>
               </div>
             )}
 
             {/* File size info */}
             <div className="flex items-center justify-between py-2 px-2.5 rounded-lg bg-surface-4/50 mb-3">
-              <span className="text-[11px] text-text-muted">Estimated size</span>
+              <span className="text-[11px] text-text-muted">Geschätzte Größe</span>
               <div className="flex items-center gap-2">
                 {isCalculating ? (
                   <span className="text-[11px] text-text-muted">...</span>
@@ -222,7 +232,7 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
               </div>
             </div>
 
-            {metadata && (
+            {metadata && format === 'png' && (
               <div className="flex items-center gap-2 mb-3">
                 <input
                   type="checkbox"
@@ -232,7 +242,7 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
                   className="rounded border-border-base accent-accent-main"
                 />
                 <label htmlFor="embed-metadata" className="text-[11px] text-text-secondary cursor-pointer">
-                  Embed metadata (prompt, model, etc.)
+                  Metadaten einbetten (Prompt, Modell …)
                 </label>
               </div>
             )}
@@ -243,7 +253,7 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
               className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-accent-dim text-accent-main hover:bg-accent-main/20 transition-colors text-[12px] font-medium"
             >
               <Download className="w-3.5 h-3.5" />
-              Export as {FORMAT_LABELS[format]}
+              Exportieren als {FORMAT_LABELS[format]}
             </button>
           </div>
         </>

@@ -1,3 +1,4 @@
+import { fetchBillingCosts } from '../services/fal-billing'
 import { ipcMain, app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
@@ -13,6 +14,7 @@ import { DEFAULT_MODEL, normalizeModelId } from '../../shared/image-models'
 /** Valid settings keys — rejects unknown keys from renderer */
 const VALID_SETTINGS_KEYS = new Set([
   'falApiKey',
+  'falBillingApiKey',
   'defaultModel',
   'defaultAspectRatio',
   'defaultResolution',
@@ -24,6 +26,7 @@ const VALID_SETTINGS_KEYS = new Set([
 
 interface AppSettings {
   falApiKey: string
+  falBillingApiKey: string
   defaultModel: string
   defaultAspectRatio: string
   defaultResolution: string
@@ -35,6 +38,7 @@ interface AppSettings {
 
 const DEFAULTS: AppSettings = {
   falApiKey: '',
+  falBillingApiKey: '',
   defaultModel: DEFAULT_MODEL,
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
@@ -55,6 +59,7 @@ function loadSettings(): AppSettings {
   try {
     const raw = JSON.parse(readFileSync(path, 'utf-8'))
     return {
+      falBillingApiKey: typeof raw.falBillingApiKey === 'string' ? raw.falBillingApiKey : '',
       falApiKey: typeof raw.falApiKey === 'string' ? raw.falApiKey : DEFAULTS.falApiKey,
       // Settings written before the move to fal.ai hold OpenRouter model ids.
       defaultModel: normalizeModelId(raw.defaultModel),
@@ -96,6 +101,8 @@ export function registerAllHandlers(): void {
     persistSettings(settings)
     return { success: true }
   })
+
+  ipcMain.handle('billing:refresh', (_event, requests) => fetchBillingCosts(settings.falBillingApiKey || settings.falApiKey, requests))
 
   // History handlers
   ipcMain.handle(IPC_CHANNELS.HISTORY_LIST, async () => {

@@ -18,11 +18,11 @@ interface CanvasToolbarProps {
 }
 
 const TOOLS: { tool: CanvasTool; icon: typeof Paintbrush; label: string }[] = [
-  { tool: 'brush', icon: Paintbrush, label: 'Brush (B)' },
-  { tool: 'eraser', icon: Eraser, label: 'Eraser (E)' },
-  { tool: 'rectangle', icon: Square, label: 'Rectangle (R)' },
-  { tool: 'circle', icon: Circle, label: 'Circle (C)' },
-  { tool: 'line', icon: Minus, label: 'Line (L)' },
+  { tool: 'brush', icon: Paintbrush, label: 'Pinsel (B)' },
+  { tool: 'eraser', icon: Eraser, label: 'Radierer (E)' },
+  { tool: 'rectangle', icon: Square, label: 'Rechteck (R)' },
+  { tool: 'circle', icon: Circle, label: 'Kreis (C)' },
+  { tool: 'line', icon: Minus, label: 'Linie (L)' },
 ]
 
 export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, showLayerPanel, onToggleLayerPanel }: CanvasToolbarProps) {
@@ -33,24 +33,24 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
     if (!file) return
     try {
       const layerId = useCanvasStore.getState().activeLayerId
-      if (!layerId) throw new Error('Choose a canvas layer first.')
+      if (!layerId) throw new Error('Wähle zuerst eine Ebene.')
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result as string)
-        reader.onerror = () => reject(new Error('Image could not be read.'))
+        reader.onerror = () => reject(new Error('Das Bild konnte nicht gelesen werden.'))
         reader.readAsDataURL(file)
       })
       await importImage(layerId, dataUrl)
-      setMediaMessage('Image imported')
+      setMediaMessage('Bild importiert')
     } catch (error) { setMediaMessage(error instanceof Error ? error.message : String(error)) }
   }
   const exportFile = async () => {
     try {
       const data = exportComposite()
-      if (!data) throw new Error('Canvas is not ready.')
+      if (!data) throw new Error('Die Zeichenfläche ist noch nicht bereit.')
       const result = await window.api.saveImage(data, `canvas-export-${crypto.randomUUID()}.png`)
-      if (!result.success) throw new Error(result.error || 'Could not export canvas.')
-      setMediaMessage(`Saved: ${result.filePath}`)
+      if (!result.success) throw new Error(result.error || 'Die Skizze konnte nicht exportiert werden.')
+      setMediaMessage(`Gespeichert: ${result.filePath}`)
     } catch (error) { setMediaMessage(error instanceof Error ? error.message : String(error)) }
   }
   const activeTool = useCanvasStore((s) => s.activeTool)
@@ -73,8 +73,8 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
   const setCurrentSize = activeTool === 'eraser' ? setEraserSize : setBrushSize
 
   return (
-    <div className="shrink-0 flex items-center gap-2 px-5 py-3 border-b border-border-dim" style={{ paddingLeft: '80px' }}>
-      <h2 className="text-[14px] font-semibold text-text-primary mr-2">Canvas</h2>
+    <div className="shrink-0 flex flex-wrap items-center gap-2 px-5 py-3 border-b border-border-dim" style={{ paddingLeft: '80px' }}>
+      <h2 className="text-[14px] font-semibold text-text-primary mr-2">Referenzskizze</h2>
 
       {/* Tool buttons */}
       <div className="flex items-center gap-1">
@@ -88,7 +88,7 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
                 ? 'bg-accent-main/20 border-accent-main/30 text-accent-bright'
                 : 'bg-surface-3 hover:bg-surface-4 border-border-base text-text-secondary hover:text-text-primary'
             )}
-            title={label}
+            title={label} aria-label={label}
           >
             <Icon className="w-3.5 h-3.5" />
           </button>
@@ -104,7 +104,7 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
 
       {/* Size slider */}
       <div className="flex items-center gap-2 ml-1">
-        <span className="text-[11px] text-text-muted">Size</span>
+        <span className="text-[12px] text-text-muted">Größe</span>
         <input
           type="range"
           min="1"
@@ -113,7 +113,7 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
           onChange={(e) => setCurrentSize(parseInt(e.target.value))}
           className="w-20 h-1 rounded-full appearance-none bg-surface-4 accent-accent-main cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent-main"
         />
-        <span className="text-[10px] text-text-muted w-7">{currentSize}px</span>
+        <span className="text-[12px] text-text-muted w-7">{currentSize}px</span>
       </div>
 
       {/* Shape fill toggle */}
@@ -123,14 +123,14 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
           <button
             onClick={() => setShapeFill(!shapeFill)}
             className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-all',
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] font-medium transition-all',
               shapeFill
                 ? 'bg-accent-main/20 border-accent-main/30 text-accent-bright'
                 : 'bg-surface-3 hover:bg-surface-4 border-border-base text-text-secondary hover:text-text-primary'
             )}
-            title="Fill shape"
+            title="Form füllen"
           >
-            {shapeFill ? 'Filled' : 'Stroke'}
+            {shapeFill ? 'Gefüllt' : 'Kontur'}
           </button>
         </>
       )}
@@ -142,7 +142,7 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
         onClick={onUndo}
         disabled={!canUndo}
         className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 border border-border-dim text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-        title="Undo (⌘Z)"
+        title="Rückgängig (⌘Z)"
       >
         <Undo2 className="w-3.5 h-3.5" />
       </button>
@@ -150,14 +150,14 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
         onClick={onRedo}
         disabled={!canRedo}
         className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 border border-border-dim text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-        title="Redo (⌘⇧Z)"
+        title="Wiederholen (⌘⇧Z)"
       >
         <Redo2 className="w-3.5 h-3.5" />
       </button>
       <button
         onClick={onClearAll}
         className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 border border-border-dim text-text-secondary hover:text-text-primary transition-all"
-        title="Clear all"
+        title="Zeichenfläche leeren"
       >
         <Trash2 className="w-3.5 h-3.5" />
       </button>
@@ -182,27 +182,28 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
             ? 'bg-accent-main/20 border-accent-main/30 text-accent-bright'
             : 'bg-surface-3 hover:bg-surface-4 border-border-base text-text-secondary hover:text-text-primary'
         )}
-        title="Layers"
+        title="Ebenen"
       >
         <Layers className="w-3.5 h-3.5" />
       </button>
 
       <input ref={fileInput} type="file" accept="image/*" className="hidden"
         onChange={(event) => { void importFile(event.target.files?.[0]); event.target.value = '' }} />
-      <button onClick={() => fileInput.current?.click()} title="Import image into active layer" aria-label="Import canvas image"
+      <button onClick={() => fileInput.current?.click()} title="Bild in aktive Ebene importieren" aria-label="Bild importieren"
         className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 border border-border-dim text-text-secondary hover:text-text-primary">
         <Upload className="w-3.5 h-3.5" />
       </button>
-      <button onClick={() => void exportFile()} title="Export canvas PNG" aria-label="Export canvas PNG"
+      <button onClick={() => void exportFile()} title="Skizze als PNG exportieren" aria-label="Skizze als PNG exportieren"
         className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 border border-border-dim text-text-secondary hover:text-text-primary">
         <Download className="w-3.5 h-3.5" />
       </button>
-      {mediaMessage && <span role="status" title={mediaMessage} className="max-w-32 truncate text-[10px] text-text-muted">{mediaMessage}</span>}
+      {mediaMessage && <span role="status" title={mediaMessage} className="max-w-32 truncate text-[12px] text-text-muted">{mediaMessage}</span>}
 
       <div className="flex-1" />
 
       {/* Close */}
       <button
+        aria-label="Referenzskizze schließen"
         onClick={close}
         className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-3 transition-colors"
       >

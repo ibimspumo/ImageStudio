@@ -97,7 +97,7 @@ export function LogoControls({
   ].filter(Boolean).length
 
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-2 px-4 py-3">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-5 py-3">
       <ModelSelector
         selectedModels={selectedModels}
         onChange={onModelsChange}
@@ -112,7 +112,7 @@ export function LogoControls({
         max={caps.maxImagesPerRequest}
       />
 
-      <TuneMenu badge={tuneBadge} width={340}>
+      <TuneMenu badge={tuneBadge} width={340} summary={`${aspectRatio} · PNG`}>
         {(close) => (
           <>
             <TuneGroup label="Logo-Typ">
@@ -199,14 +199,14 @@ export function LogoControls({
                     <TuneRow
                       icon={<ListOrdered className="w-3.5 h-3.5" />}
                       onClick={() => { onQueueClick(); close() }}
-                      trailing={queuePending > 0 ? <span className="text-[10px] tabular-nums text-accent-main">{queuePending}</span> : undefined}
+                      trailing={queuePending > 0 ? <span className="text-[12px] tabular-nums text-accent-main">{queuePending}</span> : undefined}
                     >
-                      Generation Queue
+                      Warteschlange
                     </TuneRow>
                   )}
                   {onSettingsClick && (
                     <TuneRow icon={<Settings className="w-3.5 h-3.5" />} onClick={() => { onSettingsClick(); close() }}>
-                      Settings
+                      Einstellungen
                     </TuneRow>
                   )}
                 </div>
@@ -220,7 +220,7 @@ export function LogoControls({
         <button
           onClick={onCollectionsClick}
           className="no-drag shrink-0 flex items-center justify-center h-8 w-8 rounded-lg bg-surface-3 hover:bg-surface-4 border border-border-base text-text-secondary hover:text-text-primary transition-all text-[14px] font-semibold"
-          title="Collections (@)"
+          title="Sammlungen als Referenz (@)"
         >
           @
         </button>
@@ -243,14 +243,14 @@ export function LogoControls({
           onClick={onSubmit}
           disabled={!canSend}
           className={cn(
-            'no-drag btn-interactive shrink-0 flex items-center justify-center h-9 rounded-xl transition-all',
+            'no-drag btn-interactive shrink-0 flex items-center justify-center h-10 rounded-lg px-4 gap-2 transition-colors',
             canSend
-              ? 'bg-accent-main hover:bg-accent-bright text-white px-4 gap-2 glow-accent shadow-lg'
-              : 'bg-surface-3 text-text-muted cursor-not-allowed w-9'
+              ? 'bg-accent-main hover:bg-accent-bright text-[#171a11] px-4 gap-2'
+              : 'bg-surface-3 text-text-muted cursor-not-allowed px-4 gap-2'
           )}
         >
           <Send className="w-4 h-4" />
-          {canSend && <span className="text-[12px] font-semibold tracking-wide">Generate</span>}
+          <span className="text-[13px] font-semibold">Generieren</span>
         </button>
       </div>
     </div>

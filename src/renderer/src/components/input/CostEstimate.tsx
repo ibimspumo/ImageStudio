@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { DollarSign } from 'lucide-react'
 import { estimateImageCost, formatCost, getModel } from '../../types/api'
 
 interface CostEstimateProps {
@@ -46,15 +45,14 @@ export function CostEstimate({
 
   const title = [
     ...breakdown.map((r) => `${r.name}: ${formatCost(r.cost)} — ${r.note}`),
-    'Estimate from fal.ai list prices — fal reports no per-request cost.',
+    'Schätzung nach fal.ai Listenpreisen. Bestätigte Kosten sind nach der Generierung über den Abgleich in Aktivität verfügbar.',
   ].join('\n')
 
   return (
     <span className="inline-flex items-center gap-0.5 text-text-muted" title={title}>
-      <DollarSign className="w-2.5 h-2.5" />
-      {'≈ '}
-      {formatCost(total).replace('$', '')}
-      {imageCount > 1 && <span className="opacity-60">{` (${imageCount}×)`}</span>}
+      Schätzung: {formatCost(total)} USD
+      {models.length > 1 && <span> · {models.length} Modelle</span>}
+
     </span>
   )
 }
