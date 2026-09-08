@@ -1,4 +1,5 @@
 import type { GenerateOptions } from '../hooks/useImageGeneration'
+import { REFERENCE_PROMPT_DESCRIPTION } from '../../../shared/reference-mentions'
 import { useGalleryStore, type GalleryImage } from '../stores/gallery-store'
 import { useSettingsStore } from '../stores/settings-store'
 import { useCropStore } from '../stores/crop-store'
@@ -10,7 +11,7 @@ import {
 } from '../lib/image-editing'
 import { convertImage, renderThumbnailExport, type ExportFormat } from '../lib/image-export'
 import { object, str, choice, integer, array, bool, type Schema } from './schema'
-import { imageData, mcpImage, prepareGeneration, requireItem, requireKey, type GenerationArgs, type RegisterTool } from './tools'
+import { referencesSchema, collectionIdsSchema, imageData, mcpImage, prepareGeneration, requireItem, requireKey, type GenerationArgs, type RegisterTool } from './tools'
 
 const imageIdSchema = str('Completed gallery image ID; use list_images to discover IDs')
 const modelsSchema = choice(AVAILABLE_MODELS.map(m => m.id))
@@ -71,14 +72,14 @@ export function registerImageEditingTools(register: RegisterTool, generate: (opt
 
   type InpaintArgs = GenerationArgs & { imageId: string; maskSource?: string; strokes?: { brushSize: number; points: { x: number; y: number }[] }[] }
   register<InpaintArgs>('image_inpaint', 'Edit painted regions with the exact UI green-overlay, reference packing and inpaint prompt. Supply exactly one of maskSource (transparent PNG; nontransparent alpha = edit) or strokes (source image pixel coordinates). Additional references, collections, presets and normal generation options work as in the inpaint PromptBar. Starts paid generations and returns gallery IDs.', object({
-    imageId: imageIdSchema, prompt: { ...str(), minLength: 1 },
+    imageId: imageIdSchema, prompt: { ...str(REFERENCE_PROMPT_DESCRIPTION), minLength: 1 },
     maskSource: str('Transparent mask image as gallery ID or data:image/png;base64 URL. Painted alpha selects pixels; opaque backgrounds select the entire image.'),
     strokes: { ...array(strokeSchema, 200), minItems: 1 },
     models: { ...array(modelsSchema, 8), minItems: 1 },
     aspectRatio: { type: 'string', pattern: '^(auto|[1-9][0-9]{0,3}:[1-9][0-9]{0,3})$' },
     resolution: choice(['0.5K', '1K', '2K', '4K']), imageCount: integer(1, Math.max(...AVAILABLE_MODELS.map(model => model.maxImagesPerRequest))),
     quality: choice(['auto', 'low', 'medium', 'high']), seed: integer(0, 2147483647),
-    references: array(str('Gallery image ID, data URL, or HTTPS URL'), 32), collectionIds: array(str(), 32),
+    references: referencesSchema, collectionIds: collectionIdsSchema,
     presetId: str('Omitted uses the active preset; empty disables'), workspaceId: str('Omitted uses the active folder, matching the inpaint UI; empty means unfiled'),
     background: choice(['auto', 'opaque', 'transparent']), outputFormat: choice(['png', 'jpeg', 'webp']), inputFidelity: choice(['low', 'high']),
   }, ['imageId', 'prompt']), async args => {

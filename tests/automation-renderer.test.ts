@@ -57,7 +57,7 @@ test('renderer automation boundary and generation contracts', async () => {
   assert.equal(preview.data.request.quality, 'high')
   assert.ok(preview.data.request.systemPrompt.includes('Test video'))
   assert.ok(preview.data.request.systemPrompt.includes('Use a yellow border'))
-  assert.deepEqual(preview.data.referenceGroups, [{ label: 'Collection "@Host" (1 images)', imageCount: 1 }])
+  assert.deepEqual(preview.data.referenceGroups, [{ label: 'Collection "@Host" (1 image)', imageCount: 1 }])
   assert.equal(preview.data.estimateOnly, true)
   assert.equal(generated, undefined, 'preview never invokes paid generation')
 
@@ -83,4 +83,33 @@ test('renderer automation boundary and generation contracts', async () => {
   assert.equal(useThumbnailProjectsStore.getState().projects.length, 1)
   assert.equal(useThumbnailMetaPromptsStore.getState().prompts.length, 1)
   assert.ok(writes.includes('workspaces'))
+})
+
+test('inline collection and image references remain bound at their prompt positions', async () => {
+  useCollectionsStore.setState({ collections: [
+    { id: 'person', name: 'Timo', images: ['/person.png'], createdAt: 0 },
+    { id: 'background', name: 'Studio Wall', images: ['/wall.png'], createdAt: 0 },
+  ] })
+  const listed = (await call('collections', { action: 'list' })).data
+  assert.deepEqual(listed.map((c: { promptReference: string }) => c.promptReference), ['[@Timo]', '[@Studio Wall]'])
+  const prompt = 'Portrait of [@Timo] wearing the jacket from [Image 1], in [@Studio Wall], holding the prop from [Image 2], lit as in [Image 3]. Preserve the identity of [@Timo].'
+  const args = { prompt, references: [fixture, fixture, fixture], collectionIds: ['person', 'background', 'person'], presetId: '' }
+  const preview = await call('preview_generation', args)
+  assert.equal(preview.error, false)
+  assert.equal(preview.data.request.prompt, prompt)
+  assert.deepEqual(preview.data.referenceMentions, [
+    { referenceIndex: 0, promptReference: '[Image 1]', mentionedInPrompt: true },
+    { referenceIndex: 1, promptReference: '[Image 2]', mentionedInPrompt: true },
+    { referenceIndex: 2, promptReference: '[Image 3]', mentionedInPrompt: true },
+    { collectionId: 'person', promptReference: '[@Timo]', mentionedInPrompt: true },
+    { collectionId: 'background', promptReference: '[@Studio Wall]', mentionedInPrompt: true },
+  ])
+  assert.equal((await call('generate', args)).error, false)
+  assert.equal(generated?.prompt, prompt)
+  assert.deepEqual(generated?.labeledAttachments?.map(group => group.label), ['Image 1', 'Image 2', 'Image 3', 'Collection "@Timo" (1 image)', 'Collection "@Studio Wall" (1 image)'])
+  const vague = await call('preview_generation', { ...args, prompt: 'A portrait of Timo from the reference collection' })
+  assert.ok(vague.data.referenceMentions.every((ref: { mentionedInPrompt: boolean }) => !ref.mentionedInPrompt))
+  const capabilities = (await call('get_capabilities')).data
+  assert.ok(capabilities.referencePrompting.example.includes('[@Timo]'))
+  assert.ok(registry.definitions.find(tool => tool.name === 'generate')?.inputSchema.properties?.prompt.description?.includes('inline'))
 })

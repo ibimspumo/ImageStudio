@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, memo } from 'react'
+import { collectionMention, imageMention, REFERENCE_PROMPT_GUIDANCE } from '../../../../shared/reference-mentions'
 import {
   ArrowLeft,
   X,
@@ -252,10 +253,10 @@ export function ChatView({
     read: () => ({
       mode: 'chat', chatId, prompt: getPromptText(), models: selectedModels,
       aspectRatio: aspectRatio === 'custom' ? customRatio : aspectRatio, resolution, quality,
-      references: imageRefs.map(ref => ({ id: ref.id, name: ref.name, mimeType: /^data:([^;]+)/.exec(ref.base64)?.[1] })),
-      collections: collectionRefs.map(ref => ({ id: ref.id, collectionId: ref.collectionId, name: ref.name, imageCount: ref.images.length })),
+      references: imageRefs.map(ref => ({ id: ref.id, name: ref.name, promptReference: imageMention(ref.name), mimeType: /^data:([^;]+)/.exec(ref.base64)?.[1] })),
+      collections: collectionRefs.map(ref => ({ id: ref.id, collectionId: ref.collectionId, name: ref.name, promptReference: collectionMention(ref.name), imageCount: ref.images.length })),
       automaticReference: { id: 'automaticReference', filePath: [...(chat?.messages ?? [])].reverse().find(message => message.role === 'assistant' && message.imageFilePath)?.imageFilePath ?? null },
-      referenceRule: 'The latest assistant image is automatically the image being edited; explicit references and collections provide additional visual guidance.',
+      referenceRule: REFERENCE_PROMPT_GUIDANCE.chat,
       capabilities: getCombinedCapabilities(selectedModels), maxModels: 1,
       ready: !!chat && !!getPromptText() && !!useSettingsStore.getState().falApiKey && !chat.messages.some(message => message.isLoading),
       isGenerating: chat?.messages.some(message => message.isLoading) ?? false,

@@ -106,6 +106,14 @@ and in a chat. Two things to keep in mind when touching it:
 fal.ai takes a flat `image_urls` array plus one prompt string — there is no way to interleave labels
 between images. `buildReferencePreamble()` therefore numbers every reference in the prompt, in the exact
 order the URLs are sent, which is what makes `[Image 1]` and `[@Collection]` mentions resolvable.
+`src/shared/reference-mentions.ts` defines the exact UI/MCP markers, collection labels and agent guidance.
+MCP callers must both attach media and mention it inline at the relevant prompt position. Return exact
+`promptReference` values from collection discovery and live drafts; `preview_generation.referenceMentions`
+reports whether each attached reference is mentioned. Individual image numbering follows the explicit
+reference list and is unaffected by collections, the automatic previous chat image or inpaint context.
+This applies equally to imported files/URLs and earlier generated images. Video uses the supported
+single start-frame role and natural-language descriptions; do not suggest unsupported video/audio or
+end-frame inputs, or promise that video prompts resolve image/collection chips.
 When references exceed a model's limit, `packReferencesForModel()` merges the largest groups into numbered
 collages until they fit — nothing is dropped. Single-image slots are passed through untouched.
 

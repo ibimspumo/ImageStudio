@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCollectionsStore, type AssetCollection } from '../stores/collections-store'
+import { collectionMention, imageMention, collectionReferenceLabel } from '../../../shared/reference-mentions'
 import { toDisplayUrl } from '../stores/gallery-store'
 import { collectionImagesAsBase64, compressImage } from '../lib/image-utils'
 import { logger } from '../lib/logger'
@@ -157,10 +158,10 @@ export function useMentionEditor() {
       } else if (node instanceof HTMLElement) {
         if (node.dataset.imageRefId) {
           const ref = imageRefs.find((r) => r.id === node.dataset.imageRefId)
-          if (ref) text += `[${ref.name}]`
+          if (ref) text += imageMention(ref.name)
         } else if (node.dataset.collectionRefId) {
           const cRef = collectionRefs.find((r) => r.id === node.dataset.collectionRefId)
-          if (cRef) text += `[@${cRef.name}]`
+          if (cRef) text += collectionMention(cRef.name)
         } else if (node.tagName === 'BR') {
           text += '\n'
         } else {
@@ -223,11 +224,11 @@ export function useMentionEditor() {
     setPromptText(Array.from(editor.childNodes).map(node => {
       if (node instanceof HTMLElement && node.dataset.collectionRefId) {
         const ref = nextCollections.find(item => item.id === node.dataset.collectionRefId)
-        return ref ? `[@${ref.name}]` : ''
+        return ref ? collectionMention(ref.name) : ''
       }
       if (node instanceof HTMLElement && node.dataset.imageRefId) {
         const ref = nextImages.find(item => item.id === node.dataset.imageRefId)
-        return ref ? `[${ref.name}]` : ''
+        return ref ? imageMention(ref.name) : ''
       }
       return node.textContent ?? ''
     }).join('').trim())
@@ -265,7 +266,7 @@ export function useMentionEditor() {
       const images = await collectionImagesAsBase64(cRef.images)
       attachments.push(...images)
       labeledAttachments.push({
-        label: `Collection "@${cRef.name}" (${images.length} image${images.length === 1 ? '' : 's'})`,
+        label: collectionReferenceLabel(cRef.name, images.length),
         images,
       })
     }

@@ -5,6 +5,7 @@ import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useMentionEditor, collectionChipThumbnail } from '../../hooks/useMentionEditor'
 import { useSettingsStore } from '../../stores/settings-store'
 import { type AssetCollection } from '../../stores/collections-store'
+import { collectionMention, imageMention } from '../../../../shared/reference-mentions'
 import type {
   AspectRatio,
   Resolution,
@@ -468,8 +469,8 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         prompt: text, models: selectedModels, aspectRatio: thumbnailMode ? '16:9' : aspectRatio === 'custom' ? customRatio : aspectRatio,
         resolution: thumbnailMode ? '2K' : logoMode ? '1K' : resolution, imageCount, quality, seed: seed ?? null,
         background, inputFidelity, thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined, logoStyle: logoMode ? logoStyle : undefined,
-        references: imageRefs.map(ref => ({ id: ref.id, name: ref.name, mimeType: /^data:([^;]+)/.exec(ref.base64)?.[1] })),
-        collections: collectionRefs.map(ref => ({ id: ref.id, collectionId: ref.collectionId, name: ref.name, imageCount: ref.images.length })),
+        references: imageRefs.map(ref => ({ id: ref.id, name: ref.name, promptReference: imageMention(ref.name), mimeType: /^data:([^;]+)/.exec(ref.base64)?.[1] })),
+        collections: collectionRefs.map(ref => ({ id: ref.id, collectionId: ref.collectionId, name: ref.name, promptReference: collectionMention(ref.name), imageCount: ref.images.length })),
         activePresetId: usePresetsStore.getState().activePresetId, finalPrompt: preset ? `${text}, ${preset.suffix}` : text,
         project, activeMetaPromptId: thumbnailMode ? useThumbnailMetaPromptsStore.getState().activeId : undefined,
         systemPrompt: thumbnailMode ? buildThumbnailSystemPrompt({ style: thumbnailStyle, faceFidelity: hasRefs, videoTitle: project?.title, videoAngle: project?.angle, customMetaPrompt: useThumbnailMetaPromptsStore.getState().getActiveText() })

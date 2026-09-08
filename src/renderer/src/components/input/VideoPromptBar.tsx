@@ -9,6 +9,7 @@ import { logger } from '../../lib/logger'
 import { compressImage } from '../../lib/image-utils'
 import { useLiveDraft } from '../../automation/live-drafts'
 import { rejectDraftFields, resolveDraftReference } from '../../automation/draft-tools'
+import { REFERENCE_PROMPT_GUIDANCE } from '../../../../shared/reference-mentions'
 import { VideoModelSelector } from './VideoModelSelector'
 import { DurationSelector } from './DurationSelector'
 import { TuneMenu, TuneGroup, TuneOption, TuneRow, TuneRatioOptions } from './TunePanel'
@@ -153,6 +154,7 @@ export function VideoPromptBar({ onSettingsClick, initialStartFrame }: VideoProm
       mode: 'video', prompt: getPromptText(), model: selectedModel, duration,
       aspectRatio: aspectRatio === 'custom' ? customRatio : aspectRatio, resolution, generateAudio, cameraFixed,
       startFrame: startFrame ? { id: 'startFrame', name: startFrame.name, mimeType: /^data:([^;]+)/.exec(startFrame.base64)?.[1] } : null,
+      referenceRule: REFERENCE_PROMPT_GUIDANCE.video,
       capabilities: modelConfig, ready: !!getPromptText() && !!startFrame && !!useSettingsStore.getState().falApiKey,
       estimatedCostUsd: estimateVideoCost(selectedModel, duration, generateAudio), costIsEstimate: true,
     }),
