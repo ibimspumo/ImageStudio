@@ -52,6 +52,12 @@ export interface GenerateRequest {
 }
 
 export interface GenerateResult {
+  filePath?: string
+  previewPath?: string
+  width?: number
+  height?: number
+  hasAlpha?: boolean
+  mimeType?: string
   id: string
   text?: string
   imageBase64?: string

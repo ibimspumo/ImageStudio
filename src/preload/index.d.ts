@@ -1,6 +1,12 @@
 import type { AutomationStatus, AutomationRequest, AutomationReply } from '../shared/automation'
 
 export interface GenerateImageResult {
+  filePath?: string
+  previewPath?: string
+  width?: number
+  height?: number
+  hasAlpha?: boolean
+  mimeType?: string
   id: string
   text?: string
   imageBase64?: string
@@ -49,6 +55,9 @@ export interface ElectronAPI {
   automationReadMedia(options: { filePath: string }): Promise<{ success: true; filePath: string; uri: string; mimeType: string; kind: 'image' | 'video'; size: number }>
 
   refreshBilling(requests: import('../shared/billing').BillingRequest[]): Promise<import('../shared/billing').BillingResult>
+  prepareImageFileExport(request: { filePath: string; format: 'png' | 'jpeg' | 'webp'; quality: number }): Promise<{ filePath: string; sizeBytes: number; format: 'png' | 'jpeg' | 'webp'; mimeType: string }>
+  exportImageFile(filePath: string, defaultName: string, metadata?: Record<string, string>): Promise<{ success: boolean; cancelled?: boolean; filePath?: string; error?: string }>
+  inspectProcessingImage(filePath: string): Promise<{ width: number; height: number; hasAlpha: boolean; mimeType: string; sizeBytes: number }>
   generateImage(request: {
     prompt: string
     model: string
@@ -57,6 +66,7 @@ export interface ElectronAPI {
     resolution: string
     count: number
     requestId: string
+    imageProcessing?: import('../shared/image-processing').ImageProcessingRequest
     attachments?: string[]
     labeledAttachments?: { label: string; images: string[] }[]
     seed?: number

@@ -9,6 +9,7 @@ import { convertImage, type ExportFormat } from '../../lib/image-export'
 interface ExportPopoverProps {
   imageSrc: string  // file:// URL or base64 data URL
   defaultName: string
+  originalFilePath?: string
   className?: string
   metadata?: Record<string, string>
   isVideo?: boolean
@@ -29,7 +30,7 @@ function formatFileSize(bytes: number): string {
 }
 
 
-export function ExportPopover({ imageSrc, defaultName, className, metadata, isVideo, videoFilePath }: ExportPopoverProps) {
+export function ExportPopover({ imageSrc, originalFilePath, defaultName, className, metadata, isVideo, videoFilePath }: ExportPopoverProps) {
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
   const [format, setFormat] = useState<ExportFormat>('png')
@@ -44,10 +45,13 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
   useEffect(() => {
     if (!imageSrc || isVideo) return
     // For file:// URLs, estimate size from a PNG conversion
-    convertImage(imageSrc, 'png', 100)
+    const inspected = originalFilePath && !originalFilePath.startsWith('data:')
+      ? window.api.automationReadMedia({ filePath: originalFilePath }).then(result => ({ sizeBytes: result.size }))
+      : convertImage(imageSrc, 'png', 100)
+    inspected
       .then(({ sizeBytes }) => setOriginalSize(sizeBytes))
       .catch(() => setOriginalSize(null))
-  }, [imageSrc, isVideo])
+  }, [imageSrc, originalFilePath, isVideo])
 
   // Recalculate file size when format or quality changes
   const recalculate = useCallback(() => {
@@ -56,7 +60,10 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
 
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      convertImage(imageSrc, format, quality)
+      const converted = originalFilePath && !originalFilePath.startsWith('data:')
+        ? window.api.prepareImageFileExport({ filePath: originalFilePath, format, quality })
+        : convertImage(imageSrc, format, quality)
+      converted
         .then(({ sizeBytes }) => {
           setFileSize(sizeBytes)
           setIsCalculating(false)
@@ -66,7 +73,7 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
           setIsCalculating(false)
         })
     }, 150)
-  }, [imageSrc, format, quality, open])
+  }, [imageSrc, originalFilePath, format, quality, open])
 
   useEffect(() => {
     recalculate()
@@ -82,8 +89,15 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
         // .jpg would produce a file no viewer expects.
         const ext = defaultName.split('.').pop()?.toLowerCase()
         const quickFormat: ExportFormat = ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : ext === 'webp' ? 'webp' : 'png'
-        const { dataUrl } = await convertImage(imageSrc, quickFormat, 95)
-        requireExportSuccess(await window.api.exportImage(dataUrl, defaultName))
+        if (originalFilePath && !originalFilePath.startsWith('data:')) {
+          const sourceExt = originalFilePath.split('.').pop()?.toLowerCase()
+          const matches = quickFormat === 'jpeg' ? ['jpg', 'jpeg'].includes(sourceExt ?? '') : sourceExt === quickFormat
+          const filePath = matches ? originalFilePath : (await window.api.prepareImageFileExport({ filePath: originalFilePath, format: quickFormat, quality: 95 })).filePath
+          requireExportSuccess(await window.api.exportImageFile(filePath, defaultName))
+        } else {
+          const { dataUrl } = await convertImage(imageSrc, quickFormat, 95)
+          requireExportSuccess(await window.api.exportImage(dataUrl, defaultName))
+        }
       }
     } catch (err) {
       setError('Export fehlgeschlagen. Bitte erneut versuchen.')
@@ -99,13 +113,18 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
         setOpen(false)
         return
       }
-      const { dataUrl } = await convertImage(imageSrc, format, quality)
       const ext = format === 'jpeg' ? 'jpg' : format
       const name = defaultName.replace(/\.\w+$/, '') + '.' + ext
+      if (originalFilePath && !originalFilePath.startsWith('data:')) {
+        const prepared = await window.api.prepareImageFileExport({ filePath: originalFilePath, format, quality })
+        requireExportSuccess(await window.api.exportImageFile(prepared.filePath, name, metadata && embedMetadata && format === 'png' ? metadata : undefined))
+      } else {
+      const { dataUrl } = await convertImage(imageSrc, format, quality)
       if (metadata && embedMetadata && format === 'png') {
         requireExportSuccess(await window.api.exportImageWithMetadata(dataUrl, name, metadata))
       } else {
         requireExportSuccess(await window.api.exportImage(dataUrl, name))
+      }
       }
       setOpen(false)
     } catch (err) {

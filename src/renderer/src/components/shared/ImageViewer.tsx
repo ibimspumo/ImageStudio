@@ -1,4 +1,5 @@
 import { PromptText } from './PromptText'
+import { ImageProcessingPanel } from './ImageProcessingPanel'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   X,
@@ -14,7 +15,6 @@ import {
   Crop,
   DollarSign,
   Loader2,
-  ArrowUpCircle,
   Star,
   Columns,
   Hash
@@ -22,12 +22,12 @@ import {
 import type { GalleryImage } from '../../stores/gallery-store'
 import { useGalleryStore, toDisplayUrl } from '../../stores/gallery-store'
 import { useSettingsStore } from '../../stores/settings-store'
-import { AVAILABLE_MODELS, DEFAULT_MODEL, getModelName, getVideoModelName, normalizeModelId } from '../../types/api'
+import { AVAILABLE_MODELS, getModelName, getVideoModelName, normalizeModelId } from '../../types/api'
 import { getResolutionLabel } from '../../lib/image-utils'
 import { ExportPopover } from './ExportPopover'
 import { TagInput } from '../tags/TagInput'
 import { cn } from '../../lib/utils'
-import { prepareImageTransform, ZOOM_LEVELS, EDIT_ASPECT_RATIOS, upscaleTargets as getUpscaleTargets } from '../../lib/image-editing'
+import { prepareImageTransform, ZOOM_LEVELS, EDIT_ASPECT_RATIOS } from '../../lib/image-editing'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { formatDuration, formatDate } from '../../lib/date-utils'
 import { neutralImageName } from '../../lib/anti-detection'
@@ -111,8 +111,6 @@ export function ImageViewer({
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null)
   const [zoomGenerating, setZoomGenerating] = useState<number | null>(null)
-  const [upscaleGenerating, setUpscaleGenerating] = useState<string | null>(null)
-  const [upscaleModel, setUpscaleModel] = useState(DEFAULT_MODEL)
   const [aspectRatioGenerating, setAspectRatioGenerating] = useState<string | null>(null)
   const [aspectRatioModel, setAspectRatioModel] = useState<string | null>(null)
   const { generate } = useImageGeneration()
@@ -125,7 +123,8 @@ export function ImageViewer({
   const snapshotImage = images[currentIndex]
   // Read live image from store so toggleFavorite/updateTags reflect immediately
   const image = allImages.find((img) => img.id === snapshotImage?.id) ?? snapshotImage
-  const displayUrl = image ? toDisplayUrl(image.filePath) : undefined
+  const originalUrl = image ? toDisplayUrl(image.filePath) : undefined
+  const displayUrl = image ? toDisplayUrl(image.previewPath ?? image.filePath) : undefined
 
 
   // Check if this image has a parent (was derived from another via upscale, zoom out, inpaint, etc.)
@@ -144,7 +143,12 @@ export function ImageViewer({
   }, [allImages])
 
   useEffect(() => {
+    setPromptExpanded(false)
     if (!displayUrl) { setImageDims(null); return }
+    if (image?.previewPath) {
+      setImageDims(image.width && image.height ? { w: image.width, h: image.height } : null)
+      return
+    }
     const img = new window.Image()
     img.onload = () => {
       setImageDims({ w: img.naturalWidth, h: img.naturalHeight })
@@ -160,7 +164,7 @@ export function ImageViewer({
     img.src = displayUrl
     setPromptExpanded(false)
     return () => { img.onload = null; img.onerror = null }
-  }, [displayUrl])
+  }, [displayUrl, image?.width, image?.height, image?.previewPath])
 
   const canGoLeft = currentIndex > 0
   const canGoRight = currentIndex < images.length - 1
@@ -236,17 +240,6 @@ export function ImageViewer({
     finally { setZoomGenerating(null) }
   }, [image, falApiKey, zoomGenerating, generate, onClose])
 
-  const handleUpscale = useCallback(async (targetResolution: string) => {
-    if (!image?.filePath || !falApiKey || upscaleGenerating) return
-    setActionError('')
-    setUpscaleGenerating(targetResolution)
-    try {
-      generate(await prepareImageTransform(image, { operation: 'upscale', resolution: targetResolution, model: upscaleModel }))
-      onClose()
-    } catch (err) { setActionError(err instanceof Error ? err.message : 'Auflösung konnte nicht erhöht werden.'); logger.error('ImageViewer', 'Upscale failed', err) }
-    finally { setUpscaleGenerating(null) }
-  }, [image, falApiKey, upscaleGenerating, upscaleModel, generate, onClose])
-
   const handleAspectRatioChange = useCallback(async (targetRatio: string) => {
     if (!image?.filePath || !falApiKey || aspectRatioGenerating) return
     setActionError('')
@@ -258,7 +251,7 @@ export function ImageViewer({
     finally { setAspectRatioGenerating(null) }
   }, [image, falApiKey, aspectRatioGenerating, effectiveAspectRatioModel, generate, onClose])
 
-  const upscaleTargets = image ? getUpscaleTargets(image).filter((r) => AVAILABLE_MODELS.find((m) => m.id === upscaleModel)?.uiResolutions.includes(r as never)) : []
+
 
   if (!image) return null
 
@@ -333,11 +326,12 @@ export function ImageViewer({
                 <Copy className="w-3.5 h-3.5" /> Kopieren
               </button>}
               <ExportPopover
-                imageSrc={displayUrl ?? ''}
+                imageSrc={originalUrl ?? ''}
+                originalFilePath={image.filePath}
                 defaultName={
                   antiDetection
                     ? neutralImageName(image.filePath.split('.').pop()?.toLowerCase() || (image.type === 'video' ? 'mp4' : 'jpg'))
-                    : `imagestudio-${Date.now()}.${image.type === 'video' ? image.filePath.split('.').pop()?.toLowerCase() || 'mp4' : 'png'}`
+                    : `imagestudio-${Date.now()}.${image.filePath.split('.').pop()?.toLowerCase() || (image.type === 'video' ? 'mp4' : 'png')}`
                 }
                 className="flex-1"
                 isVideo={image.type === 'video'}
@@ -401,6 +395,8 @@ export function ImageViewer({
               <p className="text-[13px] text-text-secondary leading-relaxed bg-surface-3 rounded-lg p-3">{image.negativePrompt}</p>
             </div>
           )}
+
+          {image.type !== 'video' && <ImageProcessingPanel key={image.id} image={image} generate={generate} onStarted={onClose} disabled={!falApiKey || !!zoomGenerating || !!aspectRatioGenerating} />}
 
           {image.type !== 'video' && <details className="border-t border-border-dim pt-4">
             <summary className="cursor-pointer text-[13px] font-medium text-text-secondary">Bild bearbeiten</summary>
@@ -468,33 +464,6 @@ export function ImageViewer({
             </div>
           )}
 
-          {/* Upscale */}
-          {upscaleTargets.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <span className="text-[12px] font-medium text-text-muted">Auflösung erhöhen</span>
-              <div className="flex gap-1.5">
-                {upscaleTargets.map((res) => {
-                  const isGenerating = upscaleGenerating === res
-                  return (
-                    <button key={res} onClick={() => handleUpscale(res)} disabled={!!upscaleGenerating || !!zoomGenerating || !falApiKey}
-                      className={cn('flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-[11px] font-medium transition-all',
-                        isGenerating ? 'bg-accent-dim border-accent-main/30 text-accent-main'
-                          : upscaleGenerating ? 'bg-surface-3/50 border-border-dim text-text-muted cursor-not-allowed opacity-50'
-                          : 'bg-surface-3 border-border-dim text-text-secondary hover:bg-surface-4 hover:border-border-base hover:text-text-primary')}>
-                      {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpCircle className="w-3.5 h-3.5" />}
-                      <span>{res}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              <label className="flex items-center gap-3 text-[12px] text-text-muted">Modell
-                <select aria-label="Modell für höhere Auflösung" value={upscaleModel} onChange={(e) => setUpscaleModel(e.target.value)} className="flex-1 min-w-0 rounded-lg bg-surface-3 border border-border-dim px-2 py-2 text-text-primary">
-                  {AVAILABLE_MODELS.filter((model) => model.uiResolutions.some((r) => r === '2K' || r === '4K')).map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
-                </select>
-              </label>
-              {upscaleGenerating && <p className="text-[10px] text-accent-main/70 text-center animate-pulse">Auflösung wird auf {upscaleGenerating} erhöht…</p>}
-            </div>
-          )}
 
             </div>
           </details>}
@@ -581,7 +550,7 @@ export function ImageViewer({
                       className={cn('w-16 h-16 rounded-lg overflow-hidden border bg-surface-3 transition-colors',
                         galleryMatch !== null ? 'border-border-dim hover:border-accent-main cursor-pointer' : 'border-border-dim opacity-60 cursor-default')}
                       title={galleryMatch !== null ? 'View in lightbox' : `Reference ${i + 1}`}>
-                      <img src={toDisplayUrl(att)} alt={`Reference ${i + 1}`} className="w-full h-full object-cover" />
+                      <img src={toDisplayUrl(allImages.find((candidate) => candidate.filePath === att)?.previewPath ?? att)} alt={`Reference ${i + 1}`} className="w-full h-full object-cover" />
                     </button>
                   )
                 })}

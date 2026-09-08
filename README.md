@@ -79,7 +79,7 @@ The app registry defines capabilities, defaults and list-price estimates. Prices
 | **Nano Banana 2 Lite** | Google | 15, incl. 4:1 and 8:1 | fixed 1K | up to 14 | yes | ~$0.048 per image |
 | **Nano Banana Pro** | Google | 11 standard ratios | 1K–4K | up to 14 | yes | $0.15, ×2 at 4K |
 
-**GPT Image 1.5 is the only model that can return transparency.** Its `background` field takes
+**GPT Image 1.5 is the only prompt-based generation model in this registry that can return transparency.** Its `background` field takes
 `auto`, `transparent` or `opaque`, and `transparent` gives you a PNG with a real alpha channel —
 which is what Logo mode is built on. It has no aspect ratio and no resolution axis at
 all: the endpoint accepts exactly 1024 × 1024, 1536 × 1024 and 1024 × 1536, so any other ratio is
@@ -96,15 +96,32 @@ while values a given model cannot take are mapped to its nearest supported one.
 Open a gallery image to view its prompt, model, dimensions, timing, tags and references. The viewer groups actions into using the image, editing and exporting:
 
 - Create a variant, reuse its prompt, crop a reference or use it as a video's start frame.
-- Upscale, extend the image with zoom out, or change its aspect ratio using the same generation pipeline.
+- Upscale with dedicated Topaz models or remove a background with BRIA; both save a new PNG and preserve the original.
+- Extend an image with zoom out or change its aspect ratio using generative outpainting.
 - Compare related results with their source, including retained legacy source links.
 - Export images as PNG, JPEG or WebP with quality, size and metadata controls. Videos retain their original format through direct file export.
 
-Thumbnail export produces an exact 1920 × 1080 JPEG and targets YouTube's 2 MB limit. Transparent images retain their alpha channel through PNG storage. Optional JPEG post-processing is configured under **Einstellungen → Generierung & Export** and does not apply to transparent images or videos.
+Thumbnail export produces an exact 1920 × 1080 JPEG and targets YouTube's 2 MB limit. Transparent images retain their alpha channel through PNG storage. Optional JPEG post-processing is configured under **Einstellungen → Generierung & Export** and does not apply to transparent images, dedicated processing results or videos. Processing retains provider bytes without an additional JPEG/resampling pass; PNG is default, and transparent output always remains PNG.
 
 Canvas remains available as a sketch-based creation workflow with drawing tools, layers and simple/expert modes. Favorites, tags, search, filters and organization remain available. Deleting a folder or thumbnail project detaches its media; it does not delete those files.
 
 Activity shows gallery jobs and the sequential image queue. Queue pause stops subsequent queued work; it does not imply provider cancellation. All spend figures describe retained local media, with missing costs reported separately. They are neither a provider balance nor a complete billing ledger. Duration estimates use historical samples and are not guarantees.
+
+### Dedicated Upscale and Background Remove
+
+Open a completed or imported **PNG, JPEG or WebP** in the gallery. Under **Bild optimieren**, choose the upscale options or use **Hintergrund entfernen**. The action shows dimensions and a USD list-price estimate before the paid button. Progress appears in the gallery and Activity. The original remains unchanged; the new result keeps its source link, folder, thumbnail project and logo classification.
+
+| Operation | fal.ai model | Default / output | List estimate, checked 2026-09-08 |
+|---|---|---|---|
+| Faithful upscale | `topaz/upscale/image/precision` | High Fidelity V3, 2×; adjustable 1–4×; PNG or JPEG | $0.08 per started 24 output MP |
+| Transparent upscale | `topaz/upscale/image/transparent` | Automatically selected for actual transparency; fixed 4×; PNG | $0.08 per started 24 output MP |
+| Background removal | `fal-ai/bria/background/remove` | BRIA RMBG 2.0; transparent PNG | $0.018 per image |
+
+Precision also offers Standard V2, High Fidelity V2, Low Resolution V2, CGI and Text Refine, plus supported face, sharpening, denoising and crop-to-fill settings under **Feineinstellungen**. Transparency is inspected from source pixels, including imports with missing metadata. Precision cannot be selected for an alpha source. Transparent has a fixed 4× factor; PNG output alone is not a promise that another model preserves alpha.
+
+The old preservation prompt, browser pre-upscale and JPEG reference compression are removed. Processing uploads the original file directly. Default output stays PNG even with anti-detection enabled; Precision can explicitly output JPEG. **ImageStudio adds no pixel/4K limit and no limit on repeated upscale passes.** Only the documented per-pass factors apply. fal publishes no total-pixel guarantee for these endpoints, so provider resource limits may still cause a request to fail. Native file inspection and streamed storage avoid browser Canvas limits; large results use a separate display preview, while later upscales and exports read the full original. BRIA's public description mentions up to 1024×1024 while its API has no explicit dimension limit. The model card uses 1024² internally and resizes the mask back onto the original. The app measures actual result dimensions instead of interpreting 1024 as a confirmed fal output limit. [Research and model-selection rationale](docs/image-processing-research-2026-09-08.md).
+
+MCP uses `image_edit_options` for source information, models and constraints; `preview_image_processing` for a read-only estimate; and `image_upscale` / `image_remove_background` to start jobs. `image_upscale` accepts `imageId`, optional `model: "precision" | "transparent"`, `scale` and the discovered precision options. The former `resolution: "2K" | "4K"` and generative-model arguments are retired. Poll `get_status`, inspect `generation_details`, display `read_image` and export through `image_export` or `export_media`. The same hooks, normalized options, billing reconciliation and files serve both interfaces.
 
 ### Confirmed fal.ai costs
 After generation, the app can reconcile saved request IDs with [fal.ai Billing Events](https://fal.ai/docs/platform-apis/v1/models/billing-events). These report request totals after discounts and require an **Admin API key**. Under **Einstellungen → Anbieter**, optionally enter a separate billing Admin key; otherwise the existing key is tried. Activity offers **Kosten mit fal.ai abgleichen**. Matching also runs after completed jobs and on startup.
@@ -134,13 +151,13 @@ npm run test:automation:app
 npm run test:ui:surfaces
 ```
 
-The automation suite covers transport, validation and generation lifecycle behavior. The app smoke test launches real Electron with a disposable profile and MCP client, checks both directions of sidebar navigation, removed tools, inline draft references and variant preparation, and runs image → image → video with mocked provider responses. The extended checks include breadcrumb/sidebar exits, creation menus, export options, deletion and simulated exact billing. The supporting UI suite covers settings drafts, collection/preset/project CRUD and actual canvas drawing, undo/redo and local PNG export. These tests do not make paid provider requests.
+The automation suite covers transport, validation and generation lifecycle behavior. The app smoke test launches real Electron with a disposable profile and MCP client, checks both directions of sidebar navigation, removed tools, inline draft references and variant preparation, and runs image → image → video with mocked provider responses. Dedicated-processing checks exercise UI and MCP upscaling/removal, original PNG uploads, alpha preservation with anti-detection enabled, parent/folder/project metadata and native PNG export. Provider-unit tests verify the exact dedicated endpoints, singular output shape, cost boundaries and cancellation. The extended checks include breadcrumb/sidebar exits, creation menus, export options, deletion and simulated exact billing. The supporting UI suite covers settings drafts, collection/preset/project CRUD and actual canvas drawing, undo/redo and local PNG export. These tests do not make paid provider requests.
 
 For a settings screenshot from that disposable test, set `IMAGESTUDIO_TEST_SCREENSHOT` to an absolute PNG output path when running `npm run test:automation:app`. Older images under `docs/` predate the redesign and are not shown here as current UI captures.
 
 ## Architecture
 
-- `src/shared/`: canonical model capabilities, pricing, reference markers and logo/thumbnail prompt composition.
+- `src/shared/`: canonical generation and dedicated-processing model capabilities, validation, pricing, reference markers and logo/thumbnail prompt composition.
 - `src/main/`: Electron IPC, fal.ai clients, uploads, media storage/export, updates and authenticated local automation.
 - `src/preload/`: typed `window.api` bridge.
 - `src/renderer/src/App.tsx` and `components/layout/`: sidebar routes, context header, gallery and persistent composer shell.
@@ -149,7 +166,7 @@ For a settings screenshot from that disposable test, set `IMAGESTUDIO_TEST_SCREE
 - `src/renderer/src/lib/`: shared media actions, variant preparation, organization deletion, cost totals, reference packing and export.
 - `src/renderer/src/stores/`: Zustand state backed by the same local histories for UI and MCP.
 
-The stack is Electron, React 19, TypeScript, Tailwind CSS v4, Zustand and Lucide. GitHub Actions packages releases when a version tag is pushed. Updates are checked from settings; downloads start only after user action. Unsigned macOS updates open the disk image for manual installation.
+The stack is Electron, React 19, TypeScript, Tailwind CSS v4, Zustand, Lucide and Sharp for native large-image inspection/previews/export. GitHub Actions packages releases when a version tag is pushed. Updates are checked from settings; downloads start only after user action. Unsigned macOS updates open the disk image for manual installation.
 
 ## Data and privacy
 

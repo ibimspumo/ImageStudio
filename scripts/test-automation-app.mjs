@@ -1,6 +1,7 @@
 // Real Electron + MCP smoke test. Uses a disposable profile; never calls fal.ai.
 import assert from 'node:assert/strict'
 import { runCreationUiChecks } from './ui-creation-checks.mjs'
+import { runProcessingUiChecks } from './ui-processing-checks.mjs'
 import { mkdir, mkdtemp, writeFile, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -268,6 +269,7 @@ try {
   await page.getByText(/0\.017 USD von fal\.ai bestätigt/).waitFor()
   await page.getByRole('button', { name: 'Kosten mit fal.ai abgleichen', exact: true }).click()
   await page.getByText(/0\.017 USD von fal\.ai bestätigt/).waitFor()
+  await runProcessingUiChecks(page, { app, call, client, temp, projectId: project.id, workspaceId: folder.id })
   await call('update_settings', { falApiKey: '', falBillingApiKey: '' })
   await runCreationUiChecks(page, { call, imageId })
   // UI sees the same imported media and project/collection changes.

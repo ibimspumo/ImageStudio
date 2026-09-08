@@ -1,4 +1,8 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { assertSeparateExportDestination } from '../services/media-export'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { copyFile, readFile, writeFile } from 'node:fs/promises'
+import { embedPngTextChunks } from '../services/png-metadata'
+import { extname, basename } from 'node:path'
 import { IPC_CHANNELS } from '../lib/constants'
 import {
   generateImage,
@@ -6,6 +10,11 @@ import {
   type GenerateRequest,
   type GenerateResult,
 } from '../services/fal-image'
+
+import { randomUUID } from 'node:crypto'
+import { inspectProcessingFile, persistProcessingResult, prepareImageFileExport, type ImageFileExportRequest } from '../services/image-processing-files'
+import { processImage } from '../services/fal-image-processing'
+import type { ImageProcessingRequest } from '../../shared/image-processing'
 
 const activeControllers = new Map<string, AbortController>()
 
@@ -15,10 +24,29 @@ type ItemResult =
   | { status: 'cancelled'; error: string }
 
 export function registerImageGenerationHandlers(): void {
+  ipcMain.handle('image:prepare-file-export', (_event, request: ImageFileExportRequest) => prepareImageFileExport(request))
+  ipcMain.handle('image:export-file', async (event, { filePath, defaultName, metadata }: { filePath: string; defaultName: string; metadata?: Record<string, string> }) => {
+    try {
+      const extension = extname(filePath).slice(1).toLowerCase()
+      if (!['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension)) throw new Error('Unsupported image export format.')
+      const options = { defaultPath: `${basename(defaultName).replace(/\.[^.]+$/, '')}.${extension}`, filters: [{ name: 'Images', extensions: [extension] }] }
+      const window = BrowserWindow.fromWebContents(event.sender)
+      const chosen = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options)
+      if (chosen.canceled || !chosen.filePath) return { success: false, cancelled: true }
+      await assertSeparateExportDestination(filePath, chosen.filePath)
+      if (metadata && extension === 'png') {
+        await writeFile(chosen.filePath, embedPngTextChunks(await readFile(filePath), metadata))
+      } else await copyFile(filePath, chosen.filePath)
+      return { success: true, filePath: chosen.filePath }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Image export failed' }
+    }
+  })
+  ipcMain.handle('image:inspect-processing', (_event, filePath: string) => inspectProcessingFile(filePath))
   ipcMain.handle(
     IPC_CHANNELS.IMAGE_GENERATE,
-    async (event, request: GenerateRequest & { count: number; requestId: string }) => {
-      const { count, requestId, ...genRequest } = request
+    async (event, request: GenerateRequest & { count: number; requestId: string; imageProcessing?: ImageProcessingRequest }) => {
+      const { count, requestId, imageProcessing, ...genRequest } = request
       const window = BrowserWindow.fromWebContents(event.sender)
 
       const send = (index: number, payload: Record<string, unknown>): void => {
@@ -30,6 +58,7 @@ export function registerImageGenerationHandlers(): void {
       }
 
       try {
+        if (imageProcessing && count !== 1) throw new Error('Image processing requires count: 1.')
         // One request per image: fal.ai's num_images returns variations of a
         // single generation, while the gallery expects independent results.
         const promises = Array.from({ length: count }, async (_, i): Promise<ItemResult> => {
@@ -38,16 +67,18 @@ export function registerImageGenerationHandlers(): void {
           activeControllers.set(itemId, controller)
 
           try {
-            const results = await generateImage(genRequest, controller.signal, (status, falRequestId) =>
-              send(i, { status: 'progress', message: status, falRequestId })
-            )
+            const progress = (status: string, falRequestId?: string): void => send(i, { status: 'progress', message: status, falRequestId })
+            const results = imageProcessing
+              ? await processImage(imageProcessing, genRequest.apiKey, controller.signal, progress)
+              : await generateImage(genRequest, controller.signal, progress)
 
             const first = results[0]
             if (!first?.imageUrl) throw new Error('No image returned')
 
             // The renderer stores images on disk as base64, so fetch the CDN file here.
-            const imageBase64 = await downloadImageAsBase64(first.imageUrl)
-            const result: GenerateResult = { ...first, imageBase64 }
+            const result: GenerateResult = imageProcessing
+              ? { ...first, ...await persistProcessingResult(first.imageUrl, `processed-${randomUUID()}.${imageProcessing.options?.outputFormat === 'jpeg' ? 'jpg' : 'png'}`) }
+              : { ...first, imageBase64: await downloadImageAsBase64(first.imageUrl) }
 
             send(i, { status: 'complete', result })
             return { status: 'complete', result }

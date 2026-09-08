@@ -1,14 +1,12 @@
 import type { GenerateOptions } from '../hooks/useImageGeneration'
 import type { GalleryImage } from '../stores/gallery-store'
-import { AVAILABLE_MODELS, DEFAULT_MODEL, normalizeModelId, type LabeledAttachment } from '../types/api'
-import { compressImage, createAspectRatioCanvas, createZoomOutCanvas, upscaleForApi } from './image-utils'
+import { AVAILABLE_MODELS, normalizeModelId, type LabeledAttachment } from '../types/api'
+import { createAspectRatioCanvas, createZoomOutCanvas } from './image-utils'
 
 export const ZOOM_LEVELS = [1.5, 2, 3, 4] as const
 export const EDIT_ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9'] as const
-export function upscaleTargets(image: Pick<GalleryImage, 'resolution'>): string[] {
-  return image.resolution === '1K' ? ['2K', '4K'] : image.resolution === '2K' ? ['4K'] : []
-}
 export async function readEditingImage(filePath: string): Promise<string> {
+  if (filePath.startsWith('data:image/')) return filePath
   const result = await window.api.readImage(filePath)
   if (!result.success || !result.base64DataUrl) throw new Error(result.error || 'Failed to read image')
   return result.base64DataUrl
@@ -16,30 +14,22 @@ export async function readEditingImage(filePath: string): Promise<string> {
 
 export type ImageTransform =
   | { operation: 'zoom_out'; factor: number }
-  | { operation: 'upscale'; resolution: string; model?: string }
   | { operation: 'aspect_ratio'; aspectRatio: string; model?: string }
 
 /** Canonical edit request builder used by ImageViewer and the automation tool. */
 export async function prepareImageTransform(image: GalleryImage, edit: ImageTransform): Promise<GenerateOptions> {
   if (image.type === 'video' || image.isLoading || image.error || !image.filePath) throw new Error('A completed image is required')
   const model = edit.operation === 'zoom_out' ? normalizeModelId(image.model)
-    : edit.model ?? (edit.operation === 'upscale' ? DEFAULT_MODEL : normalizeModelId(image.model))
+    : edit.model ?? normalizeModelId(image.model)
   const spec = AVAILABLE_MODELS.find((m) => m.id === model)
   if (!spec) throw new Error(`Unknown model: ${model}`)
   if (edit.operation === 'zoom_out' && !ZOOM_LEVELS.includes(edit.factor as typeof ZOOM_LEVELS[number])) throw new Error('Zoom factor must be 1.5, 2, 3 or 4')
   if (edit.operation === 'aspect_ratio' && (!EDIT_ASPECT_RATIOS.includes(edit.aspectRatio as typeof EDIT_ASPECT_RATIOS[number]) || edit.aspectRatio === image.aspectRatio)) throw new Error('Choose a different supported aspect ratio')
-  if (edit.operation === 'upscale' && (!upscaleTargets(image).includes(edit.resolution) || !spec.uiResolutions.includes(edit.resolution as never))) throw new Error('This image/model does not support the requested upscale target')
   const original = await readEditingImage(image.filePath)
   let apiPrompt: string
   let prompt: string
   let groups: LabeledAttachment[]
-  if (edit.operation === 'upscale') {
-    const upscaled = await upscaleForApi(original, edit.resolution === '4K' ? 2048 : 1024)
-    const compressed = await compressImage(upscaled, 4096, 0.85)
-    apiPrompt = `Recreate this exact image in higher resolution. Preserve every detail precisely — same composition, colors, lighting, textures, subjects, and style. Do not add, remove, or change anything. Simply produce a pixel-perfect higher-resolution version of this exact image. Original description: "${image.prompt}"`
-    prompt = `Upscale to ${edit.resolution}: ${image.prompt}`
-    groups = [{ label: 'Original image — recreate this exactly at higher resolution', images: [compressed] }]
-  } else if (edit.operation === 'zoom_out') {
+  if (edit.operation === 'zoom_out') {
     const { canvas, reference } = await createZoomOutCanvas(original, edit.factor)
     apiPrompt = `I have placed the original image centered on a larger black canvas. Fill in the black/empty areas naturally, seamlessly extending the scene outward in all directions. Keep the original center image exactly as-is — do not alter, crop, or re-interpret it. Continue the environment, lighting, colors, perspective, and composition from the edges outward. Original description: "${image.prompt}"`
     prompt = `Zoom ${edit.factor}x: ${image.prompt}`
@@ -59,7 +49,7 @@ export async function prepareImageTransform(image: GalleryImage, edit: ImageTran
   return {
     prompt, apiPrompt, imageCount: 1, models: [model],
     aspectRatio: edit.operation === 'aspect_ratio' ? edit.aspectRatio : image.aspectRatio,
-    resolution: edit.operation === 'upscale' ? edit.resolution : image.resolution,
+    resolution: image.resolution,
     attachments: [image.filePath], labeledAttachments: groups, workspaceId: image.workspaceId ?? null,
   }
 }

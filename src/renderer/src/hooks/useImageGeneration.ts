@@ -5,6 +5,9 @@ import { useWorkspaceStore } from '../stores/workspace-store'
 import { logger } from '../lib/logger'
 import { getResolutionLabel } from '../lib/image-utils'
 import { prepareForStorage } from '../lib/anti-detection'
+import { readEditingImage } from '../lib/image-editing'
+import { inspectProcessingPixels } from '../lib/image-processing'
+import { normalizeImageProcessing, type ImageProcessingSpec, type ImageProcessingRequest } from '../../../shared/image-processing'
 import { packReferencesForModel } from '../lib/reference-packing'
 import {
   getModel,
@@ -16,6 +19,9 @@ import {
 
 export interface GenerateOptions {
   prompt: string
+  /** Dedicated processing uses the same jobs/storage; source bytes are read only at submission. */
+  imageProcessing?: ImageProcessingSpec
+  parentImageId?: string
   apiPrompt?: string  // if different from prompt, send this to the API
   aspectRatio: string
   resolution: string
@@ -129,11 +135,16 @@ export function useImageGeneration() {
   const { addPlaceholder, updateStatus, completeImage, failImage, updateResolution, updateMetadata } = useGalleryStore()
 
   const generate = useCallback(
-    (options: GenerateOptions) => {
+    (inputOptions: GenerateOptions) => {
+      const options = structuredClone(inputOptions)
       const { falApiKey, antiDetection } = useSettingsStore.getState()
       if (!falApiKey) return []
 
-      const models = options.models.length > 0 ? options.models : [DEFAULT_MODEL]
+      const processing = options.imageProcessing ? normalizeImageProcessing(options.imageProcessing) : undefined
+      if (processing && (options.imageCount !== 1 || options.models.length !== 1 || options.models[0] !== processing.modelId || !options.attachments?.[0])) {
+        throw new Error('Image processing requires one source image and its dedicated processing model.')
+      }
+      const models = processing ? [processing.modelId] : options.models.length > 0 ? options.models : [DEFAULT_MODEL]
       const activeWorkspaceId = options.workspaceId === undefined
         ? useWorkspaceStore.getState().activeWorkspaceId ?? undefined
         : options.workspaceId ?? undefined
@@ -149,9 +160,9 @@ export function useImageGeneration() {
         // `background` field never gets one, so its result has no alpha and
         // must not be marked as if it had.
         const hasAlpha =
-          options.background === 'transparent' && getModel(model).supportsBackground
+          processing ? processing.hasAlpha : options.background === 'transparent' && getModel(model).supportsBackground
         for (let i = 0; i < options.imageCount; i++) {
-          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments ?? options.labeledAttachments?.flatMap((group) => group.images), activeWorkspaceId, { seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, hasAlpha, requestId, generationOptions: structuredClone(options), costCurrency: 'USD', costSource: 'list-price-estimate' })
+          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments ?? options.labeledAttachments?.flatMap((group) => group.images), activeWorkspaceId, { parentImageId: options.parentImageId, ...(processing ? { width: processing.width, height: processing.height, mimeType: `image/${processing.outputFormat}`, estimatedCost: processing.estimatedCost } : {}), seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, hasAlpha, requestId, generationOptions: structuredClone(options), costCurrency: 'USD', costSource: 'list-price-estimate' })
           ids.push(id)
         }
         modelPlaceholders.push({ model, ids, requestId })
@@ -173,7 +184,7 @@ export function useImageGeneration() {
       for (const { model, ids: placeholderIds, requestId } of modelPlaceholders) {
         void (async () => {
           const startTime = Date.now()
-          const modelSpec = getModel(model)
+          const modelSpec = processing ? undefined : getModel(model)
           const active = activeImageRequests.get(requestId)!
           const unsub = window.api.onGenerateProgress((data) => {
             if (data.requestId !== requestId) return
@@ -189,10 +200,19 @@ export function useImageGeneration() {
           })
 
           try {
-            let groups = baseGroups
+            let groups = processing ? [] : baseGroups
+            let imageProcessing: ImageProcessingRequest | undefined
+            if (processing && options.imageProcessing) {
+              batchUpdateStatus(placeholderIds, 'Originalbild wird geladen…')
+              const sourcePath = options.attachments![0]
+              imageProcessing = sourcePath.startsWith('data:')
+                ? { ...options.imageProcessing, sourceImage: await readEditingImage(sourcePath) }
+                : { ...options.imageProcessing, sourceFilePath: sourcePath }
+              if (active.cancelled) return
+            }
 
             // Reference limits differ per model, so pack per model.
-            if (groups.length > 0) {
+            if (groups.length > 0 && modelSpec) {
               batchUpdateStatus(placeholderIds, 'Preparing references...')
               const packed = await packReferencesForModel(groups, modelSpec.maxReferenceImages)
               if (active.cancelled) return
@@ -216,10 +236,10 @@ export function useImageGeneration() {
             // Only the Gemini endpoints have a system_prompt field. GPT Image 2
             // gets the same rules prepended to the prompt instead — dropping
             // them would silently produce a thumbnail without any of them.
-            const basePrompt = options.apiPrompt || options.prompt
-            const useSystemField = modelSpec.supportsSystemPrompt && !!options.systemPrompt
+            const basePrompt = processing ? '' : options.apiPrompt || options.prompt
+            const useSystemField = modelSpec?.supportsSystemPrompt && !!options.systemPrompt
             const promptText =
-              !useSystemField && options.systemPrompt
+              !processing && !useSystemField && options.systemPrompt
                 ? `${options.systemPrompt}\n\n---\n\n${basePrompt}`
                 : basePrompt
 
@@ -227,6 +247,7 @@ export function useImageGeneration() {
             active.submitted = true
             const response = await window.api.generateImage({
               prompt: promptText,
+              imageProcessing,
               systemPrompt: useSystemField ? options.systemPrompt : undefined,
               imageSize: options.imageSize,
               model,
@@ -254,7 +275,15 @@ export function useImageGeneration() {
 
             for (let i = 0; i < placeholderIds.length; i++) {
               const result = results[i]
-              if (result?.status === 'complete' && result.result?.imageBase64) {
+              if (result?.status === 'complete' && processing && result.result?.filePath) {
+                const saved = result.result
+                updateMetadata(placeholderIds[i], {
+                  falRequestId: saved.id, generationRequest: saved.generationRequest,
+                  width: saved.width, height: saved.height, hasAlpha: saved.hasAlpha, mimeType: saved.mimeType, previewPath: saved.previewPath,
+                })
+                if (saved.width && saved.height) updateResolution(placeholderIds[i], getResolutionLabel(saved.width, saved.height))
+                completeImage(placeholderIds[i], saved.filePath!, durationMs, saved.cost ?? processing.estimatedCost)
+              } else if (result?.status === 'complete' && result.result?.imageBase64) {
                 updateMetadata(placeholderIds[i], {
                   falRequestId: result.result.id,
                   generationRequest: result.result.generationRequest,
@@ -270,15 +299,23 @@ export function useImageGeneration() {
                   const stored = await prepareForStorage(
                     result.result.imageBase64,
                     antiDetection,
-                    options.background === 'transparent' && modelSpec.supportsBackground
+                    !!processing || (options.background === 'transparent' && !!modelSpec?.supportsBackground)
                   )
+                  // Dedicated restoration stays lossless even with anti-detection enabled:
+                  // JPEG/resampling would undo detail restoration and destroy cutout edges.
+                  if (processing) {
+                    const actual = await inspectProcessingPixels(stored.dataUrl)
+                    updateMetadata(placeholderIds[i], { ...actual, mimeType: 'image/png' })
+                    updateResolution(placeholderIds[i], getResolutionLabel(actual.width, actual.height))
+                  }
                   const filename = `${placeholderIds[i]}.${stored.extension}`
                   const saveResult = await window.api.saveImage(stored.dataUrl, filename)
                   if (saveResult.success && saveResult.filePath) {
-                    completeImage(placeholderIds[i], saveResult.filePath, durationMs, result.result.cost)
+                    completeImage(placeholderIds[i], saveResult.filePath, durationMs, result.result.cost ?? processing?.estimatedCost)
 
                     // Detect actual resolution from saved image
                     try {
+                      if (processing) continue
                       const img = new window.Image()
                       const id = placeholderIds[i]
                       img.onload = () => {

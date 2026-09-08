@@ -129,3 +129,38 @@ test('aborting an enqueued image requests provider cancellation rather than only
   assert.equal(calls[0][1].requestId, 'provider-queue-id')
   assert.ok(progressEvents.some(([, requestId]) => requestId === 'provider-queue-id'))
 })
+
+test('dedicated processing returns immediate IDs and accepts native large-image results without canvas or lossy storage', async () => {
+  let saves = 0
+  window.api.saveImage = async () => { saves++; throw new Error('Native results must not pass through renderer storage') }
+  const options = {
+    prompt: 'Upscale 2× · source', imageCount: 1, models: ['topaz/upscale/image/precision'],
+    resolution: '4K', aspectRatio: '3:2', attachments: ['/gallery/original.png'],
+    parentImageId: 'original-id', workspaceId: 'folder', projectId: 'project', thumbnailStyle: 'clean',
+    imageProcessing: { operation: 'upscale', sourceWidth: 12000, sourceHeight: 8000, sourceHasAlpha: false, options: { scale: 2 } },
+  }
+  const ids = app.useImageGeneration().generate(options)
+  assert.equal(ids.length, 1)
+  assert.equal(sentImage.prompt, '')
+  assert.equal(sentImage.imageProcessing.sourceFilePath, '/gallery/original.png')
+  assert.equal(sentImage.imageProcessing.sourceImage, undefined)
+  assert.equal(sentImage.attachments, undefined)
+  const providerRequest = { endpoint: 'topaz/upscale/image/precision', input: { image_url: 'https://provider.invalid/original.png', upscale_factor: 2, output_format: 'png' } }
+  resolveImage({ success: true, results: [{ status: 'complete', result: { id: 'native-fal-id', filePath: '/gallery/huge.png', previewPath: '/gallery/previews/huge.png', width: 24000, height: 16000, hasAlpha: false, mimeType: 'image/png', cost: 1.28, generationRequest: providerRequest } }] })
+  await tick()
+  const result = app.useGalleryStore.getState().images.find(image => image.id === ids[0])
+  assert.equal(result.isLoading, false)
+  assert.equal(result.filePath, '/gallery/huge.png')
+  assert.equal(result.previewPath, '/gallery/previews/huge.png')
+  assert.equal(result.width, 24000)
+  assert.equal(result.height, 16000)
+  assert.equal(result.mimeType, 'image/png')
+  assert.equal(result.parentImageId, 'original-id')
+  assert.equal(result.workspaceId, 'folder')
+  assert.equal(result.projectId, 'project')
+  assert.equal(result.thumbnailStyle, 'clean')
+  assert.equal(result.falRequestId, 'native-fal-id')
+  assert.equal(result.estimatedCost, 1.28)
+  assert.equal(result.costSource, 'list-price-estimate')
+  assert.equal(saves, 0)
+})

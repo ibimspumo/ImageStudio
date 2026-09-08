@@ -47,7 +47,7 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
     setExportState({ busy: false })
   }, [image?.id, project?.title, image?.prompt])
 
-  const src = image ? toDisplayUrl(image.filePath) : ''
+  const src = image ? toDisplayUrl(image.previewPath ?? image.filePath) : ''
   const c = YT[theme]
 
   /** Two other finished thumbnails, so the feed shows real competition. */
@@ -292,9 +292,9 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
           {/* Im Feed zwischen anderen */}
           <Surface label="Im Feed, zwischen anderen" c={c}>
             <div className="flex flex-col gap-3">
-              {competitors[0] && <FeedRow c={c} src={toDisplayUrl(competitors[0].filePath)} title={truncate(competitors[0].prompt, 46)} dim />}
+              {competitors[0] && <FeedRow c={c} src={toDisplayUrl(competitors[0].previewPath ?? competitors[0].filePath)} title={truncate(competitors[0].prompt, 46)} dim />}
               <FeedRow c={c} src={src} title={title || 'Ohne Titel'} checks={checks} highlight />
-              {competitors[1] && <FeedRow c={c} src={toDisplayUrl(competitors[1].filePath)} title={truncate(competitors[1].prompt, 46)} dim />}
+              {competitors[1] && <FeedRow c={c} src={toDisplayUrl(competitors[1].previewPath ?? competitors[1].filePath)} title={truncate(competitors[1].prompt, 46)} dim />}
             </div>
           </Surface>
 
@@ -312,7 +312,7 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
               </div>
               {competitors[0] && (
                 <div style={{ opacity: 0.55 }}>
-                  <ThumbnailFrame src={toDisplayUrl(competitors[0].filePath)} duration="8:31" />
+                  <ThumbnailFrame src={toDisplayUrl(competitors[0].previewPath ?? competitors[0].filePath)} duration="8:31" />
                   <div className="text-[11px] font-medium leading-tight mt-1.5" style={{ color: c.text }}>
                     {truncate(competitors[0].prompt, 52)}
                   </div>

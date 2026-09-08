@@ -1,3 +1,4 @@
+import { IMAGE_PROCESSING_MODELS, IMAGE_PROCESSING_INPUT_FORMATS, IMAGE_PROCESSING_LIMITS } from '../../../shared/image-processing'
 import { useSettingsStore } from '../stores/settings-store'
 import { useGalleryStore, isThumbnailImage, type GalleryImage } from '../stores/gallery-store'
 import { useWorkspaceStore } from '../stores/workspace-store'
@@ -189,6 +190,7 @@ export function createAutomationTools(context: AutomationContext) {
   }
   add('get_capabilities', 'Discover all live image/video models, aspect ratios, resolutions, qualities, reference limits, pricing estimates and mode rules. This is the app registry, not an external model list.', object({}), () => ({
     models: AVAILABLE_MODELS, videoModels: AVAILABLE_VIDEO_MODELS,
+    imageProcessing: { models: IMAGE_PROCESSING_MODELS, inputMimeTypes: IMAGE_PROCESSING_INPUT_FORMATS, limits: IMAGE_PROCESSING_LIMITS, previewTool: 'preview_image_processing', tools: ['image_upscale', 'image_remove_background'], source: 'Completed or imported gallery image ID. Reads original pixels; no prompt. Auto-selects Topaz Transparent for actual alpha.' },
     modes: ['image', 'logo', 'thumbnail', 'video'], logoStyles: LOGO_STYLES, thumbnailStyles: THUMBNAIL_STYLES,
     exports: { images: ['png', 'jpeg', 'webp'], imageExportTool: 'image_export', thumbnailExport: { width: 1920, height: 1080, format: 'jpeg', maxBytesTarget: 2000000 }, originalMediaExportTool: 'export_media', videoDisplay: 'read_media returns resource links; playback depends on the MCP client. read_image embeds native image content.' },
     folderMeaning: 'Folders are the app workspaces; thumbnail projects form a second independent grouping.',
@@ -215,7 +217,7 @@ export function createAutomationTools(context: AutomationContext) {
     const all = useGalleryStore.getState().images
     const images = ids ? ids.map(id => requireItem(all, id, 'Job')) : all.filter(i => i.isLoading || !!i.error)
     const completed = all.filter(i => !i.isLoading && !i.error && i.durationMs !== undefined)
-    const timing = [...AVAILABLE_MODELS, ...AVAILABLE_VIDEO_MODELS].map(model => {
+    const timing = [...AVAILABLE_MODELS, ...AVAILABLE_VIDEO_MODELS, ...IMAGE_PROCESSING_MODELS].map(model => {
       const samples = completed.filter(i => i.model === model.id).slice(0, 20).map(i => i.durationMs!)
       const sorted = [...samples].sort((a, b) => a - b)
       return { model: model.id, sampleCount: samples.length, medianDurationMs: sorted.length ? sorted[Math.floor(sorted.length / 2)] : null }
@@ -257,7 +259,8 @@ export function createAutomationTools(context: AutomationContext) {
   }, true)
   add<{ id: string; maxWidth?: number; includeReferences?: boolean }>('read_image', 'View a completed gallery image as native MCP image content, with metadata. maxWidth defaults to 1600 to keep tool responses manageable. Video metadata is available via list_images.', object({ id: str(), maxWidth: integer(128, 4096), includeReferences: bool }, ['id']), async args => {
     const image = requireItem(useGalleryStore.getState().images, args.id, 'Image')
-    const data = await imageData(args.id)
+    const data = image.previewPath ? (await window.api.readImage(image.previewPath)).base64DataUrl : await imageData(args.id)
+    if (!data) throw new Error('Cannot read image preview; use export_media for the original file.')
     const compressed = await compressImage(data, args.maxWidth ?? 1600, 0.85, image.hasAlpha || /^data:image\/(png|webp);/.test(data) ? 'png' : 'jpeg')
     return mcpImage(compressed, { ...imageSummary(image), ...(args.includeReferences ? { references: image.attachments } : {}) })
   }, true)

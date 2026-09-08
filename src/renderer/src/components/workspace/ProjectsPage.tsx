@@ -18,7 +18,7 @@ const secondary = 'inline-flex items-center justify-center gap-2 rounded-xl bord
 function Preview({ images, heroId }: { images: GalleryImage[]; heroId?: string }) {
   const hero = useGalleryStore((s) => heroId ? s.images.find((i) => i.id === heroId) : undefined)
   const cover = hero && !hero.isLoading && !hero.error && hero.filePath ? hero : images[0]
-  const path = cover?.type === 'video' ? cover.videoThumbnailPath : cover?.filePath
+  const path = cover?.type === 'video' ? cover.videoThumbnailPath : cover?.previewPath ?? cover?.filePath
   return <div className="relative aspect-[16/9] overflow-hidden bg-surface-0">
     {path ? <img src={toDisplayUrl(path)} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]" /> : <div className="flex h-full items-center justify-center text-text-muted/30"><Image size={36} strokeWidth={1} /></div>}
     <div className="absolute inset-0 bg-gradient-to-t from-black/35 to-transparent" />

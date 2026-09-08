@@ -12,6 +12,10 @@ export interface GalleryImage {
   prompt: string
   aspectRatio: string
   resolution: string
+  width?: number
+  height?: number
+  mimeType?: string
+  previewPath?: string
   timestamp: number
   isLoading?: boolean
   error?: string
@@ -97,7 +101,7 @@ interface GalleryStore {
   images: GalleryImage[]
   addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: Partial<GalleryImage>) => string
   addVideoPlaceholder: (prompt: string, aspectRatio: string, model: string, attachments?: string[], workspaceId?: string, extra?: Partial<GalleryImage>) => string
-  updateMetadata: (id: string, metadata: Partial<Pick<GalleryImage, 'requestId' | 'falRequestId' | 'cancelRequested' | 'cancelled' | 'generationOptions' | 'generationRequest' | 'seed' | 'progressPercent' | 'costCurrency' | 'costSource' | 'cost' | 'costCheckedAt' | 'estimatedCost'>>) => void
+  updateMetadata: (id: string, metadata: Partial<Pick<GalleryImage, 'previewPath' | 'width' | 'height' | 'mimeType' | 'hasAlpha' | 'requestId' | 'falRequestId' | 'cancelRequested' | 'cancelled' | 'generationOptions' | 'generationRequest' | 'seed' | 'progressPercent' | 'costCurrency' | 'costSource' | 'cost' | 'costCheckedAt' | 'estimatedCost'>>) => void
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
   completeVideo: (id: string, filePath: string, durationMs: number, videoDuration: number, thumbnailPath?: string, cost?: number) => void
   updateStatus: (id: string, statusText: string | undefined) => void
@@ -216,6 +220,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
         logger.error('GalleryStore', 'Failed to delete image file', err)
       )
     }
+    if (img?.previewPath) window.api.deleteImage(img.previewPath).catch((err) => logger.warn('GalleryStore', 'Failed to delete preview', err))
     set((state) => ({
       images: state.images.filter((img) => img.id !== id),
     }))
@@ -270,6 +275,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
   clearAll: () => {
     const imgs = get().images
     for (const img of imgs) {
+      if (img.previewPath) window.api.deleteImage(img.previewPath).catch((err) => logger.warn('GalleryStore', 'Failed to delete preview', err))
       if (img.filePath && !img.filePath.startsWith('data:')) {
         window.api.deleteImage(img.filePath).catch((err) =>
           logger.error('GalleryStore', 'Failed to delete image file', err)
@@ -297,6 +303,11 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
             const { images, updateResolution } = get()
             for (const img of images) {
               if (!img.filePath || img.filePath.startsWith('data:') || img.type === 'video') continue
+              if (img.width && img.height) {
+                const actualRes = getResolutionLabel(img.width, img.height)
+                if (actualRes !== img.resolution) updateResolution(img.id, actualRes)
+                continue
+              }
               const imgEl = new window.Image()
               imgEl.onload = () => {
                 const actualRes = getResolutionLabel(imgEl.naturalWidth, imgEl.naturalHeight)

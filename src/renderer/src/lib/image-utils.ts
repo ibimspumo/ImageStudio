@@ -1,7 +1,6 @@
 /**
  * Compresses a base64 image to JPEG quality, with configurable max dimension.
  * Default: max 1000px, 75% JPEG quality. Optional PNG/WebP output preserves alpha. Used for all image uploads (collections, references, etc.)
- * For upscale, use a higher maxDimension to preserve source resolution.
  */
 export async function compressImage(
   base64DataUrl: string,
@@ -30,48 +29,6 @@ export async function compressImage(
   const ctx = canvas.getContext('2d')!
   ctx.drawImage(img, 0, 0, width, height)
   return canvas.toDataURL(`image/${format}`, format === 'png' ? undefined : quality)
-}
-
-/**
- * Upscales an image to a minimum dimension using canvas (simple bilinear).
- * Used to pre-scale small images before sending to the API, because
- * Gemini tends to match output resolution to input resolution.
- *
- * @param base64DataUrl - Source image
- * @param minDimension - Minimum width/height the result should have
- * @returns Upscaled image as JPEG base64 (or original if already large enough)
- */
-export async function upscaleForApi(
-  base64DataUrl: string,
-  minDimension: number
-): Promise<string> {
-  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const i = new Image()
-    i.onload = () => resolve(i)
-    i.onerror = reject
-    i.src = base64DataUrl
-  })
-
-  // Already large enough
-  if (img.width >= minDimension && img.height >= minDimension) {
-    return base64DataUrl
-  }
-
-  // Scale up so the smallest side reaches minDimension
-  const scale = Math.max(minDimension / img.width, minDimension / img.height)
-  const w = Math.round(img.width * scale)
-  const h = Math.round(img.height * scale)
-
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')!
-  // Enable image smoothing for better upscale quality
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(img, 0, 0, w, h)
-
-  return canvas.toDataURL('image/jpeg', 0.92)
 }
 
 /**

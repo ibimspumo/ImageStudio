@@ -96,7 +96,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onCreateV
     )
   }
 
-  const displayUrl = toDisplayUrl(image.filePath)
+  const displayUrl = toDisplayUrl(image.previewPath ?? image.filePath)
 
   const handleSave = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -109,14 +109,10 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onCreateV
         const name = antiDetection ? neutralImageName(extension) : `imagestudio-${image.id}.${extension}`
         requireExportSuccess(await window.api.exportVideo(filePath, name))
       } else {
-        const result = await window.api.readImage(filePath)
-        if (!result.success || !result.base64DataUrl) throw new Error(result.error || 'Bild konnte nicht gelesen werden')
-      if (result.base64DataUrl) {
-          // Keep the stored file's extension — with anti-detection on it is a JPEG.
-          const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
-          const name = antiDetection ? neutralImageName(ext) : `imagestudio-${image.id}.${ext}`
-          requireExportSuccess(await window.api.exportImage(result.base64DataUrl, name))
-        }
+        const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
+        const name = antiDetection ? neutralImageName(ext) : `imagestudio-${image.id}.${ext}`
+        if (filePath.startsWith('data:')) requireExportSuccess(await window.api.exportImage(filePath, name))
+        else requireExportSuccess(await window.api.exportImageFile(filePath, name))
       }
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Aktion fehlgeschlagen'); logger.error('GalleryCard', 'Operation failed', err) }
   }

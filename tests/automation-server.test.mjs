@@ -201,6 +201,8 @@ test('media import copies recognized files; export is noninteractive, exclusive,
   await media.exportMedia({ filePath: imported.filePath, destination, metadata: { Prompt: 'Test prompt' } })
   assert.ok((await readFile(destination)).includes(Buffer.from('ImageStudio:Prompt\0Test prompt')))
   await assert.rejects(media.exportMedia({ filePath: imported.filePath, destination }), { code: 'EEXIST' })
+  await assert.rejects(media.exportMedia({ filePath: imported.filePath, destination: imported.filePath, overwrite: true, metadata: { Prompt: 'Must not alter original' } }), /separate export path/)
+  assert.deepEqual(await readFile(imported.filePath), png)
   await media.exportMedia({ filePath: imported.filePath, destination, overwrite: true })
   assert.deepEqual(await readFile(destination), png)
   await assert.rejects(media.readMedia({ filePath: source }), /Only media in/)

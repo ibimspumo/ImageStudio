@@ -1,3 +1,4 @@
+import { assertSeparateExportDestination } from '../services/media-export'
 import { nativeImage } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
@@ -92,6 +93,7 @@ export function createAutomationMedia(userDataPath: string) {
       const filePath = await ownedFile(input?.filePath)
       if (typeof input.destination !== 'string' || !isAbsolute(input.destination)) throw new Error('An absolute destination file path is required.')
       if (input.overwrite !== undefined && typeof input.overwrite !== 'boolean') throw new Error('overwrite must be a boolean.')
+      await assertSeparateExportDestination(filePath, input.destination)
       // Validate the source before permitting export from the media directory.
       const media = await this.readMedia({ filePath })
       if (input.metadata && (typeof input.metadata !== 'object' || Array.isArray(input.metadata) || Object.values(input.metadata).some((value) => typeof value !== 'string'))) throw new Error('metadata must map string keys to string values.')

@@ -1,3 +1,4 @@
+import { IMAGE_PROCESSING_MODELS } from './image-processing'
 /**
  * fal.ai image model registry.
  *
@@ -428,7 +429,7 @@ export function getModel(modelId: string): ImageModelOption {
 }
 
 export function getModelName(modelId: string): string {
-  const known = AVAILABLE_MODELS.find((m) => m.id === modelId)
+  const known = [...AVAILABLE_MODELS, ...IMAGE_PROCESSING_MODELS].find((m) => m.id === modelId)
   if (known) return known.name
   // Historical images keep their original model id — show it rather than lying
   // about which model produced them.

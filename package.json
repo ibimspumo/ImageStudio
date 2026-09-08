@@ -10,7 +10,7 @@
     "build:win": "electron-vite build && electron-builder --win",
     "preview": "electron-vite preview",
     "postinstall": "electron-vite build",
-    "test:automation": "node --test tests/automation-server.test.mjs tests/automation-renderer.test.mjs tests/generation-observability.test.mjs tests/settings-costs.test.mjs tests/export-result.test.mjs tests/fal-billing.test.mjs",
+    "test:automation": "node --test tests/automation-server.test.mjs tests/automation-renderer.test.mjs tests/generation-observability.test.mjs tests/settings-costs.test.mjs tests/export-result.test.mjs tests/fal-billing.test.mjs tests/image-processing.test.mjs tests/image-processing-files.test.mjs",
     "test:automation:app": "npm run build && node scripts/test-automation-app.mjs",
     "test:ui:surfaces": "npm run build && node scripts/test-ui-surfaces.mjs"
   },
@@ -117,6 +117,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-dropzone": "^15.0.0",
+    "sharp": "^0.35.4",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
     "zod": "^4.5.4",

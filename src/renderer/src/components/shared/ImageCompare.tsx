@@ -18,8 +18,8 @@ export function ImageCompare({ imageA, imageB, onClose }: ImageCompareProps) {
   const [isDragging, setIsDragging] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const urlA = toDisplayUrl(imageA.filePath)
-  const urlB = toDisplayUrl(imageB.filePath)
+  const urlA = toDisplayUrl(imageA.previewPath ?? imageA.filePath)
+  const urlB = toDisplayUrl(imageB.previewPath ?? imageB.filePath)
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isDragging || !containerRef.current) return

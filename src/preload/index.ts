@@ -17,6 +17,9 @@ const api = {
   automationExportMedia: (options: { filePath: string; destination: string; overwrite?: boolean; metadata?: Record<string, string> }) => ipcRenderer.invoke('automation:export-media', options),
   automationReadMedia: (options: { filePath: string }) => ipcRenderer.invoke('automation:read-media', options),
 
+  prepareImageFileExport: (request: { filePath: string; format: 'png' | 'jpeg' | 'webp'; quality: number }) => ipcRenderer.invoke('image:prepare-file-export', request),
+  exportImageFile: (filePath: string, defaultName: string, metadata?: Record<string, string>) => ipcRenderer.invoke('image:export-file', { filePath, defaultName, metadata }),
+  inspectProcessingImage: (filePath: string) => ipcRenderer.invoke('image:inspect-processing', filePath),
   generateImage: (request: {
     prompt: string
     model: string
@@ -25,6 +28,7 @@ const api = {
     resolution: string
     count: number
     requestId: string
+    imageProcessing?: import('../shared/image-processing').ImageProcessingRequest
     attachments?: string[]
     labeledAttachments?: { label: string; images: string[] }[]
     seed?: number

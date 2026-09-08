@@ -28,17 +28,22 @@ npm run test:automation:app  # Real Electron/MCP parity smoke, no paid requests
 ## Architecture
 - `src/shared/` — code used by **both** main and renderer
   - `image-models.ts` — the fal.ai image model registry: endpoints, aspect ratios, resolutions, reference limits, per-model capability flags, **list prices**, plus `resolveAspectRatio`/`resolveResolution`/`toGptImageSize`/`toFixedImageSize`/`getCombinedCapabilities`/`normalizeModelId`/`estimateImageCost`/`formatCost`
+  - `image-processing.ts` — canonical Topaz Precision/Transparent and BRIA registry, exact options/defaults, validation, PNG/JPEG output, provider limits, provider input mapping and list-price estimates
   - `thumbnail-prompt.ts` — the YouTube thumbnail system prompt (base rules, style blocks, face-fidelity block) plus the mode's locked constants and `buildThumbnailSystemPrompt()`
   - `logo-prompt.ts` — the logo system prompt (base rules, style blocks, transparency block, reference block) plus the mode's locked constants and `buildLogoSystemPrompt()`
   - `version.ts` — semver comparison for the updater
 - `src/main/` — Electron main process (IPC, API, files)
   - `automation/` — opt-in loopback MCP server using the official SDK, authenticated HTTP fallback, persisted connection settings, setup prompt, trusted live-renderer bridge and media import/read/export
+  - `services/image-processing-files.ts` — Sharp native dimensions/alpha inspection (no extra pixel cap), streamed original storage, separate display previews, native PNG/JPEG/WebP export and reusable prepared files
+  - `services/fal-image-processing.ts` — original-file upload and dedicated queued fal.ai processing; dispatched by the existing image generation IPC with its progress/cancel/download lifecycle
   - `services/png-metadata.ts` — PNG metadata embedding shared by dialog export and automation export
 - `src/preload/` — Typed context bridge (`window.api`)
 - `src/renderer/src/` — React UI
   - `automation/` — validated agent tool catalog over the live stores and shared hooks, live editor draft bridge, image editing tools and app-level queue runner
   - `lib/media-actions.ts` — gallery import used by both the Import UI and MCP, retaining originals and extracting video previews
   - `lib/canvas-automation.ts`, `lib/canvas-generation.ts` — actual canvas renderer operations and shared canvas request preparation
+  - `lib/image-processing.ts` — shared UI/MCP source-pixel alpha inspection and normalized processing preparation; native source inspection avoids Canvas size limits; submission uses the original file path, never persists image bytes inside generation options
+  - `components/shared/ImageProcessingPanel.tsx` — original dimensions, registry-driven Topaz options/estimates and BRIA action in ImageViewer
   - `lib/image-editing.ts`, `lib/image-export.ts` — shared UI/MCP image transformation and export behavior
   - `components/shared/AutomationSection.tsx`, `MediaImport.tsx` — local connection controls and media URL/path import
   - `App.tsx`, `components/layout/StudioSidebar.tsx`, `TitleBar.tsx`, `MainContent.tsx` — route shell with a permanent sidebar, one context header, gallery and stable bottom composer. `StudioSection` includes image/video/thumbnail/logo, library, references, styles, projects, activity and settings; `AppMode` retains the last creation mode for support routes. Sidebar buttons expose `data-studio-section` and `aria-current="page"` for parity checks.
@@ -86,11 +91,25 @@ GPT Image 2 has no `aspect_ratio`/`resolution`/`seed`: ratios become an explicit
 GPT Image 1.5 has none of those either, and no pixel freedom: `image_size` is an enum of exactly
 `1024x1024` / `1536x1024` / `1024x1536` (the edit endpoint adds `auto`), so `imageSizeMode: 'size-enum'`
 routes it through `toFixedImageSize()`. Its `quality` has no `auto` tier. It is the **only** model with
-a `background` field (`auto` | `transparent` | `opaque`) — the sole route to an alpha channel — and the
+a `background` field (`auto` | `transparent` | `opaque`) — the sole prompt-generation route to an alpha channel — and the
 only one with `input_fidelity` (edit endpoint only). Mask request fields are not exposed; Inpaint is retired.
 Values a model cannot take are mapped to its nearest supported one rather than rejected.
 Multi-model generation: PromptBar allows selecting multiple models; `useImageGeneration` runs each model
 independently and packs references per model.
+
+### Dedicated image processing
+
+`shared/image-processing.ts` is separate from the prompt-generation model list: never normalize a Topaz/BRIA ID to a generative fallback. `getModelName()` recognizes both registries, and MCP capabilities/timing include processing models. The ImageViewer and `image_upscale` / `image_remove_background` call `prepareImageProcessing()` and the same `useImageGeneration.generate()` lifecycle. `preview_image_processing` uses that preparation without any upload or paid submission.
+
+The `GenerateOptions.imageProcessing` spec stores operation, dimensions, detected source transparency and normalized options; `attachments[0]` stores the original path. The hook passes the original file path through IPC; the main process uploads a file-backed Blob. Legacy data URLs remain supported. The main `image:generate` handler dispatches that optional payload to `processImage()`, requires count 1, then uses its existing progress/cancellation job lifecycle. Dedicated results stream straight to disk and return saved paths plus native metadata instead of full-size base64 through the renderer. No reference packing, compression, pre-upscale canvas or preservation prompt runs. fal returns singular `image`, not `images`. `generationRequest` stores the exact endpoint/input and `falRequestId` supplies ordinary billing reconciliation.
+
+- Precision: `topaz/upscale/image/precision`, app default High Fidelity V3/2× (provider default Standard V2). All supported precision model variants and restoration controls come from the registry. Factor 1–4; crop-to-fill switch, PNG default or explicit JPEG.
+- Transparent: `topaz/upscale/image/transparent`, auto-selected for actual transparent pixels, fixed 4×/PNG. Reject precision for alpha instead of silently flattening it.
+- Background removal: `fal-ai/bria/background/remove`, BRIA RMBG 2.0, no prompt or artificial quality controls. Do not claim unlimited source-dimension preservation: public docs mention up to 1024×1024 but API schema has no size constraint. Read actual pixels after download.
+
+Topaz estimates charge started 24 output MP at $0.08; BRIA $0.018/image (sources/date in registry, checked 2026-09-08). No extra ImageStudio pixel/edge/count-of-passes limit is imposed. fal publishes per-pass scale constraints but no total-pixel promise; upstream resource errors remain possible. Never use resolution labels or prior processing history as an eligibility gate. All new processing results carry parentImageId, original attachment, folder/project/logo metadata, measured width/height/hasAlpha/MIME type and an optional previewPath. Large-image display uses the preview, while processing and export always use filePath. Disk-load resolution migration uses stored original dimensions when present. Original media are retained. PNG/JPEG/WebP sources are supported; other imports must be exported as PNG first. Former `image_upscale.resolution` and generative model options are removed from discovery and rejected. The old `upscaleForApi` and prompt branch are deleted.
+
+`tests/image-processing.test.mjs` covers shared validation/costs, original upload, singular provider outputs, errors and cancellation with mocked fal. `scripts/ui-processing-checks.mjs` runs both interfaces in the disposable Electron smoke suite and verifies alpha/export/state parity without paid calls.
 
 ### The prompt editor
 PromptBar uses `useMentionEditor` for its contenteditable, inline chips, @ popup and `getPromptText()`.
@@ -175,16 +194,15 @@ and it drives the `.alpha-checker` backdrop in `GalleryCard`/`ImageViewer`. `pre
 capabilities, not mode-specific switches.
 
 ### Anti-Detection
-Every generated image runs through `prepareForStorage()` **before** `window.api.saveImage` — in
-the shared `useImageGeneration` pipeline, including viewer transformations (zoom out,
-upscale, aspect ratio). Videos never do. Doing it before storage rather than on export is what makes
+Prompt-generated images run through `prepareForStorage()` **before** `window.api.saveImage` — in
+the shared `useImageGeneration` pipeline, including generative viewer transformations (zoom out, aspect ratio). Dedicated Upscale/Remove results are streamed to disk unchanged by `image-processing-files.ts`; provider PNG/JPEG encoding is retained. Videos never do. Doing it before storage rather than on export is what makes
 gallery, export, clipboard and drag & drop all hand out the same processed file.
 
 The pipeline is JPEG 95 → squeeze X to 99 % → squeeze Y to 99 % → scale back → JPEG 95. The JPEG
 round has to be decoded again in between, otherwise the quantisation never reaches the pixels the
 resample works on.
 
-**Transparent images take the other branch.** `prepareForStorage(dataUrl, enabled, preserveAlpha)`
+**Transparent prompt-generated images take the other branch.** `prepareForStorage(dataUrl, enabled, preserveAlpha)`
 with `preserveAlpha` runs `reencodePreservingAlpha()` instead: a single canvas re-encode to PNG.
 JPEG has no alpha channel at all, and the squeeze step would blur exactly the hard edges a logo is
 made of — so that path keeps only what costs nothing (metadata dropped, pixels intact) and the
