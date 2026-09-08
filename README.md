@@ -177,3 +177,5 @@ Credentials and histories are stored locally. Generated/imported media live as f
 MIT. Issues and pull requests are welcome; discuss major changes before implementing them.
 
 Read-only prompts use `PromptText` to highlight collection/image markers in gallery captions, the viewer and activity without changing copied or stored text. Gallery captions use a deeper bottom gradient. In image composers, pasting plain text restores exact, unambiguous live collection mentions (deduplicated), and image mentions already attached to the draft; unknown markers remain text. MCP prompt-only `update_draft` uses the same resolver. Explicit `collectionIds` still replaces the collection list. Text-only image markers cannot identify an unattached source image; use variant preparation or attach the source.
+
+Sidebar folder and project entries offer a labelled trash button with inline confirmation and cancellation. Deleting keeps all media in the respective overview (All media / All thumbnails), preserves the other independent grouping, and uses the same organization actions as the management page and MCP.

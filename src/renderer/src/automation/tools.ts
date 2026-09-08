@@ -298,7 +298,7 @@ export function createAutomationTools(context: AutomationContext) {
     const jobIds = context.generate(options)
     return { jobIds, status: 'running', ...estimateGeneration(options) }
   })
-  add<{ action: 'list' | 'create' | 'rename' | 'delete' | 'select'; id?: string; name?: string }>('workspaces', 'List/create/rename/delete/select app folders (workspaces). Delete detaches retained gallery images, never deletes their files. Empty select ID shows all folders.', object({ action: choice(['list', 'create', 'rename', 'delete', 'select']), id: str(), name: nameSchema }, ['action']), async args => {
+  add<{ action: 'list' | 'create' | 'rename' | 'delete' | 'select'; id?: string; name?: string }>('workspaces', 'List/create/rename/delete/select app folders (workspaces). Delete requires id and returns media to the all-media overview without deleting images/videos or files; independent project assignments remain. Empty select ID shows all folders.', object({ action: choice(['list', 'create', 'rename', 'delete', 'select']), id: str(), name: nameSchema }, ['action']), async args => {
     const store = useWorkspaceStore.getState()
     if (args.action === 'list') return { workspaces: store.workspaces, activeId: store.activeWorkspaceId }
     if (args.action === 'create') { if (!args.name?.trim()) throw new Error('name is required'); const id = store.createWorkspace(args.name); await store.persistToDisk(); return { id } }
@@ -310,7 +310,7 @@ export function createAutomationTools(context: AutomationContext) {
     else await store.persistToDisk()
     return { action: args.action, id: item.id }
   })
-  add<{ action: string; id?: string; title?: string; angle?: string; color?: string; archived?: boolean; heroImageId?: string }>('projects', 'Manage thumbnail video projects: list/create/update/delete/select. Deleting a project detaches its retained thumbnails. Empty select ID shows all projects.', object({ action: choice(['list', 'create', 'update', 'delete', 'select']), id: str(), title: nameSchema, angle: str(), color: str(), archived: bool, heroImageId: str() }, ['action']), async args => {
+  add<{ action: string; id?: string; title?: string; angle?: string; color?: string; archived?: boolean; heroImageId?: string }>('projects', 'Manage thumbnail video projects: list/create/update/delete/select. Delete requires id and returns retained media to the all-thumbnails overview without deleting files; independent workspace assignments remain. Empty select ID shows all projects.', object({ action: choice(['list', 'create', 'update', 'delete', 'select']), id: str(), title: nameSchema, angle: str(), color: str(), archived: bool, heroImageId: str() }, ['action']), async args => {
     const store = useThumbnailProjectsStore.getState()
     if (args.action === 'list') return { projects: store.projects, activeId: store.activeProjectId }
     if (args.action === 'create') { if (!args.title?.trim()) throw new Error('title is required'); const id = store.createProject(args.title, args.angle); await store.persistToDisk(); return { id } }
