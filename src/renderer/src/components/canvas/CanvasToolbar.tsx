@@ -1,4 +1,6 @@
-import { Paintbrush, Eraser, Square, Circle, Minus, Undo2, Redo2, Trash2, X, Layers } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { useSharedCanvasRenderer } from './CanvasRendererContext'
+import { Paintbrush, Eraser, Square, Circle, Minus, Undo2, Redo2, Trash2, X, Layers, Upload, Download } from 'lucide-react'
 import { useCanvasStore, type CanvasTool } from '../../stores/canvas-store'
 import { getCombinedCapabilities } from '../../types/api'
 import { AspectRatioSelector } from '../input/AspectRatioSelector'
@@ -24,6 +26,33 @@ const TOOLS: { tool: CanvasTool; icon: typeof Paintbrush; label: string }[] = [
 ]
 
 export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, showLayerPanel, onToggleLayerPanel }: CanvasToolbarProps) {
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [mediaMessage, setMediaMessage] = useState('')
+  const { importImage, exportComposite } = useSharedCanvasRenderer()
+  const importFile = async (file?: File) => {
+    if (!file) return
+    try {
+      const layerId = useCanvasStore.getState().activeLayerId
+      if (!layerId) throw new Error('Choose a canvas layer first.')
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = () => reject(new Error('Image could not be read.'))
+        reader.readAsDataURL(file)
+      })
+      await importImage(layerId, dataUrl)
+      setMediaMessage('Image imported')
+    } catch (error) { setMediaMessage(error instanceof Error ? error.message : String(error)) }
+  }
+  const exportFile = async () => {
+    try {
+      const data = exportComposite()
+      if (!data) throw new Error('Canvas is not ready.')
+      const result = await window.api.saveImage(data, `canvas-export-${crypto.randomUUID()}.png`)
+      if (!result.success) throw new Error(result.error || 'Could not export canvas.')
+      setMediaMessage(`Saved: ${result.filePath}`)
+    } catch (error) { setMediaMessage(error instanceof Error ? error.message : String(error)) }
+  }
   const activeTool = useCanvasStore((s) => s.activeTool)
   const setTool = useCanvasStore((s) => s.setTool)
   const brushSize = useCanvasStore((s) => s.brushSize)
@@ -157,6 +186,18 @@ export function CanvasToolbar({ canUndo, canRedo, onUndo, onRedo, onClearAll, sh
       >
         <Layers className="w-3.5 h-3.5" />
       </button>
+
+      <input ref={fileInput} type="file" accept="image/*" className="hidden"
+        onChange={(event) => { void importFile(event.target.files?.[0]); event.target.value = '' }} />
+      <button onClick={() => fileInput.current?.click()} title="Import image into active layer" aria-label="Import canvas image"
+        className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 border border-border-dim text-text-secondary hover:text-text-primary">
+        <Upload className="w-3.5 h-3.5" />
+      </button>
+      <button onClick={() => void exportFile()} title="Export canvas PNG" aria-label="Export canvas PNG"
+        className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-3 border border-border-dim text-text-secondary hover:text-text-primary">
+        <Download className="w-3.5 h-3.5" />
+      </button>
+      {mediaMessage && <span role="status" title={mediaMessage} className="max-w-32 truncate text-[10px] text-text-muted">{mediaMessage}</span>}
 
       <div className="flex-1" />
 

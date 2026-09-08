@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+## Mandatory: app UI and MCP have 100% feature parity
+
+Read and follow `AGENTS.md`. The app UI and local AI/MCP connection are equal interfaces to the same application. Every feature addition, change, bug fix and deprecation must update **both** interfaces together. A UI-only or MCP-only feature is incomplete.
+
+Use shared domain actions, hooks, model registries, prompt composers and persistence; do not fork business logic for agents. All operations must act on the live app state and be visible immediately in both interfaces. Keep tool discovery, schemas, agent-readable descriptions, defaults, validation, results and errors synchronized with the UI. This includes every mode, projects/folders, settings, API-key access, model capabilities, custom meta-prompts, costs, asynchronous jobs and timing, media import from files/URLs, image/video retrieval, previews and export. Return usable media paths/links, MIME types and MCP image/resource content where supported by the client.
+
+Verify affected functionality through both interfaces before declaring it complete. Expose paid/destructive side effects and distinguish estimated costs/durations from observed values. Keep credentials out of ordinary discovery/status; explicit key access is a separate tool. Any discovered parity gap must be named and resolved, never hidden behind a claim of full support. See `AGENTS.md` for the full parity contract.
+
 ## IMPORTANT: Keep README.md and CLAUDE.md up to date with ANY changes.
 When features are added/changed, update README.md (features list, usage table, architecture).
 When screenshots change visually, regenerate them: `node test-readme-screenshots.mjs` (needs dev server running).
@@ -21,8 +29,15 @@ npx electron-vite build    # Build check only (no Electron)
   - `logo-prompt.ts` — the logo system prompt (base rules, style blocks, transparency block, reference block) plus the mode's locked constants and `buildLogoSystemPrompt()`
   - `version.ts` — semver comparison for the updater
 - `src/main/` — Electron main process (IPC, API, files)
+  - `automation/` — opt-in loopback MCP server using the official SDK, authenticated HTTP fallback, persisted connection settings, setup prompt, trusted live-renderer bridge and media import/read/export
+  - `services/png-metadata.ts` — PNG metadata embedding shared by dialog export and automation export
 - `src/preload/` — Typed context bridge (`window.api`)
 - `src/renderer/src/` — React UI
+  - `automation/` — validated agent tool catalog over the live stores and shared hooks, live editor draft bridge, image editing tools and app-level queue runner
+  - `lib/media-actions.ts` — gallery import used by both the Import UI and MCP, retaining originals and extracting video previews
+  - `lib/canvas-automation.ts`, `lib/canvas-generation.ts` — actual canvas renderer operations and shared canvas request preparation
+  - `lib/image-editing.ts`, `lib/image-export.ts` — shared UI/MCP image transformation and export behavior
+  - `components/shared/AutomationSection.tsx`, `MediaImport.tsx` — local connection controls and media URL/path import
   - `stores/` — Zustand: gallery, collections, chat, settings, workspace, crop, thumbnail-projects, thumbnail-meta-prompts, ui-recents (recently used projects/workspaces for switcher pills and move menu; all with debounced persistence via `lib/debounce.ts`)
   - `hooks/` — useImageGeneration, useVideoGeneration (fal.ai), useChatGeneration, useMentionEditor (the contenteditable prompt editor with @-mentions, shared by PromptBar and ChatView), useImageRefs (shared image attachment logic), useJustifiedLayout (row-based masonry)
   - `types/api.ts` — AspectRatio, Resolution, AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, getModelName, getVideoModelName, ImageRef, LabeledAttachment

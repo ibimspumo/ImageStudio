@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useGalleryStore } from '../stores/gallery-store'
 import { useSettingsStore } from '../stores/settings-store'
 import { useWorkspaceStore } from '../stores/workspace-store'
-import { estimateVideoCost } from '../types/api'
+import { AVAILABLE_VIDEO_MODELS, estimateVideoCost } from '../types/api'
 import { logger } from '../lib/logger'
 
 export interface VideoGenerateOptions {
@@ -16,34 +16,49 @@ export interface VideoGenerateOptions {
   generateAudio?: boolean
   cameraFixed?: boolean
   seed?: number
+  /** Explicit destination for automation; null means unfiled. */
+  workspaceId?: string | null
 }
 
 // No pre-upload needed — fal-client.ts handles uploading to fal.ai storage
 
 export function useVideoGeneration() {
-  const { addVideoPlaceholder, completeVideo, failImage, updateStatus } = useGalleryStore()
-  const falApiKey = useSettingsStore((s) => s.falApiKey)
+  const { addVideoPlaceholder, completeVideo, failImage, updateStatus, updateMetadata } = useGalleryStore()
 
   const generateVideo = useCallback(
     (options: VideoGenerateOptions) => {
+      const { falApiKey } = useSettingsStore.getState()
       if (!falApiKey) {
         logger.error('useVideoGeneration', 'No fal.ai API key set')
         return
       }
 
-      const activeWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId ?? undefined
+      const modelSpec = AVAILABLE_VIDEO_MODELS.find((model) => model.id === options.model)
+      const resolution = options.resolution ?? modelSpec?.defaultResolution ?? '720p'
+      const generateAudio = options.generateAudio ?? false
+      const activeWorkspaceId = options.workspaceId === undefined
+        ? useWorkspaceStore.getState().activeWorkspaceId ?? undefined
+        : options.workspaceId ?? undefined
       const id = addVideoPlaceholder(
         options.prompt,
         options.aspectRatio,
         options.model,
-        undefined, // attachments stored separately
-        activeWorkspaceId
+        [options.startFrameBase64],
+        activeWorkspaceId,
+        {
+          resolution, seed: options.seed, negativePrompt: options.negativePrompt,
+          generationOptions: structuredClone({ ...options, resolution, generateAudio }),
+          videoDuration: options.duration, costCurrency: 'USD', costSource: 'list-price-estimate',
+        }
       )
+
+      updateMetadata(id, { requestId: id })
 
       // Listen for progress updates
       const unsub = window.api.onVideoProgress((data) => {
         if (data.requestId === id) {
           updateStatus(id, data.status)
+          if (data.progress !== undefined) updateMetadata(id, { progressPercent: data.progress })
         }
       })
 
@@ -61,32 +76,37 @@ export function useVideoGeneration() {
             imageUrl: options.startFrameBase64,
             duration: options.duration,
             aspectRatio: options.aspectRatio,
-            resolution: options.resolution,
+            resolution,
             negativePrompt: options.negativePrompt,
-            generateAudio: options.generateAudio,
+            generateAudio,
             cameraFixed: options.cameraFixed,
             seed: options.seed,
             apiKey: falApiKey,
             requestId: id,
           })
 
-          unsub()
-
           if (response.success && response.filePath) {
             const durationMs = Date.now() - startTime
-            const cost = estimateVideoCost(options.model, options.duration, options.generateAudio ?? false)
-            completeVideo(id, response.filePath, durationMs, options.duration, undefined, cost)
+            const cost = estimateVideoCost(options.model, options.duration, generateAudio)
+            updateMetadata(id, {
+              falRequestId: response.requestId,
+              generationRequest: response.generationRequest,
+              ...(response.seed !== undefined ? { seed: response.seed } : {}),
+            })
+            completeVideo(id, response.filePath, durationMs, response.duration ?? options.duration, undefined, cost)
           } else {
             failImage(id, response.error || 'Video generation failed')
           }
         } catch (err) {
-          unsub()
           const message = err instanceof Error ? err.message : 'Video generation failed'
           failImage(id, message)
+        } finally {
+          unsub()
         }
       })()
+      return id
     },
-    [falApiKey, addVideoPlaceholder, completeVideo, failImage, updateStatus]
+    [addVideoPlaceholder, completeVideo, failImage, updateStatus, updateMetadata]
   )
 
   return { generateVideo }

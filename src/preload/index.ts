@@ -1,6 +1,21 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AutomationRequest, AutomationReply } from '../shared/automation'
 
 const api = {
+  getAutomationStatus: () => ipcRenderer.invoke('automation:get-status'),
+  configureAutomation: (config: { enabled?: boolean; port?: number }) => ipcRenderer.invoke('automation:configure', config),
+  rotateAutomationToken: () => ipcRenderer.invoke('automation:rotate-token'),
+  onAutomationRequest: (callback: (request: AutomationRequest) => void) => {
+    const handler = (_event: unknown, request: AutomationRequest): void => callback(request)
+    ipcRenderer.on('automation:request', handler)
+    return () => { ipcRenderer.removeListener('automation:request', handler) }
+  },
+  automationReply: (reply: AutomationReply) => ipcRenderer.send('automation:reply', reply),
+  automationReady: () => ipcRenderer.send('automation:ready'),
+  automationImportMedia: (options: { source: string; name?: string }) => ipcRenderer.invoke('automation:import-media', options),
+  automationExportMedia: (options: { filePath: string; destination: string; overwrite?: boolean; metadata?: Record<string, string> }) => ipcRenderer.invoke('automation:export-media', options),
+  automationReadMedia: (options: { filePath: string }) => ipcRenderer.invoke('automation:read-media', options),
+
   generateImage: (request: {
     prompt: string
     model: string

@@ -17,6 +17,8 @@ export interface VideoGenerateResult {
   videoUrl: string          // CDN URL to MP4
   duration: number
   seed?: number
+  requestId?: string
+  generationRequest?: { endpoint: string; input: Record<string, unknown> }
 }
 
 /**
@@ -136,6 +138,8 @@ export async function generateVideo(
     videoUrl,
     duration: request.duration,
     seed: data.seed,
+    requestId: result.requestId,
+    generationRequest: { endpoint: request.model, input },
   }
 }
 

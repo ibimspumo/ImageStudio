@@ -1,12 +1,13 @@
 /**
  * Compresses a base64 image to JPEG quality, with configurable max dimension.
- * Default: max 1000px, 75% quality. Used for all image uploads (collections, references, etc.)
+ * Default: max 1000px, 75% JPEG quality. Optional PNG/WebP output preserves alpha. Used for all image uploads (collections, references, etc.)
  * For upscale, use a higher maxDimension to preserve source resolution.
  */
 export async function compressImage(
   base64DataUrl: string,
   maxDimension: number = 1000,
-  quality: number = 0.75
+  quality: number = 0.75,
+  format: 'jpeg' | 'png' | 'webp' = 'jpeg'
 ): Promise<string> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const i = new Image()
@@ -28,7 +29,7 @@ export async function compressImage(
   canvas.height = height
   const ctx = canvas.getContext('2d')!
   ctx.drawImage(img, 0, 0, width, height)
-  return canvas.toDataURL('image/jpeg', quality)
+  return canvas.toDataURL(`image/${format}`, format === 'png' ? undefined : quality)
 }
 
 /**

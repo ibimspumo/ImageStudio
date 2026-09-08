@@ -1,3 +1,5 @@
+import type { AutomationStatus, AutomationRequest, AutomationReply } from '../shared/automation'
+
 export interface GenerateImageResult {
   id: string
   text?: string
@@ -5,6 +7,7 @@ export interface GenerateImageResult {
   imageUrl?: string
   cost?: number
   seed?: number
+  generationRequest?: { endpoint: string; input: Record<string, unknown> }
 }
 
 export type UpdateState =
@@ -35,6 +38,16 @@ export interface UpdateStatus {
 }
 
 export interface ElectronAPI {
+  getAutomationStatus(): Promise<AutomationStatus>
+  configureAutomation(config: { enabled?: boolean; port?: number }): Promise<AutomationStatus>
+  rotateAutomationToken(): Promise<AutomationStatus>
+  onAutomationRequest(callback: (request: AutomationRequest) => void): () => void
+  automationReply(reply: AutomationReply): void
+  automationReady(): void
+  automationImportMedia(options: { source: string; name?: string }): Promise<{ success: true; filePath: string; kind: 'image' | 'video'; mimeType: string; size: number; width?: number; height?: number; name: string }>
+  automationExportMedia(options: { filePath: string; destination: string; overwrite?: boolean; metadata?: Record<string, string> }): Promise<{ success: true; filePath: string; size: number }>
+  automationReadMedia(options: { filePath: string }): Promise<{ success: true; filePath: string; uri: string; mimeType: string; kind: 'image' | 'video'; size: number }>
+
   generateImage(request: {
     prompt: string
     model: string
@@ -71,6 +84,7 @@ export interface ElectronAPI {
   onGenerateProgress(callback: (data: {
     requestId: string
     index: number
+    falRequestId?: string
     status: 'complete' | 'error' | 'progress'
     message?: string
     result?: GenerateImageResult
@@ -117,6 +131,8 @@ export interface ElectronAPI {
     filePath?: string
     duration?: number
     seed?: number
+    requestId?: string
+    generationRequest?: { endpoint: string; input: Record<string, unknown> }
     error?: string
   }>
 

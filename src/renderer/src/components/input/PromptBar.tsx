@@ -1,3 +1,4 @@
+import { prepareInpaintReferences, buildInpaintPrompt } from '../../lib/image-editing'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Plus, Send } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
@@ -30,6 +31,7 @@ import {
   LOGO_BACKGROUND,
   LOGO_OUTPUT_FORMAT,
   LOGO_DEFAULT_ASPECT_RATIO,
+  LOGO_ASPECT_RATIOS,
 } from '../../types/api'
 import { CostEstimate } from './CostEstimate'
 import { ThumbnailControls } from '../thumbnail/ThumbnailControls'
@@ -38,7 +40,9 @@ import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store
 import { useThumbnailMetaPromptsStore } from '../../stores/thumbnail-meta-prompts-store'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
-import { nanoid } from 'nanoid'
+import { useLiveDraft } from '../../automation/live-drafts'
+import { rejectDraftFields, resolveDraftReference } from '../../automation/draft-tools'
+import { prepareCanvasSketch, buildCanvasPrompt, CANVAS_SKETCH_REFERENCE_LABEL } from '../../lib/canvas-generation'
 import { compressImage } from '../../lib/image-utils'
 import { useCropStore } from '../../stores/crop-store'
 import { AttachmentStrip, type CollectionRef } from './AttachmentStrip'
@@ -85,17 +89,17 @@ interface PromptBarProps {
 
 export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage, onQueueClick, inpaintContext, canvasContext, initialModels, onCanvasClick, thumbnailMode, logoMode }: PromptBarProps = {}) {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(
-    thumbnailMode ? '16:9' : logoMode ? (LOGO_DEFAULT_ASPECT_RATIO as AspectRatio) : '1:1'
+    thumbnailMode ? '16:9' : logoMode ? (LOGO_DEFAULT_ASPECT_RATIO as AspectRatio) : useSettingsStore.getState().defaultAspectRatio as AspectRatio
   )
   const [customRatio, setCustomRatio] = useState<string>('4:3')
-  const [resolution, setResolution] = useState<Resolution>('2K')
-  const [imageCount, setImageCount] = useState(1)
+  const [resolution, setResolution] = useState<Resolution>(useSettingsStore.getState().defaultResolution as Resolution)
+  const [imageCount, setImageCount] = useState(useSettingsStore.getState().defaultImageCount)
   const [selectedModels, setSelectedModels] = useState<string[]>(() => {
     const fallback = thumbnailMode
       ? DEFAULT_THUMBNAIL_MODEL
       : logoMode
         ? DEFAULT_LOGO_MODEL
-        : DEFAULT_MODEL
+        : useSettingsStore.getState().defaultModel || DEFAULT_MODEL
     const requested = (initialModels ?? [fallback]).map(normalizeModelId)
     if (thumbnailMode) {
       // A model that cannot do 2K has no place here — fall back rather than fail.
@@ -136,6 +140,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     getPromptText,
     promptText,
     syncPromptText,
+    setDraftContent,
     buildAttachments,
     mentionItems,
     showMentionPopup,
@@ -188,6 +193,18 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   const { generate } = useImageGeneration()
   const falApiKey = useSettingsStore((s) => s.falApiKey)
   const hydrated = useSettingsStore((s) => s.hydrated)
+  const defaultsHydrated = useRef(useSettingsStore.getState().hydrated)
+  useEffect(() => {
+    if (!hydrated || defaultsHydrated.current) return
+    defaultsHydrated.current = true
+    const settings = useSettingsStore.getState()
+    setImageCount(settings.defaultImageCount)
+    if (!thumbnailMode && !logoMode) {
+      setAspectRatio(settings.defaultAspectRatio as AspectRatio)
+      setResolution(settings.defaultResolution as Resolution)
+      if (!initialModels?.length) setSelectedModels([normalizeModelId(settings.defaultModel)])
+    }
+  }, [hydrated, thumbnailMode, logoMode, initialModels])
   const presets = usePresetsStore((s) => s.presets)
   // The active preset lives in its store — the selector writes it there, and
   // reading it here is what actually applies the suffix on submit.
@@ -327,15 +344,9 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         const readResult = await window.api.readImage(inpaintContext.filePath)
         if (!readResult.success || !readResult.base64DataUrl) return
 
-        const compressedOriginal = await compressImage(readResult.base64DataUrl as string, 2048, 0.85)
-        const compressedOverlay = await compressImage(overlayBase64, 2048, 0.85)
-
-        // Prepend inpaint attachments
-        attachments.unshift(compressedOverlay, compressedOriginal)
-        labeledAttachments.unshift(
-          { label: 'Image with green highlight showing the region to edit — replace ONLY the green area', images: [compressedOverlay] },
-          { label: 'Original image (clean, high quality reference) — preserve everything outside the highlighted region exactly', images: [compressedOriginal] },
-        )
+        const groups = await prepareInpaintReferences(readResult.base64DataUrl, overlayBase64)
+        attachments.unshift(...groups.flatMap((group) => group.images))
+        labeledAttachments.unshift(...groups)
       } catch (err) {
         console.error('Failed to prepare inpaint images', err)
         return
@@ -349,18 +360,13 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       if (!canvasBase64) return // empty canvas
 
       try {
-        const compressedCanvas = await compressImage(canvasBase64, 2048, 0.85)
-
-        // Save sketch to disk for compare functionality
-        const sketchFilename = `canvas-sketch-${nanoid()}.png`
-        const saveResult = await window.api.saveImage(canvasBase64, sketchFilename)
-        if (saveResult.success && saveResult.filePath) {
-          canvasSketchPath = saveResult.filePath
-        }
+        const preparedSketch = await prepareCanvasSketch(canvasBase64)
+        const compressedCanvas = preparedSketch.compressedCanvas
+        canvasSketchPath = preparedSketch.canvasSketchPath
 
         attachments.unshift(compressedCanvas)
         labeledAttachments.unshift(
-          { label: 'Reference sketch drawn by the user — generate a detailed image based on this sketch, following its composition, layout, and color placement', images: [compressedCanvas] },
+          { label: CANVAS_SKETCH_REFERENCE_LABEL, images: [compressedCanvas] },
         )
       } catch (err) {
         console.error('Failed to prepare canvas image', err)
@@ -376,19 +382,13 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     let apiPromptText: string | undefined
     if (inpaintContext) {
       const hasUserRefs = imageRefs.length > 0 || collectionRefs.length > 0
-      const refNote = hasUserRefs
-        ? ' The user has also attached additional reference images — use them as visual guidance for what should appear in the edited region.'
-        : ''
-      apiPromptText = `Edit this image. The green-highlighted region should be replaced with: ${finalPrompt}. Keep everything outside the green highlight exactly the same — same composition, lighting, colors, and details.${refNote} Original description of the source image: "${inpaintContext.sourcePrompt}"`
+      apiPromptText = buildInpaintPrompt(finalPrompt, inpaintContext.sourcePrompt, hasUserRefs)
     }
 
     // Build separate API prompt for canvas mode
     if (canvasContext) {
       const hasUserRefs = imageRefs.length > 0 || collectionRefs.length > 0
-      const refNote = hasUserRefs
-        ? ' The user has also attached additional reference images — use them as visual guidance.'
-        : ''
-      apiPromptText = `Generate an image based on the attached sketch. The sketch shows the composition, shapes, and color layout. Create a detailed, high-quality image that matches the sketch's layout: ${finalPrompt}${refNote}`
+      apiPromptText = buildCanvasPrompt(finalPrompt, hasUserRefs)
     }
 
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
@@ -418,7 +418,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         })
       : undefined
 
-    generate({
+    const jobIds = generate({
       prompt: inpaintContext ? `Inpaint: ${text}` : canvasContext ? `Canvas: ${text}` : finalPrompt,
       apiPrompt: apiPromptText || undefined,
       aspectRatio: thumbnailMode ? THUMBNAIL_ASPECT_RATIO : resolvedAspectRatio,
@@ -453,7 +453,75 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     if (canvasContext) {
       canvasContext.onClose()
     }
+    return jobIds
   }, [getPromptText, falApiKey, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, inpaintContext, canvasContext, thumbnailMode, thumbnailStyle, logoMode, logoStyle, background, inputFidelity])
+
+  useLiveDraft({
+    mode: inpaintContext ? 'inpaint' : canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : 'image',
+    read: () => {
+      const project = thumbnailMode ? useThumbnailProjectsStore.getState().getActiveProject() : null
+      const hasRefs = imageRefs.length > 0 || collectionRefs.length > 0
+      const text = getPromptText()
+      const preset = usePresetsStore.getState().presets.find(p => p.id === usePresetsStore.getState().activePresetId)
+      return {
+        mode: inpaintContext ? 'inpaint' : canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : 'image',
+        prompt: text, models: selectedModels, aspectRatio: thumbnailMode ? '16:9' : aspectRatio === 'custom' ? customRatio : aspectRatio,
+        resolution: thumbnailMode ? '2K' : logoMode ? '1K' : resolution, imageCount, quality, seed: seed ?? null,
+        background, inputFidelity, thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined, logoStyle: logoMode ? logoStyle : undefined,
+        references: imageRefs.map(ref => ({ id: ref.id, name: ref.name, mimeType: /^data:([^;]+)/.exec(ref.base64)?.[1] })),
+        collections: collectionRefs.map(ref => ({ id: ref.id, collectionId: ref.collectionId, name: ref.name, imageCount: ref.images.length })),
+        activePresetId: usePresetsStore.getState().activePresetId, finalPrompt: preset ? `${text}, ${preset.suffix}` : text,
+        project, activeMetaPromptId: thumbnailMode ? useThumbnailMetaPromptsStore.getState().activeId : undefined,
+        systemPrompt: thumbnailMode ? buildThumbnailSystemPrompt({ style: thumbnailStyle, faceFidelity: hasRefs, videoTitle: project?.title, videoAngle: project?.angle, customMetaPrompt: useThumbnailMetaPromptsStore.getState().getActiveText() })
+          : logoMode ? buildLogoSystemPrompt({ style: logoStyle, transparent: background === 'transparent', hasReferences: hasRefs }) : undefined,
+        capabilities: getCombinedCapabilities(selectedModels),
+        ready: !!text && !!useSettingsStore.getState().falApiKey,
+        inpaintSourceId: inpaintContext?.imageId,
+        contextRequirement: inpaintContext ? 'Draw a mask before submitting' : canvasContext ? 'Canvas must contain a sketch' : undefined,
+      }
+    },
+    update: async patch => {
+      const common = ['prompt', 'models', 'imageCount', 'references', 'collectionIds'] as const
+      rejectDraftFields(patch, thumbnailMode ? [...common, 'thumbnailStyle'] : logoMode ? [...common, 'logoStyle', 'aspectRatio', 'background', 'inputFidelity', 'quality'] : [...common, 'aspectRatio', 'resolution', 'quality', 'seed', 'clearSeed', 'background', 'inputFidelity'])
+      const models = patch.models ?? selectedModels
+      if (new Set(models).size !== models.length) throw new Error('Select each model only once')
+      if (thumbnailMode && models.some(id => !isThumbnailModel(id))) throw new Error('This model is unavailable in thumbnail mode')
+      if (logoMode && models.some(id => !isLogoModel(id))) throw new Error('This model is unavailable in logo mode')
+      const caps = getCombinedCapabilities(models)
+      if (patch.imageCount !== undefined && patch.imageCount > caps.maxImagesPerRequest) throw new Error(`Selected models allow at most ${caps.maxImagesPerRequest} images per request`)
+      if (logoMode && patch.aspectRatio !== undefined && !LOGO_ASPECT_RATIOS.includes(patch.aspectRatio as typeof LOGO_ASPECT_RATIOS[number])) throw new Error(`Logo ratio must be one of ${LOGO_ASPECT_RATIOS.join(', ')}`)
+      if (patch.resolution !== undefined && !caps.resolutions.includes(patch.resolution as Resolution)) throw new Error(`Resolution must be one of ${caps.resolutions.join(', ')}`)
+      if (patch.quality !== undefined && !caps.qualities?.includes(patch.quality)) throw new Error('Quality control is unavailable for the selected models or this quality is unsupported')
+      if (patch.seed !== undefined && !caps.supportsSeed) throw new Error('Selected models do not support a seed')
+      if (patch.seed !== undefined && patch.clearSeed) throw new Error('Specify seed or clearSeed, not both')
+      if (patch.background !== undefined && !caps.supportsBackground) throw new Error('Selected models do not support background control')
+      if (patch.inputFidelity !== undefined && !caps.supportsInputFidelity) throw new Error('Selected models do not support input fidelity')
+      // Resolve every reference before changing any UI state.
+      const nextImages = patch.references === undefined ? undefined : await Promise.all(patch.references.map(async (source, index) => ({ id: crypto.randomUUID(), name: `Image ${index + 1}`, base64: await compressImage(await resolveDraftReference(source)) })))
+      const nextCollections = patch.collectionIds === undefined ? undefined : [...new Set(patch.collectionIds)].map(id => {
+        const collection = collections.find(c => c.id === id)
+        if (!collection) throw new Error(`Collection not found: ${id}`)
+        return { id: crypto.randomUUID(), collectionId: id, name: collection.name, thumbnail: collection.images[0] || '', images: collection.images }
+      })
+      if (patch.prompt !== undefined || nextImages || nextCollections) setDraftContent({ prompt: patch.prompt, images: nextImages, collections: nextCollections })
+      if (patch.models) setSelectedModels(patch.models)
+      if (patch.aspectRatio !== undefined) {
+        if (patch.aspectRatio === 'auto' || caps.aspectRatios.includes(patch.aspectRatio as never) || logoMode) setAspectRatio(patch.aspectRatio as AspectRatio)
+        else { setAspectRatio('custom'); setCustomRatio(patch.aspectRatio) }
+      }
+      if (patch.resolution !== undefined) setResolution(patch.resolution as Resolution)
+      if (patch.imageCount !== undefined) setImageCount(patch.imageCount)
+      if (patch.quality !== undefined) setQuality(patch.quality)
+      if (patch.seed !== undefined || patch.clearSeed) setSeed(patch.clearSeed ? undefined : patch.seed)
+      if (patch.thumbnailStyle !== undefined) setThumbnailStyle(patch.thumbnailStyle)
+      if (patch.logoStyle !== undefined) setLogoStyle(patch.logoStyle)
+      if (patch.background !== undefined) setBackground(patch.background)
+      if (patch.inputFidelity !== undefined) setInputFidelity(patch.inputFidelity)
+      setExpanded(true)
+    },
+    submit: handleSubmit,
+    readReference: id => imageRefs.find(ref => ref.id === id)?.base64,
+  })
 
   // ── Editor keyboard handling ──────────────────────────────────────
 

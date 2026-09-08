@@ -12,6 +12,7 @@ import { ProjectBar } from '../thumbnail/ProjectBar'
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
 import { Sparkles, SearchX, ImageIcon, Film, Youtube, Hexagon } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { MediaImport } from '../shared/MediaImport'
 
 
 export type AppMode = 'image' | 'video' | 'thumbnail' | 'logo'
@@ -247,6 +248,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
             Logo
           </button>
         </div>
+        <MediaImport onImported={(kind) => { clearFilters(); onModeChange(kind) }} />
       </div>
 
       {mode === 'thumbnail' ? <ProjectBar /> : <WorkspaceBar />}

@@ -1,5 +1,5 @@
-import { useRef, useCallback, useEffect } from 'react'
-import { useCanvasStore, type CanvasLayer, type CanvasTool } from '../stores/canvas-store'
+import { useRef, useCallback, useLayoutEffect } from 'react'
+import { useCanvasStore, type CanvasTool } from '../stores/canvas-store'
 
 interface UndoEntry {
   layerId: string
@@ -8,6 +8,11 @@ interface UndoEntry {
 
 export function useCanvasRenderer() {
   const displayCanvasRef = useRef<HTMLCanvasElement>(null)
+  const mountedRef = useRef(true)
+  useLayoutEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   // Offscreen canvases keyed by layer id
   const offscreenCanvasesRef = useRef<Map<string, HTMLCanvasElement>>(new Map())
@@ -28,9 +33,7 @@ export function useCanvasRenderer() {
       const newCanvas = document.createElement('canvas')
       newCanvas.width = canvasWidth
       newCanvas.height = canvasHeight
-      if (canvas && (canvas.width === canvasWidth || canvas.height === canvasHeight)) {
-        // Same size, shouldn't happen but just in case
-      } else if (canvas) {
+      if (canvas) {
         // Size changed — copy old content scaled
         const ctx = newCanvas.getContext('2d')!
         ctx.drawImage(canvas, 0, 0, canvasWidth, canvasHeight)
@@ -42,19 +45,23 @@ export function useCanvasRenderer() {
   }, [canvasWidth, canvasHeight])
 
   // Ensure all layers have offscreen canvases & clean up removed layers
-  useEffect(() => {
+  useLayoutEffect(() => {
     const currentIds = new Set(layers.map((l) => l.id))
     // Create missing
     for (const layer of layers) {
       getOffscreen(layer.id)
     }
+    // Removed-layer history must never block undo on the remaining layers.
+    undoStackRef.current = undoStackRef.current.filter((entry) => currentIds.has(entry.layerId))
+    redoStackRef.current = redoStackRef.current.filter((entry) => currentIds.has(entry.layerId))
+    setUndoRedoSize(undoStackRef.current.length, redoStackRef.current.length)
     // Remove stale
     for (const id of offscreenCanvasesRef.current.keys()) {
       if (!currentIds.has(id)) {
         offscreenCanvasesRef.current.delete(id)
       }
     }
-  }, [layers, getOffscreen])
+  }, [layers, getOffscreen, setUndoRedoSize])
 
   // Composite all visible layers onto display canvas
   const composite = useCallback(() => {
@@ -71,7 +78,7 @@ export function useCanvasRenderer() {
       ctx.drawImage(offscreen, 0, 0)
     }
     ctx.globalAlpha = 1
-  }, [layers])
+  }, [layers, canvasWidth, canvasHeight])
 
   // Draw a line segment on a specific layer's offscreen canvas
   const drawLine = useCallback((
@@ -225,6 +232,27 @@ export function useCanvasRenderer() {
     setUndoRedoSize(0, 0)
     composite()
   }, [layers, composite, setUndoRedoSize])
+
+  // Import uses the same offscreen pixels and undo history as pointer drawing.
+  const importImage = useCallback(async (layerId: string, dataUrl: string) => {
+    const image = new Image()
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve()
+      image.onerror = () => reject(new Error('Image could not be decoded'))
+      image.src = dataUrl
+    })
+    if (!mountedRef.current || !useCanvasStore.getState().isOpen) throw new Error('Canvas was closed while loading the image')
+    if (useCanvasStore.getState().canvasWidth !== canvasWidth || useCanvasStore.getState().canvasHeight !== canvasHeight) throw new Error('Canvas dimensions changed while loading the image; retry the import')
+    if (!useCanvasStore.getState().layers.some((layer) => layer.id === layerId)) throw new Error('Target layer no longer exists')
+    const offscreen = getOffscreen(layerId)
+    const ctx = offscreen.getContext('2d')!
+    pushUndo(layerId)
+    const scale = Math.min(offscreen.width / image.naturalWidth, offscreen.height / image.naturalHeight)
+    const width = image.naturalWidth * scale
+    const height = image.naturalHeight * scale
+    ctx.drawImage(image, (offscreen.width - width) / 2, (offscreen.height - height) / 2, width, height)
+    composite()
+  }, [getOffscreen, pushUndo, composite, canvasWidth, canvasHeight])
 
   // Mouse event handlers for drawing
   const handlePointerDown = useCallback((
@@ -419,5 +447,7 @@ export function useCanvasRenderer() {
     detectColors,
     hasContent,
     getOffscreen,
+    importImage,
+    isDrawing: () => isDrawingRef.current,
   }
 }

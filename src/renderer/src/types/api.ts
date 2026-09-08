@@ -108,6 +108,7 @@ export interface VideoModelOption {
   resolutions: string[]
   defaultDuration: number
   defaultResolution: string
+  /** Available through the app pipeline, not merely supported upstream. */
   supportsEndFrame: boolean
   supportsAudio: boolean
   supportsNegativePrompt: boolean
@@ -128,7 +129,7 @@ export const AVAILABLE_VIDEO_MODELS: VideoModelOption[] = [
     resolutions: ['720p', '1080p'],
     defaultDuration: 5,
     defaultResolution: '720p',
-    supportsEndFrame: true,
+    supportsEndFrame: false,
     supportsAudio: true,
     supportsNegativePrompt: false,
     supportsCameraFixed: false,
@@ -144,7 +145,7 @@ export const AVAILABLE_VIDEO_MODELS: VideoModelOption[] = [
     resolutions: ['720p', '1080p'],
     defaultDuration: 5,
     defaultResolution: '720p',
-    supportsEndFrame: true,
+    supportsEndFrame: false,
     supportsAudio: true,
     supportsNegativePrompt: true,
     supportsCameraFixed: false,
@@ -160,7 +161,7 @@ export const AVAILABLE_VIDEO_MODELS: VideoModelOption[] = [
     resolutions: ['480p', '720p'],
     defaultDuration: 5,
     defaultResolution: '720p',
-    supportsEndFrame: true,
+    supportsEndFrame: false,
     supportsAudio: true,
     supportsNegativePrompt: false,
     supportsCameraFixed: true,

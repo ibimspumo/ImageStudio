@@ -48,6 +48,8 @@ export function registerVideoGenerationHandlers(): void {
           filePath,
           duration: result.duration,
           seed: result.seed,
+          requestId: result.requestId,
+          generationRequest: result.generationRequest,
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Video generation failed'

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Eye, EyeOff, Check, Sparkles } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settings-store'
 import { UpdateSection } from './UpdateSection'
+import { AutomationSection } from './AutomationSection'
 import { cn } from '../../lib/utils'
 
 interface SettingsDialogProps {
@@ -121,6 +122,8 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
               />
             </button>
           </div>
+
+          <AutomationSection />
 
           <UpdateSection />
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, Undo2, Eraser } from 'lucide-react'
 import { toDisplayUrl } from '../../stores/gallery-store'
+import { createInpaintOverlay } from '../../lib/image-editing'
 import { PromptBar, type InpaintContext } from '../input/PromptBar'
 
 interface InpaintModalProps {
@@ -129,46 +130,8 @@ export function InpaintModal({ imageId, filePath, prompt: sourcePrompt, model: s
     const img = imgRef.current
     if (!canvas || !img) return null
 
-    const w = img.naturalWidth
-    const h = img.naturalHeight
-
-    // 1. Create canvas at natural resolution with the original image
-    const outCanvas = document.createElement('canvas')
-    outCanvas.width = w
-    outCanvas.height = h
-    const outCtx = outCanvas.getContext('2d')
-    if (!outCtx) return null
-
-    // Draw the original image
-    outCtx.drawImage(img, 0, 0, w, h)
-
-    // 2. Scale the user's brush strokes to natural resolution into a temp canvas
-    const maskCanvas = document.createElement('canvas')
-    maskCanvas.width = w
-    maskCanvas.height = h
-    const maskCtx = maskCanvas.getContext('2d')
-    if (!maskCtx) return null
-    maskCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, w, h)
-
-    // 3. Find all painted pixels and overlay them with bright green
-    const maskData = maskCtx.getImageData(0, 0, w, h)
-    const overlayData = outCtx.getImageData(0, 0, w, h)
-    const md = maskData.data
-    const od = overlayData.data
-
-    for (let i = 0; i < md.length; i += 4) {
-      // If this pixel was painted (has any alpha from the brush)
-      if (md[i + 3] > 10) {
-        const alpha = 0.5 // overlay strength
-        // Bright green (0, 255, 100) blended over original
-        od[i]     = Math.round(od[i]     * (1 - alpha) + 0   * alpha) // R
-        od[i + 1] = Math.round(od[i + 1] * (1 - alpha) + 255 * alpha) // G
-        od[i + 2] = Math.round(od[i + 2] * (1 - alpha) + 100 * alpha) // B
-      }
-    }
-    outCtx.putImageData(overlayData, 0, 0)
-
-    return outCanvas.toDataURL('image/png')
+    try { return createInpaintOverlay(img, canvas, canvas.width, canvas.height) }
+    catch { return null }
   }, [])
 
   // Create inpaint context for PromptBar

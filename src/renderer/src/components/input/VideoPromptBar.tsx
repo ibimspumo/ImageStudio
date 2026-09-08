@@ -7,6 +7,8 @@ import type { AspectRatio, FalAspectRatio } from '../../types/api'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
 import { compressImage } from '../../lib/image-utils'
+import { useLiveDraft } from '../../automation/live-drafts'
+import { rejectDraftFields, resolveDraftReference } from '../../automation/draft-tools'
 import { VideoModelSelector } from './VideoModelSelector'
 import { DurationSelector } from './DurationSelector'
 import { TuneMenu, TuneGroup, TuneOption, TuneRow, TuneRatioOptions } from './TunePanel'
@@ -22,7 +24,7 @@ interface VideoPromptBarProps {
  * No @-mentions or collections, the video API takes exactly one start frame.
  */
 export function VideoPromptBar({ onSettingsClick, initialStartFrame }: VideoPromptBarProps) {
-  const [selectedModel, setSelectedModel] = useState(DEFAULT_VIDEO_MODEL)
+  const [selectedModel, setSelectedModel] = useState(useSettingsStore.getState().defaultVideoModel || DEFAULT_VIDEO_MODEL)
   const [duration, setDuration] = useState(5)
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9')
   const [customRatio, setCustomRatio] = useState('4:3')
@@ -35,6 +37,14 @@ export function VideoPromptBar({ onSettingsClick, initialStartFrame }: VideoProm
 
   const { generateVideo } = useVideoGeneration()
   const falApiKey = useSettingsStore((s) => s.falApiKey)
+
+  const hydrated = useSettingsStore(s => s.hydrated)
+  const defaultsHydrated = useRef(useSettingsStore.getState().hydrated)
+  useEffect(() => {
+    if (!hydrated || defaultsHydrated.current) return
+    defaultsHydrated.current = true
+    setSelectedModel(useSettingsStore.getState().defaultVideoModel || DEFAULT_VIDEO_MODEL)
+  }, [hydrated])
 
   // Get model config for dynamic options
   const modelConfig = AVAILABLE_VIDEO_MODELS.find((m) => m.id === selectedModel)
@@ -123,7 +133,7 @@ export function VideoPromptBar({ onSettingsClick, initialStartFrame }: VideoProm
     const prompt = getPromptText()
     if (!prompt || !startFrame || !falApiKey) return
 
-    generateVideo({
+    return generateVideo({
       prompt,
       model: selectedModel,
       duration,
@@ -136,6 +146,45 @@ export function VideoPromptBar({ onSettingsClick, initialStartFrame }: VideoProm
 
     // Keep prompt text (same behavior as image PromptBar)
   }, [getPromptText, startFrame, falApiKey, generateVideo, selectedModel, duration, aspectRatio, customRatio, resolution, generateAudio, cameraFixed])
+
+  useLiveDraft({
+    mode: 'video',
+    read: () => ({
+      mode: 'video', prompt: getPromptText(), model: selectedModel, duration,
+      aspectRatio: aspectRatio === 'custom' ? customRatio : aspectRatio, resolution, generateAudio, cameraFixed,
+      startFrame: startFrame ? { id: 'startFrame', name: startFrame.name, mimeType: /^data:([^;]+)/.exec(startFrame.base64)?.[1] } : null,
+      capabilities: modelConfig, ready: !!getPromptText() && !!startFrame && !!useSettingsStore.getState().falApiKey,
+      estimatedCostUsd: estimateVideoCost(selectedModel, duration, generateAudio), costIsEstimate: true,
+    }),
+    update: async patch => {
+      rejectDraftFields(patch, ['prompt', 'model', 'duration', 'aspectRatio', 'resolution', 'generateAudio', 'cameraFixed', 'startFrame', 'clearStartFrame'])
+      const model = AVAILABLE_VIDEO_MODELS.find(m => m.id === (patch.model ?? selectedModel))
+      if (!model) throw new Error('Unknown video model; inspect get_capabilities')
+      if (patch.duration !== undefined && !model.durations.includes(patch.duration)) throw new Error(`Duration must be one of ${model.durations.join(', ')} seconds`)
+      if (patch.resolution !== undefined && !model.resolutions.includes(patch.resolution)) throw new Error(`Resolution must be one of ${model.resolutions.join(', ')}`)
+      if (patch.generateAudio !== undefined && !model.supportsAudio) throw new Error('This model has no audio control')
+      if (patch.cameraFixed !== undefined && !model.supportsCameraFixed) throw new Error('This model has no fixed camera control')
+      if (patch.startFrame && patch.clearStartFrame) throw new Error('Specify startFrame or clearStartFrame, not both')
+      const frame = patch.startFrame === undefined ? undefined : await compressImage(await resolveDraftReference(patch.startFrame), 1024)
+      if (patch.prompt !== undefined && editorRef.current) { editorRef.current.textContent = patch.prompt; setPromptText(patch.prompt.trim()) }
+      if (patch.model !== undefined) setSelectedModel(patch.model)
+      if (patch.duration !== undefined) setDuration(patch.duration)
+      else if (!model.durations.includes(duration)) setDuration(model.defaultDuration)
+      if (patch.resolution !== undefined) setResolution(patch.resolution)
+      else if (!model.resolutions.includes(resolution)) setResolution(model.defaultResolution)
+      if (patch.aspectRatio !== undefined) {
+        if (model.aspectRatios.includes(patch.aspectRatio as FalAspectRatio)) setAspectRatio(patch.aspectRatio as AspectRatio)
+        else { setAspectRatio('custom'); setCustomRatio(patch.aspectRatio) }
+      }
+      if (patch.generateAudio !== undefined) setGenerateAudio(patch.generateAudio)
+      if (patch.cameraFixed !== undefined) setCameraFixed(patch.cameraFixed)
+      if (frame !== undefined) setStartFrame({ base64: frame, name: 'Start Frame' })
+      if (patch.clearStartFrame) setStartFrame(null)
+      setExpanded(true)
+    },
+    submit: handleSubmit,
+    readReference: id => id === 'startFrame' ? startFrame?.base64 : undefined,
+  })
 
   const handleEditorKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

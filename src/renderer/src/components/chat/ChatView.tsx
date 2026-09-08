@@ -24,6 +24,9 @@ import type { AspectRatio, Resolution, GptImageQuality } from '../../types/api'
 import { getModelName, getCombinedCapabilities, normalizeModelId, DEFAULT_MODEL } from '../../types/api'
 import { cn } from '../../lib/utils'
 import { formatDuration, formatTime } from '../../lib/date-utils'
+import { useLiveDraft } from '../../automation/live-drafts'
+import { rejectDraftFields, resolveDraftReference } from '../../automation/draft-tools'
+import { compressImage } from '../../lib/image-utils'
 
 interface ChatViewProps {
   chatId: string
@@ -183,6 +186,7 @@ export function ChatView({
     insertCollectionChipAtCursor,
     getPromptText,
     promptText,
+    setDraftContent,
     buildAttachments,
     mentionItems,
     showMentionPopup,
@@ -223,12 +227,12 @@ export function ChatView({
 
   const handleSubmit = useCallback(async () => {
     const text = getPromptText()
-    if (!text || !falApiKey || !chat) return
+    if (!text || !falApiKey || !chat || chat.messages.some(message => message.isLoading)) return
 
     const { attachments, labeledAttachments } = await buildAttachments()
     const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
 
-    generate({
+    const submitted = generate({
       chatId: chat.id,
       prompt: text,
       aspectRatio: resolvedAspectRatio,
@@ -240,7 +244,53 @@ export function ChatView({
     })
 
     clearRefs()
+    return submitted
   }, [getPromptText, falApiKey, chat, buildAttachments, generate, aspectRatio, customRatio, resolution, selectedModels, quality, clearRefs])
+
+  useLiveDraft({
+    mode: 'chat',
+    read: () => ({
+      mode: 'chat', chatId, prompt: getPromptText(), models: selectedModels,
+      aspectRatio: aspectRatio === 'custom' ? customRatio : aspectRatio, resolution, quality,
+      references: imageRefs.map(ref => ({ id: ref.id, name: ref.name, mimeType: /^data:([^;]+)/.exec(ref.base64)?.[1] })),
+      collections: collectionRefs.map(ref => ({ id: ref.id, collectionId: ref.collectionId, name: ref.name, imageCount: ref.images.length })),
+      automaticReference: { id: 'automaticReference', filePath: [...(chat?.messages ?? [])].reverse().find(message => message.role === 'assistant' && message.imageFilePath)?.imageFilePath ?? null },
+      referenceRule: 'The latest assistant image is automatically the image being edited; explicit references and collections provide additional visual guidance.',
+      capabilities: getCombinedCapabilities(selectedModels), maxModels: 1,
+      ready: !!chat && !!getPromptText() && !!useSettingsStore.getState().falApiKey && !chat.messages.some(message => message.isLoading),
+      isGenerating: chat?.messages.some(message => message.isLoading) ?? false,
+    }),
+    update: async patch => {
+      rejectDraftFields(patch, ['prompt', 'models', 'aspectRatio', 'resolution', 'quality', 'references', 'collectionIds'])
+      const models = patch.models ?? selectedModels
+      if (models.length !== 1) throw new Error('An image editing chat uses exactly one model per message')
+      const caps = getCombinedCapabilities(models)
+      if (patch.resolution !== undefined && !caps.resolutions.includes(patch.resolution as Resolution)) throw new Error(`Resolution must be one of ${caps.resolutions.join(', ')}`)
+      if (patch.quality !== undefined && !caps.qualities?.includes(patch.quality)) throw new Error('Quality control is unavailable for the selected model or this quality is unsupported')
+      const nextImages = patch.references === undefined ? undefined : await Promise.all(patch.references.map(async (source, index) => ({ id: crypto.randomUUID(), name: `Image ${index + 1}`, base64: await compressImage(await resolveDraftReference(source)) })))
+      const nextCollections = patch.collectionIds === undefined ? undefined : [...new Set(patch.collectionIds)].map(id => {
+        const collection = collections.find(item => item.id === id)
+        if (!collection) throw new Error(`Collection not found: ${id}`)
+        return { id: crypto.randomUUID(), collectionId: id, name: collection.name, thumbnail: collection.images[0] || '', images: collection.images }
+      })
+      if (patch.prompt !== undefined || nextImages || nextCollections) setDraftContent({ prompt: patch.prompt, images: nextImages, collections: nextCollections })
+      if (patch.models) setSelectedModels(patch.models)
+      if (patch.aspectRatio !== undefined) {
+        if (ASPECT_RATIOS.includes(patch.aspectRatio as AspectRatio)) setAspectRatio(patch.aspectRatio as AspectRatio)
+        else { setAspectRatio('custom'); setCustomRatio(patch.aspectRatio) }
+      }
+      if (patch.resolution !== undefined) setResolution(patch.resolution as Resolution)
+      if (patch.quality !== undefined) setQuality(patch.quality)
+    },
+    submit: handleSubmit,
+    readReference: async id => {
+      if (id !== 'automaticReference') return imageRefs.find(ref => ref.id === id)?.base64
+      const path = [...(chat?.messages ?? [])].reverse().find(message => message.role === 'assistant' && message.imageFilePath)?.imageFilePath
+      if (!path) return undefined
+      const result = await window.api.readImage(path)
+      return result.success ? result.base64DataUrl : undefined
+    },
+  })
 
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -403,7 +453,7 @@ export function ChatView({
               />
 
               <div className="w-px h-4 bg-border-dim mx-0.5" />
-              <ModelSelector selectedModels={selectedModels} onChange={setSelectedModels} compact />
+              <ModelSelector selectedModels={selectedModels} onChange={setSelectedModels} compact single />
 
               <TuneMenu badge={tuneBadge} width={340}>
                 {() => (

@@ -3,6 +3,11 @@ import { join } from 'path'
 import { registerAllHandlers, shouldAutoCheckUpdates } from './ipc'
 import { ensureDirectories } from './services/image-store'
 import { checkForUpdatesOnStartup } from './services/updater'
+import { initializeAutomation, type AutomationService } from './automation'
+import { pathToFileURL } from 'node:url'
+
+declare const __APP_VERSION__: string
+let automation: AutomationService
 
 function createWindow(): void {
   const isMac = process.platform === 'darwin'
@@ -28,6 +33,9 @@ function createWindow(): void {
     }
   })
 
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL'] || pathToFileURL(join(__dirname, '../renderer/index.html')).href
+  automation.attach(mainWindow.webContents, rendererUrl)
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
@@ -48,13 +56,14 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   await ensureDirectories()
   registerAllHandlers()
+  automation = await initializeAutomation(__APP_VERSION__)
 
   // Set dock icon on macOS
   if (process.platform === 'darwin') {
     const iconPath = join(__dirname, '../../resources/icon.png')
     try {
       const icon = nativeImage.createFromPath(iconPath)
-      if (!icon.isEmpty()) app.dock.setIcon(icon)
+      if (!icon.isEmpty()) app.dock?.setIcon(icon)
     } catch { /* icon file may not exist in dev */ }
   }
 

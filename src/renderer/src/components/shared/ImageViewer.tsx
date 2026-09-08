@@ -28,13 +28,14 @@ import { useGalleryStore, toDisplayUrl } from '../../stores/gallery-store'
 import { useChatStore } from '../../stores/chat-store'
 import { useSettingsStore } from '../../stores/settings-store'
 import { AVAILABLE_MODELS, DEFAULT_MODEL, getModelName, getVideoModelName, normalizeModelId } from '../../types/api'
-import { compressImage, getResolutionLabel } from '../../lib/image-utils'
+import { getResolutionLabel } from '../../lib/image-utils'
 import { ExportPopover } from './ExportPopover'
 import { TagInput } from '../tags/TagInput'
 import { cn } from '../../lib/utils'
-import { createZoomOutCanvas, createAspectRatioCanvas, upscaleForApi } from '../../lib/image-utils'
+import { prepareImageTransform, ZOOM_LEVELS, EDIT_ASPECT_RATIOS, upscaleTargets as getUpscaleTargets } from '../../lib/image-editing'
+import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { formatDuration, formatDate } from '../../lib/date-utils'
-import { prepareForStorage, neutralImageName } from '../../lib/anti-detection'
+import { neutralImageName } from '../../lib/anti-detection'
 import { logger } from '../../lib/logger'
 
 interface ImageViewerProps {
@@ -50,7 +51,6 @@ interface ImageViewerProps {
   onCompare?: (image: GalleryImage) => void
 }
 
-const ZOOM_LEVELS = [1.5, 2, 3, 4] as const
 
 /** Shows outer rect = target ratio, inner filled rect = source ratio */
 function AspectRatioIcon({ sourceRatio, targetRatio, active }: { sourceRatio: string; targetRatio: string; active?: boolean }) {
@@ -126,11 +126,8 @@ export function ImageViewer({
   const [aspectRatioGenerating, setAspectRatioGenerating] = useState<string | null>(null)
   const [aspectRatioModel, setAspectRatioModel] = useState<string | null>(null)
   const [showAspectRatioModelPicker, setShowAspectRatioModelPicker] = useState(false)
+  const { generate } = useImageGeneration()
   const removeImage = useGalleryStore((s) => s.removeImage)
-  const addPlaceholder = useGalleryStore((s) => s.addPlaceholder)
-  const updateStatus = useGalleryStore((s) => s.updateStatus)
-  const completeImage = useGalleryStore((s) => s.completeImage)
-  const failImage = useGalleryStore((s) => s.failImage)
   const toggleFavorite = useGalleryStore((s) => s.toggleFavorite)
   const updateTags = useGalleryStore((s) => s.updateTags)
   const allImages = useGalleryStore((s) => s.images)
@@ -237,205 +234,40 @@ export function ImageViewer({
     removeImage(id)
   }
 
-  // Zoom out / outpaint
-  const handleZoomOut = useCallback(async (factor: number) => {
-    if (!image || !image.filePath || !falApiKey || zoomGenerating) return
-    setZoomGenerating(factor)
-    try {
-      // Load base64 from disk
-      const readResult = await window.api.readImage(image.filePath)
-      if (!readResult.success || !readResult.base64DataUrl) throw new Error('Failed to read image')
-
-      // Create zoom-out canvas (image centered on larger black canvas) + compressed reference
-      const { canvas, reference } = await createZoomOutCanvas(readResult.base64DataUrl, factor)
-
-      const prompt = `I have placed the original image centered on a larger black canvas. Fill in the black/empty areas naturally, seamlessly extending the scene outward in all directions. Keep the original center image exactly as-is — do not alter, crop, or re-interpret it. Continue the environment, lighting, colors, perspective, and composition from the edges outward. Original description: "${image.prompt}"`
-
-      const placeholderId = addPlaceholder(
-        `Zoom ${factor}x: ${image.prompt}`,
-        image.aspectRatio,
-        image.resolution,
-        image.model,
-        [image.filePath],
-        image.workspaceId
-      )
-      onClose()
-
-      // Two attachments: canvas (shows layout) + reference (full-quality original)
-      let resolvedAttachments = [canvas, reference]
-      let resolvedLabeled: { label: string; images: string[] }[] = [
-        { label: 'Canvas layout — fill the black areas around the centered image', images: [canvas] },
-        { label: 'Original image (high quality reference)', images: [reference] },
-      ]
-
-
-      const startTime = Date.now()
-      const response = await window.api.generateImage({
-        prompt,
-        model: normalizeModelId(image.model),
-        apiKey: falApiKey,
-        aspectRatio: image.aspectRatio,
-        resolution: image.resolution,
-        count: 1,
-        requestId: crypto.randomUUID(),
-        attachments: resolvedAttachments,
-        labeledAttachments: resolvedLabeled,
-      })
-
-      const durationMs = Date.now() - startTime
-      if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
-        const stored = await prepareForStorage(response.results[0].result.imageBase64, antiDetection)
-        const saveResult = await window.api.saveImage(stored.dataUrl, `${placeholderId}.${stored.extension}`)
-        if (saveResult.success && saveResult.filePath) {
-          completeImage(placeholderId, saveResult.filePath, durationMs, response.results[0].result.cost)
-        } else {
-          failImage(placeholderId, 'Failed to save image')
-        }
-      } else {
-        failImage(placeholderId, response.error || response.results?.[0]?.error || 'Zoom out failed')
-      }
-    } catch (err) {
-      logger.error('ImageViewer', 'Zoom out failed', err)
-    } finally {
-      setZoomGenerating(null)
-    }
-  }, [image, falApiKey, antiDetection, zoomGenerating, addPlaceholder, updateStatus, completeImage, failImage, onClose])
-
-  // Upscale
-  const handleUpscale = useCallback(async (targetResolution: string) => {
-    if (!image || !image.filePath || !falApiKey || upscaleGenerating) return
-    setUpscaleGenerating(targetResolution)
-    try {
-      const readResult = await window.api.readImage(image.filePath)
-      if (!readResult.success || !readResult.base64DataUrl) throw new Error('Failed to read image')
-
-      // Pre-upscale small images so the API produces the requested resolution.
-      // Gemini matches output size to input size — a 1024px input with image_size:"4K"
-      // still returns 1024px. By sending a 2048px+ input, 4K output works reliably.
-      const minDimForTarget = targetResolution === '4K' ? 2048 : 1024
-      const upscaled = await upscaleForApi(readResult.base64DataUrl, minDimForTarget)
-      const compressed = await compressImage(upscaled, 4096, 0.85)
-
-      const prompt = `Recreate this exact image in higher resolution. Preserve every detail precisely — same composition, colors, lighting, textures, subjects, and style. Do not add, remove, or change anything. Simply produce a pixel-perfect higher-resolution version of this exact image. Original description: "${image.prompt}"`
-
-      const placeholderId = addPlaceholder(
-        `Upscale to ${targetResolution}: ${image.prompt}`,
-        image.aspectRatio,
-        targetResolution,
-        upscaleModel,
-        [image.filePath],
-        image.workspaceId
-      )
-      onClose()
-
-      const resolvedAttachments = [compressed]
-      const resolvedLabeled = [
-        { label: 'Original image — recreate this exactly at higher resolution', images: [compressed] },
-      ]
-
-      const startTime = Date.now()
-      const response = await window.api.generateImage({
-        prompt,
-        model: upscaleModel,
-        apiKey: falApiKey,
-        aspectRatio: image.aspectRatio,
-        resolution: targetResolution,
-        count: 1,
-        requestId: crypto.randomUUID(),
-        attachments: resolvedAttachments,
-        labeledAttachments: resolvedLabeled,
-      })
-
-      const durationMs = Date.now() - startTime
-      if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
-        const stored = await prepareForStorage(response.results[0].result.imageBase64, antiDetection)
-        const saveResult = await window.api.saveImage(stored.dataUrl, `${placeholderId}.${stored.extension}`)
-        if (saveResult.success && saveResult.filePath) {
-          completeImage(placeholderId, saveResult.filePath, durationMs, response.results[0].result.cost)
-        } else {
-          failImage(placeholderId, 'Failed to save image')
-        }
-      } else {
-        failImage(placeholderId, response.error || response.results?.[0]?.error || 'Upscale failed')
-      }
-    } catch (err) {
-      logger.error('ImageViewer', 'Upscale failed', err)
-    } finally {
-      setUpscaleGenerating(null)
-    }
-  }, [image, falApiKey, antiDetection, upscaleGenerating, upscaleModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
-
-  const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9'] as const
-  const availableRatios = image ? ASPECT_RATIOS.filter((r) => r !== image.aspectRatio) : []
+  const availableRatios = image ? EDIT_ASPECT_RATIOS.filter((r) => r !== image.aspectRatio) : []
   const effectiveAspectRatioModel = aspectRatioModel ?? normalizeModelId(image?.model)
 
-  // Change aspect ratio / outpaint to new ratio
+  const handleZoomOut = useCallback(async (factor: number) => {
+    if (!image?.filePath || !falApiKey || zoomGenerating) return
+    setZoomGenerating(factor)
+    try {
+      generate(await prepareImageTransform(image, { operation: 'zoom_out', factor }))
+      onClose()
+    } catch (err) { logger.error('ImageViewer', 'Zoom out failed', err) }
+    finally { setZoomGenerating(null) }
+  }, [image, falApiKey, zoomGenerating, generate, onClose])
+
+  const handleUpscale = useCallback(async (targetResolution: string) => {
+    if (!image?.filePath || !falApiKey || upscaleGenerating) return
+    setUpscaleGenerating(targetResolution)
+    try {
+      generate(await prepareImageTransform(image, { operation: 'upscale', resolution: targetResolution, model: upscaleModel }))
+      onClose()
+    } catch (err) { logger.error('ImageViewer', 'Upscale failed', err) }
+    finally { setUpscaleGenerating(null) }
+  }, [image, falApiKey, upscaleGenerating, upscaleModel, generate, onClose])
+
   const handleAspectRatioChange = useCallback(async (targetRatio: string) => {
-    if (!image || !image.filePath || !falApiKey || aspectRatioGenerating) return
+    if (!image?.filePath || !falApiKey || aspectRatioGenerating) return
     setAspectRatioGenerating(targetRatio)
     try {
-      const readResult = await window.api.readImage(image.filePath)
-      if (!readResult.success || !readResult.base64DataUrl) throw new Error('Failed to read image')
-
-      const { canvas, reference } = await createAspectRatioCanvas(readResult.base64DataUrl, targetRatio)
-
-      const prompt = `I have placed the original image centered on a larger canvas with ${targetRatio} aspect ratio. Fill in the black/empty areas naturally, seamlessly extending the scene outward. Keep the original image exactly as-is — do not alter, crop, or re-interpret it. Continue the environment, lighting, colors, perspective, and composition from the edges outward. Original description: "${image.prompt}"`
-
-      const selectedModel = effectiveAspectRatioModel
-      const placeholderId = addPlaceholder(
-        `Aspect ${targetRatio}: ${image.prompt}`,
-        targetRatio,
-        image.resolution,
-        selectedModel,
-        [image.filePath],
-        image.workspaceId
-      )
+      generate(await prepareImageTransform(image, { operation: 'aspect_ratio', aspectRatio: targetRatio, model: effectiveAspectRatioModel }))
       onClose()
+    } catch (err) { logger.error('ImageViewer', 'Aspect ratio change failed', err) }
+    finally { setAspectRatioGenerating(null) }
+  }, [image, falApiKey, aspectRatioGenerating, effectiveAspectRatioModel, generate, onClose])
 
-      const resolvedAttachments = [canvas, reference]
-      const resolvedLabeled: { label: string; images: string[] }[] = [
-        { label: `Canvas layout (${targetRatio}) — fill the black areas around the centered image`, images: [canvas] },
-        { label: 'Original image (high quality reference)', images: [reference] },
-      ]
-
-      const startTime = Date.now()
-      const response = await window.api.generateImage({
-        prompt,
-        model: selectedModel,
-        apiKey: falApiKey,
-        aspectRatio: targetRatio,
-        resolution: image.resolution,
-        count: 1,
-        requestId: crypto.randomUUID(),
-        attachments: resolvedAttachments,
-        labeledAttachments: resolvedLabeled,
-      })
-
-      const durationMs = Date.now() - startTime
-      if (response.success && response.results?.[0]?.status === 'complete' && response.results[0].result?.imageBase64) {
-        const stored = await prepareForStorage(response.results[0].result.imageBase64, antiDetection)
-        const saveResult = await window.api.saveImage(stored.dataUrl, `${placeholderId}.${stored.extension}`)
-        if (saveResult.success && saveResult.filePath) {
-          completeImage(placeholderId, saveResult.filePath, durationMs, response.results[0].result.cost)
-        } else {
-          failImage(placeholderId, 'Failed to save image')
-        }
-      } else {
-        failImage(placeholderId, response.error || response.results?.[0]?.error || 'Aspect ratio change failed')
-      }
-    } catch (err) {
-      logger.error('ImageViewer', 'Aspect ratio change failed', err)
-    } finally {
-      setAspectRatioGenerating(null)
-    }
-  }, [image, falApiKey, antiDetection, aspectRatioGenerating, effectiveAspectRatioModel, addPlaceholder, updateStatus, completeImage, failImage, onClose])
-
-  // Available upscale targets based on original resolution
-  const upscaleTargets = image
-    ? image.resolution === '1K' ? ['2K', '4K']
-      : image.resolution === '2K' ? ['4K']
-      : []
-    : []
+  const upscaleTargets = image ? getUpscaleTargets(image) : []
 
   if (!image) return null
 
@@ -694,8 +526,8 @@ export function ImageViewer({
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setShowUpscaleModelPicker(false)} />
                     <div className="absolute bottom-full left-0 right-0 mb-1 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-1 z-30 animate-scale-in max-h-[200px] overflow-y-auto">
-                      {/* Only models with a resolution parameter can upscale */}
-                      {AVAILABLE_MODELS.filter((m) => m.resolutions).map((m) => (
+                      {/* Models with a larger output size can upscale (including pixel-sized models) */}
+                      {AVAILABLE_MODELS.filter((m) => m.uiResolutions.some((r) => r === '2K' || r === '4K')).map((m) => (
                         <button
                           key={m.id}
                           onClick={() => { setUpscaleModel(m.id); setShowUpscaleModelPicker(false) }}
@@ -754,7 +586,7 @@ export function ImageViewer({
             )}
             {image.cost != null && image.cost > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-[12px] text-text-muted w-20 shrink-0">Cost</span>
+                <span className="text-[12px] text-text-muted w-20 shrink-0">{image.costSource === 'provider-reported' ? 'Cost (USD)' : 'Est. USD'}</span>
                 <div className="flex items-center gap-1.5 text-[12px] text-text-secondary"><DollarSign className="w-3 h-3 text-text-muted" />{image.cost < 0.01 ? `$${image.cost.toFixed(4)}` : `$${image.cost.toFixed(3)}`}</div>
               </div>
             )}
@@ -775,6 +607,21 @@ export function ImageViewer({
               </div>
             )}
           </div>
+
+          {(image.generationOptions || image.generationRequest) && (
+            <details className="rounded-lg border border-border-dim bg-surface-3 p-3">
+              <summary className="cursor-pointer text-[12px] font-medium text-text-secondary">Generation details</summary>
+              <p className="mt-2 text-[11px] text-text-muted">Saved request, including prompt rules and references. Costs use published list prices unless explicitly marked provider-reported.</p>
+              <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all text-[11px] text-text-secondary select-text">{JSON.stringify({
+                options: image.generationOptions,
+                providerRequest: image.generationRequest,
+                requestId: image.requestId,
+                providerRequestId: image.falRequestId,
+                costSource: image.costSource ?? 'Unknown (older result)',
+                costCurrency: image.costCurrency ?? 'USD',
+              }, (_key, value) => typeof value === 'string' && value.startsWith('data:') ? `[Embedded ${value.slice(5, value.indexOf(';'))} reference; ${value.length} characters]` : value, 2)}</pre>
+            </details>
+          )}
 
           {/* Tags */}
           <div className="flex flex-col gap-2">
@@ -815,8 +662,8 @@ export function ImageViewer({
                 imageSrc={displayUrl ?? ''}
                 defaultName={
                   antiDetection
-                    ? neutralImageName(image.type === 'video' ? 'mp4' : image.filePath.split('.').pop()?.toLowerCase() || 'jpg')
-                    : `imagestudio-${Date.now()}.${image.type === 'video' ? 'mp4' : 'png'}`
+                    ? neutralImageName(image.filePath.split('.').pop()?.toLowerCase() || (image.type === 'video' ? 'mp4' : 'jpg'))
+                    : `imagestudio-${Date.now()}.${image.type === 'video' ? image.filePath.split('.').pop()?.toLowerCase() || 'mp4' : 'png'}`
                 }
                 className="flex-1"
                 isVideo={image.type === 'video'}

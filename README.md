@@ -27,6 +27,32 @@ ImageStudio is a native desktop app for macOS and Windows that lets you generate
 
 You bring your own [fal.ai](https://fal.ai) API key — one key for images and video — paying only for what you use. ImageStudio supports five image models, so you can compare results side by side.
 
+## Use ImageStudio from Codex, Claude Code or another AI tool
+
+Open **Settings → AI connection**, enable the local connection and click **Copy setup prompt**. Paste that prompt into your local AI tool. It contains the connection details and instructions for configuring MCP automatically, plus a direct HTTP fallback that can be used immediately if the client needs a new session to load MCP tools. No server script or configuration file needs to be copied by hand.
+
+<img src="docs/screenshot-ai-connection.png" width="800" alt="ImageStudio Settings: local AI connection enabled with Copy setup prompt button" />
+
+ImageStudio remains the running application: agent changes appear in your real gallery, collections and projects. The tools describe the available models, supported parameters, mode rules and input schemas. They can be combined into workflows such as:
+
+1. Find an existing reference collection, or import a local file/direct media URL.
+2. Inspect models and estimate a request; generate images, logos or thumbnails with the app's saved meta-prompts.
+3. Track returned job IDs and view completed images directly through MCP image content.
+4. Use a chosen gallery image as the reference for another generation or as a video's start frame.
+5. Organize and export results, and return local media paths/resource links to the client.
+
+The connection includes gallery management, workspaces (folders), thumbnail projects, collections, presets, meta-prompts, settings, live prompt drafts, image editing, canvas operations, queue and editing chats. `get_draft`, `update_draft` and `generate_draft` work with the actual mounted editor and its Generate action. Import is also available through the app's **Import** button. MCP image responses can display in compatible clients; video resource links and local file paths depend on the client's media support. This is a local desktop connection, so a remote cloud runner cannot reach it through its own `127.0.0.1`.
+
+Keep the app's window open while using the connection. It is disabled by default, binds only to `127.0.0.1` (default port `48765`), and requires its own token. Connection options let you change the port or reset the token to revoke existing connections. Copy a new setup prompt afterwards. Connected clients have control of your library and can incur the same fal.ai generation costs as the app. The provider key is omitted from ordinary discovery/status and can be retrieved only through the explicitly named credential tool.
+
+Costs are local estimates for the retained gallery, not an account balance or provider invoice. Historical durations are estimates, not guaranteed completion times. The local server offers authenticated `GET /health`, `GET /api/tools`, `POST /api/call` and the standard Streamable HTTP MCP endpoint `/mcp`. The same tool implementations serve both transports.
+
+**Development rule:** every new or changed feature must be maintained in both the UI and MCP using shared behavior. See [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md) for the required parity contract.
+
+Connection configuration follows the official [Codex MCP documentation](https://developers.openai.com/codex/mcp) and [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp).
+
+Developers can run `npm run test:automation` for transport, renderer contracts and generation lifecycle tests. `npm run test:automation:app` runs the real Electron app with a disposable profile and an actual MCP client, including URL import, live editor updates and an image → image → video chain with mocked provider responses. Neither suite makes paid provider requests.
+
 ---
 
 ## Download

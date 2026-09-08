@@ -183,6 +183,56 @@ export function useMentionEditor() {
 
   const syncPromptText = useCallback(() => setPromptText(getPromptText()), [getPromptText])
 
+  /** Shared live draft edits preserve real reference chips, including subsequent human typing. */
+  const setDraftContent = useCallback((patch: { prompt?: string; images?: ImageRef[]; collections?: CollectionRef[] }) => {
+    const editor = editorRef.current
+    if (!editor) throw new Error('Prompt editor is not mounted')
+    const text = patch.prompt ?? getPromptText()
+    const nextImages = patch.images ?? imageRefs
+    const nextCollections = patch.collections ?? collectionRefs
+    if (patch.images) setImageRefs(nextImages)
+    if (patch.collections) setCollectionRefs(nextCollections)
+    editor.replaceChildren()
+    const mentioned = new Set<string>()
+    const appendChip = (label: string, id: string, collection: boolean) => {
+      const chip = document.createElement('span')
+      chip.contentEditable = 'false'
+      if (collection) { chip.dataset.collectionRefId = id; mentioned.add(id) }
+      else chip.dataset.imageRefId = id
+      chip.className = 'inline-flex items-center align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-surface-3 border border-border-base text-[12px] font-medium text-text-primary'
+      chip.textContent = label
+      editor.append(chip)
+    }
+    const markers = /\[@([^\]]+)\]|\[([^@\]][^\]]*)\]/g
+    let last = 0
+    for (const match of text.matchAll(markers)) {
+      editor.append(document.createTextNode(text.slice(last, match.index)))
+      const collection = match[1] ? nextCollections.find(ref => ref.name === match[1]) : undefined
+      const image = match[2] ? nextImages.find(ref => ref.name === match[2]) : undefined
+      if (collection) appendChip(`@${collection.name}`, collection.id, true)
+      else if (image) appendChip(image.name, image.id, false)
+      else editor.append(document.createTextNode(match[0]))
+      last = match.index! + match[0].length
+    }
+    editor.append(document.createTextNode(text.slice(last)))
+    for (const collection of nextCollections) {
+      if (mentioned.has(collection.id)) continue
+      editor.append(document.createTextNode(' '))
+      appendChip(`@${collection.name}`, collection.id, true)
+    }
+    setPromptText(Array.from(editor.childNodes).map(node => {
+      if (node instanceof HTMLElement && node.dataset.collectionRefId) {
+        const ref = nextCollections.find(item => item.id === node.dataset.collectionRefId)
+        return ref ? `[@${ref.name}]` : ''
+      }
+      if (node instanceof HTMLElement && node.dataset.imageRefId) {
+        const ref = nextImages.find(item => item.id === node.dataset.imageRefId)
+        return ref ? `[${ref.name}]` : ''
+      }
+      return node.textContent ?? ''
+    }).join('').trim())
+  }, [getPromptText, imageRefs, collectionRefs])
+
   // `getPromptText` changes identity whenever a chip is added or removed, so
   // this also covers chip edits, which happen after their state update lands.
   useEffect(() => {
@@ -360,6 +410,7 @@ export function useMentionEditor() {
     collections,
     promptText,
     syncPromptText,
+    setDraftContent,
     addImageRef,
     removeImageRef,
     removeCollectionRef,

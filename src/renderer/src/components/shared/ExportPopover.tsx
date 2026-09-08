@@ -3,7 +3,7 @@ import { Download, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
 
-type ExportFormat = 'png' | 'jpeg' | 'webp'
+import { convertImage, type ExportFormat } from '../../lib/image-export'
 
 interface ExportPopoverProps {
   imageSrc: string  // file:// URL or base64 data URL
@@ -20,11 +20,6 @@ const FORMAT_LABELS: Record<ExportFormat, string> = {
   webp: 'WebP',
 }
 
-const MIME_TYPES: Record<ExportFormat, string> = {
-  png: 'image/png',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -32,51 +27,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
-function convertImage(
-  src: string,
-  format: ExportFormat,
-  quality: number
-): Promise<{ dataUrl: string; sizeBytes: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = img.naturalWidth
-      canvas.height = img.naturalHeight
-      const ctx = canvas.getContext('2d')
-      if (!ctx) { reject(new Error('Canvas not supported')); return }
-
-      // For JPEG, fill with white background (no transparency)
-      if (format === 'jpeg') {
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-      }
-
-      ctx.drawImage(img, 0, 0)
-
-      const mimeType = MIME_TYPES[format]
-      const q = format === 'png' ? undefined : quality / 100
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) { reject(new Error('Conversion failed')); return }
-          const reader = new FileReader()
-          reader.onload = () => {
-            resolve({
-              dataUrl: reader.result as string,
-              sizeBytes: blob.size,
-            })
-          }
-          reader.readAsDataURL(blob)
-        },
-        mimeType,
-        q
-      )
-    }
-    img.onerror = () => reject(new Error('Failed to load image'))
-    img.src = src
-  })
-}
 
 export function ExportPopover({ imageSrc, defaultName, className, metadata, isVideo, videoFilePath }: ExportPopoverProps) {
   const [open, setOpen] = useState(false)
@@ -170,7 +120,7 @@ export function ExportPopover({ imageSrc, defaultName, className, metadata, isVi
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-surface-3 text-text-secondary hover:bg-surface-4 transition-colors text-[13px] font-medium"
         >
           <Download className="w-3.5 h-3.5" />
-          Save MP4
+          Save {videoFilePath?.split('.').pop()?.toUpperCase() || 'Video'}
         </button>
       </div>
     )

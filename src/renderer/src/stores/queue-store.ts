@@ -8,6 +8,7 @@ export interface QueueItem {
   prompt: string
   negativePrompt?: string
   seed?: number
+  quality?: string
   aspectRatio: string
   resolution: string
   models: string[]

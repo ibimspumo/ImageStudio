@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, Crop, Check } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { cropReference } from '../../lib/image-editing'
 
 interface CropRect {
   x: number
@@ -232,18 +233,7 @@ export function CropModal({ imageSrc, sourceImageId, onCrop, onClose }: CropModa
     const sw = Math.round(crop.w * scaleX)
     const sh = Math.round(crop.h * scaleY)
 
-    const maxDim = 1000
-    const longestSide = Math.max(sw, sh)
-    const outputScale = longestSide > maxDim ? maxDim / longestSide : 1
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(sw * outputScale)
-    canvas.height = Math.round(sh * outputScale)
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
-
-    const base64 = canvas.toDataURL('image/jpeg', 0.75)
+    const base64 = cropReference(img, { x: sx, y: sy, width: Math.min(sw, img.naturalWidth - sx), height: Math.min(sh, img.naturalHeight - sy) })
     onCrop(base64, sourceImageId)
   }, [crop, imgRect, naturalDims, sourceImageId, onCrop])
 

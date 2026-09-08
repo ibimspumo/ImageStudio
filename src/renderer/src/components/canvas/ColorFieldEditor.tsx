@@ -20,23 +20,28 @@ interface ColorFieldEditorProps {
   onChange: (value: string) => void
   attachments: string[]
   onAttachmentsChange: (attachments: string[]) => void
-  /** Called whenever the set of mentioned collections changes */
-  onCollectionsChange?: (collections: CollectionMention[]) => void
+  collectionMentions: CollectionMention[]
+  /** Shared with automation so switching modes does not discard references. */
+  onCollectionsChange: (collections: CollectionMention[]) => void
 }
 
-export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attachments, onAttachmentsChange, onCollectionsChange }: ColorFieldEditorProps) {
+export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attachments, onAttachmentsChange, collectionMentions, onCollectionsChange }: ColorFieldEditorProps) {
   const [showMentionPopup, setShowMentionPopup] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
-  const [collectionMentions, setCollectionMentions] = useState<CollectionMention[]>([])
+  const setCollectionMentions = useCallback((update: (previous: CollectionMention[]) => CollectionMention[]) => {
+    const next = update(collectionMentions)
+    if (next !== collectionMentions) onCollectionsChange(next)
+  }, [collectionMentions, onCollectionsChange])
   const editorRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const collections = useCollectionsStore((s) => s.collections)
 
-  // Notify parent when collections change
+  // External edits and reopened panels must display the shared description.
   useEffect(() => {
-    onCollectionsChange?.(collectionMentions)
-  }, [collectionMentions, onCollectionsChange])
+    const editor = editorRef.current
+    if (editor && editor.textContent?.trim() !== value.trim()) editor.textContent = value
+  }, [value])
 
   const getTextContent = useCallback((): string => {
     const editor = editorRef.current
@@ -47,19 +52,6 @@ export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attac
   const handleInput = useCallback(() => {
     const text = getTextContent()
     onChange(text)
-
-    // Sync collection mentions with DOM chips
-    const editor = editorRef.current
-    if (editor) {
-      const chipIds = new Set(
-        Array.from(editor.querySelectorAll('[data-collection-id]'))
-          .map((el) => (el as HTMLElement).dataset.collectionId)
-      )
-      setCollectionMentions((prev) => {
-        const filtered = prev.filter((m) => chipIds.has(m.collectionId))
-        return filtered.length !== prev.length ? filtered : prev
-      })
-    }
 
     // Check for @mention trigger
     const sel = window.getSelection()
@@ -151,10 +143,16 @@ export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attac
     chip.dataset.collectionId = collection.id
     chip.className = 'inline-flex items-center gap-1 align-middle mx-0.5 px-1.5 py-0.5 rounded-md bg-accent-dim border border-accent-main/30 text-[12px] font-medium text-text-primary cursor-default select-none'
     const thumbnail = collection.images[0] || ''
-    const thumbnailHtml = thumbnail
-      ? `<img src="${toDisplayUrl(thumbnail)}" class="w-4 h-4 rounded object-cover inline-block align-middle" />`
-      : '<span class="inline-flex w-4 h-4 items-center justify-center"><svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>'
-    chip.innerHTML = `${thumbnailHtml}<span class="align-middle">@${collection.name}</span>`
+    if (thumbnail) {
+      const image = document.createElement('img')
+      image.src = toDisplayUrl(thumbnail)
+      image.className = 'w-4 h-4 rounded object-cover inline-block align-middle'
+      chip.appendChild(image)
+    }
+    const label = document.createElement('span')
+    label.className = 'align-middle'
+    label.textContent = `@${collection.name}`
+    chip.appendChild(label)
 
     range.deleteContents()
     range.insertNode(chip)
@@ -170,7 +168,7 @@ export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attac
     onChange(getTextContent())
     setShowMentionPopup(false)
     setMentionFilter('')
-  }, [getTextContent, onChange])
+  }, [getTextContent, onChange, setCollectionMentions])
 
   return (
     <div className="flex items-start gap-2 relative">
@@ -184,6 +182,17 @@ export function ColorFieldEditor({ colorHex, placeholder, value, onChange, attac
 
       <div className="flex-1 min-w-0">
         <div className="bg-surface-3 border border-border-dim rounded-lg overflow-hidden focus-within:border-border-base transition-colors">
+          {collectionMentions.length > 0 && (
+            <div className="flex gap-1.5 px-2.5 pt-2 flex-wrap">
+              {collectionMentions.map((mention) => (
+                <button key={mention.collectionId} title="Remove collection reference"
+                  className="text-[11px] rounded bg-accent-dim px-1.5 py-0.5 text-text-secondary"
+                  onClick={() => onCollectionsChange(collectionMentions.filter((item) => item.collectionId !== mention.collectionId))}>
+                  @{mention.name} ×
+                </button>
+              ))}
+            </div>
+          )}
           {/* Attachment thumbnails */}
           {attachments.length > 0 && (
             <div className="flex gap-1.5 px-2.5 pt-2.5 flex-wrap">

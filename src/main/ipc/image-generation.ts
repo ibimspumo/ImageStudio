@@ -38,8 +38,8 @@ export function registerImageGenerationHandlers(): void {
           activeControllers.set(itemId, controller)
 
           try {
-            const results = await generateImage(genRequest, controller.signal, (status) =>
-              send(i, { status: 'progress', message: status })
+            const results = await generateImage(genRequest, controller.signal, (status, falRequestId) =>
+              send(i, { status: 'progress', message: status, falRequestId })
             )
 
             const first = results[0]

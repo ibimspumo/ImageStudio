@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
-import type { AspectRatio } from '../types/api'
+import { DEFAULT_MODEL, type AspectRatio, type Resolution } from '../types/api'
 
 export interface CanvasLayer {
   id: string
@@ -16,6 +16,12 @@ export interface ColorMapping {
   color: string
   description: string
   attachments: string[]
+}
+
+export interface CanvasCollectionMention {
+  collectionId: string
+  name: string
+  images: string[]
 }
 
 interface CanvasState {
@@ -40,6 +46,16 @@ interface CanvasState {
   mode: CanvasMode
   colorMappings: ColorMapping[]
   generalPrompt: string
+  expertModels: string[]
+  expertResolution: Resolution
+  expertImageCount: number
+  generalAttachments: string[]
+  collectionsByField: Record<string, CanvasCollectionMention[]>
+  setExpertModels: (models: string[]) => void
+  setExpertResolution: (resolution: Resolution) => void
+  setExpertImageCount: (count: number) => void
+  setGeneralAttachments: (attachments: string[]) => void
+  setFieldCollections: (field: string, collections: CanvasCollectionMention[]) => void
 
   open: () => void
   close: () => void
@@ -110,6 +126,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   mode: 'simple',
   colorMappings: [],
   generalPrompt: '',
+  expertModels: [DEFAULT_MODEL],
+  expertResolution: '2K',
+  expertImageCount: 1,
+  generalAttachments: [],
+  collectionsByField: {},
+  setExpertModels: (expertModels) => set({ expertModels }),
+  setExpertResolution: (expertResolution) => set({ expertResolution }),
+  setExpertImageCount: (expertImageCount) => set({ expertImageCount }),
+  setGeneralAttachments: (generalAttachments) => set({ generalAttachments }),
+  setFieldCollections: (field, collections) => set({ collectionsByField: { ...get().collectionsByField, [field]: collections } }),
 
   open: () => set({ isOpen: true }),
   close: () => set({ isOpen: false }),
@@ -217,6 +243,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       redoStackSize: 0,
       colorMappings: [],
       generalPrompt: '',
+      generalAttachments: [],
+      collectionsByField: {},
     })
   },
 }))

@@ -1,17 +1,15 @@
-import { useState, useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import { RefreshCw, Send, Sparkles } from 'lucide-react'
 import { useCanvasStore } from '../../stores/canvas-store'
 import { useSharedCanvasRenderer } from './CanvasRendererContext'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
 import { useSettingsStore } from '../../stores/settings-store'
-import { nanoid } from 'nanoid'
-import { compressImage, collectionImagesAsBase64 } from '../../lib/image-utils'
-import { getCombinedCapabilities, DEFAULT_MODEL } from '../../types/api'
+import { buildCanvasExpertRequest } from '../../lib/canvas-generation'
+import { getCombinedCapabilities } from '../../types/api'
 import { ColorFieldEditor, type CollectionMention } from './ColorFieldEditor'
 import { ModelSelector } from '../input/ModelSelector'
 import { ResolutionSelector } from '../input/ResolutionSelector'
 import { ImageCountSelector } from '../input/ImageCountSelector'
-import type { Resolution } from '../../types/api'
 import { cn } from '../../lib/utils'
 
 export function ExpertModePanel() {
@@ -25,13 +23,16 @@ export function ExpertModePanel() {
   const customRatio = useCanvasStore((s) => s.customRatio)
   const close = useCanvasStore((s) => s.close)
 
-  const [selectedModels, setSelectedModels] = useState<string[]>([DEFAULT_MODEL])
-  const [resolution, setResolution] = useState<Resolution>('2K')
-  const [imageCount, setImageCount] = useState(1)
-  const [generalAttachments, setGeneralAttachments] = useState<string[]>([])
-
-  // Collection mentions from all fields, keyed by source (color hex or '__general__')
-  const collectionsByFieldRef = useRef<Map<string, CollectionMention[]>>(new Map())
+  const selectedModels = useCanvasStore((s) => s.expertModels)
+  const setSelectedModels = useCanvasStore((s) => s.setExpertModels)
+  const resolution = useCanvasStore((s) => s.expertResolution)
+  const setResolution = useCanvasStore((s) => s.setExpertResolution)
+  const imageCount = useCanvasStore((s) => s.expertImageCount)
+  const setImageCount = useCanvasStore((s) => s.setExpertImageCount)
+  const generalAttachments = useCanvasStore((s) => s.generalAttachments)
+  const setGeneralAttachments = useCanvasStore((s) => s.setGeneralAttachments)
+  const collectionsByField = useCanvasStore((s) => s.collectionsByField)
+  const setFieldCollections = useCanvasStore((s) => s.setFieldCollections)
 
   const { detectColors, exportComposite } = useSharedCanvasRenderer()
   const { generate } = useImageGeneration()
@@ -46,8 +47,8 @@ export function ExpertModePanel() {
   }, [detectColors, colorMappings, setColorMappings])
 
   const handleCollectionsChange = useCallback((fieldKey: string, collections: CollectionMention[]) => {
-    collectionsByFieldRef.current.set(fieldKey, collections)
-  }, [])
+    setFieldCollections(fieldKey, collections)
+  }, [setFieldCollections])
 
   const handleSubmit = useCallback(async () => {
     if (!falApiKey) return
@@ -55,115 +56,12 @@ export function ExpertModePanel() {
     const canvasBase64 = exportComposite()
     if (!canvasBase64) return
 
-    const compressedCanvas = await compressImage(canvasBase64, 2048, 0.85)
-
-    // Save sketch to disk for compare functionality
-    let canvasSketchPath: string | undefined
-    try {
-      const sketchFilename = `canvas-sketch-${nanoid()}.png`
-      const saveResult = await window.api.saveImage(canvasBase64, sketchFilename)
-      if (saveResult.success && saveResult.filePath) {
-        canvasSketchPath = saveResult.filePath
-      }
-    } catch (err) {
-      console.error('Failed to save canvas sketch for compare', err)
-    }
-
-    // Build color map text
-    const colorDescriptions = colorMappings
-      .filter((m) => m.description.trim())
-      .map((m) => `- ${m.color} regions: "${m.description}"`)
-      .join('\n')
-
-    // Build prompt
-    const promptParts: string[] = []
-    promptParts.push('Generate an image based on the attached color-coded sketch.')
-    if (colorDescriptions) {
-      promptParts.push(`\nColor map:\n${colorDescriptions}`)
-    }
-    if (generalPrompt.trim()) {
-      promptParts.push(`\nGeneral description: ${generalPrompt.trim()}`)
-    }
-    promptParts.push('\nEach color in the sketch represents a different element. Create a cohesive, detailed, high-quality image that follows the composition and layout of the sketch.')
-    const apiPrompt = promptParts.join('')
-
-    // Build display prompt (shorter, for gallery)
-    const displayPrompt = generalPrompt.trim() || colorMappings.filter((m) => m.description.trim()).map((m) => m.description).join(', ') || 'Canvas sketch'
-
-    // Build labeled attachments
-    const attachments: string[] = [compressedCanvas]
-    const labeledAttachments: { label: string; images: string[] }[] = [
-      { label: 'Color-coded reference sketch — each color represents a different element as described in the prompt', images: [compressedCanvas] },
-    ]
-
-    // Add color-specific reference images (file uploads)
-    for (const mapping of colorMappings) {
-      if (mapping.attachments.length > 0 && mapping.description.trim()) {
-        for (const att of mapping.attachments) {
-          const compressed = await compressImage(att, 2048, 0.85)
-          attachments.push(compressed)
-          labeledAttachments.push({
-            label: `Visual reference for ${mapping.color} regions (${mapping.description})`,
-            images: [compressed],
-          })
-        }
-      }
-    }
-
-    // Add general attachments (file uploads)
-    for (const att of generalAttachments) {
-      const compressed = await compressImage(att, 2048, 0.85)
-      attachments.push(compressed)
-      labeledAttachments.push({
-        label: 'Additional visual reference',
-        images: [compressed],
-      })
-    }
-
-    // Deduplicate collection mentions across ALL fields by collectionId
-    const seenCollectionIds = new Set<string>()
-    const uniqueCollections: { mention: CollectionMention; context: string }[] = []
-
-    for (const [fieldKey, mentions] of collectionsByFieldRef.current.entries()) {
-      for (const mention of mentions) {
-        if (!seenCollectionIds.has(mention.collectionId)) {
-          seenCollectionIds.add(mention.collectionId)
-          // Determine context label
-          const colorMapping = colorMappings.find((m) => m.color === fieldKey)
-          const context = colorMapping
-            ? `referenced for ${fieldKey} regions (${colorMapping.description || fieldKey})`
-            : 'general reference'
-          uniqueCollections.push({ mention, context })
-        }
-      }
-    }
-
-    // Process unique collections and add as labeled attachments (each collection only once)
-    for (const { mention, context } of uniqueCollections) {
-      const images = await collectionImagesAsBase64(mention.images)
-      attachments.push(...images)
-      labeledAttachments.push({
-        label: `Collection "@${mention.name}" (${images.length} image${images.length === 1 ? '' : 's'}) — ${context}`,
-        images,
-      })
-    }
-
-    const resolvedAspectRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
-
-    generate({
-      prompt: `Canvas: ${displayPrompt}`,
-      apiPrompt,
-      aspectRatio: resolvedAspectRatio,
-      resolution,
-      imageCount,
-      attachments,
-      labeledAttachments,
-      models: selectedModels,
-      canvasSketchPath,
-    })
+    const options = await buildCanvasExpertRequest({ canvasBase64, colorMappings, generalPrompt,
+      generalAttachments, collectionsByField, aspectRatio, customRatio, resolution, imageCount, selectedModels })
+    generate(options)
 
     close()
-  }, [falApiKey, exportComposite, colorMappings, generalPrompt, generalAttachments, aspectRatio, customRatio, resolution, imageCount, selectedModels, generate, close])
+  }, [falApiKey, exportComposite, colorMappings, generalPrompt, generalAttachments, collectionsByField, aspectRatio, customRatio, resolution, imageCount, selectedModels, generate, close])
 
   const hasColorDescriptions = colorMappings.some((m) => m.description.trim())
   const canSend = !!falApiKey && (!!generalPrompt.trim() || hasColorDescriptions)
@@ -201,6 +99,7 @@ export function ExpertModePanel() {
                 placeholder={`What does ${mapping.color} represent?`}
                 value={mapping.description}
                 onChange={(v) => updateColorDescription(mapping.color, v)}
+                collectionMentions={collectionsByField[mapping.color] ?? []}
                 attachments={mapping.attachments}
                 onAttachmentsChange={(atts) => updateColorAttachments(mapping.color, atts)}
                 onCollectionsChange={(cols) => handleCollectionsChange(mapping.color, cols)}
@@ -223,6 +122,7 @@ export function ExpertModePanel() {
             placeholder="Overall scene description..."
             value={generalPrompt}
             onChange={setGeneralPrompt}
+            collectionMentions={collectionsByField.__general__ ?? []}
             attachments={generalAttachments}
             onAttachmentsChange={setGeneralAttachments}
             onCollectionsChange={(cols) => handleCollectionsChange('__general__', cols)}

@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid'
 import { debounce } from '../lib/debounce'
 import { logger } from '../lib/logger'
 import { getResolutionLabel } from '../lib/image-utils'
+import type { GenerateOptions } from '../hooks/useImageGeneration'
+import type { VideoGenerateOptions } from '../hooks/useVideoGeneration'
 
 export interface GalleryImage {
   id: string
@@ -18,6 +20,7 @@ export interface GalleryImage {
   attachments?: string[]       // file paths of reference images
   parentImageId?: string
   chatId?: string
+  chatMessageId?: string
   workspaceId?: string
   cost?: number
   statusText?: string           // shown on loading skeleton (e.g. "Uploading images...")
@@ -41,7 +44,19 @@ export interface GalleryImage {
   type?: 'image' | 'video'     // default 'image' for backwards compat
   videoDuration?: number        // video length in seconds
   videoThumbnailPath?: string   // path to extracted first-frame JPEG
-  falRequestId?: string         // fal.ai queue tracking
+  requestId?: string            // local batch ID used for progress and cancellation
+  falRequestId?: string         // provider queue request ID
+  cancelRequested?: boolean
+  cancelled?: boolean
+  progressPercent?: number     // stage estimate, not provider completion percentage
+  completedAt?: number
+  costCurrency?: 'USD'
+  costSource?: 'list-price-estimate' | 'provider-reported'
+  /** Immutable submitted options, never includes credentials. */
+  generationOptions?: GenerateOptions | VideoGenerateOptions
+  /** Exact normalized provider payload, including composed prompt and reference rules. */
+  generationRequest?: { endpoint: string; input: Record<string, unknown> }
+
 }
 
 /**
@@ -78,8 +93,9 @@ export function toDisplayUrl(filePath: string): string {
 
 interface GalleryStore {
   images: GalleryImage[]
-  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: { negativePrompt?: string; seed?: number; inpaintSourceId?: string; canvasSketchPath?: string; projectId?: string; thumbnailStyle?: string; faceFidelity?: boolean; isLogo?: boolean; logoStyle?: string; hasAlpha?: boolean }) => string
-  addVideoPlaceholder: (prompt: string, aspectRatio: string, model: string, attachments?: string[], workspaceId?: string) => string
+  addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: Partial<GalleryImage>) => string
+  addVideoPlaceholder: (prompt: string, aspectRatio: string, model: string, attachments?: string[], workspaceId?: string, extra?: Partial<GalleryImage>) => string
+  updateMetadata: (id: string, metadata: Partial<Pick<GalleryImage, 'requestId' | 'falRequestId' | 'cancelRequested' | 'cancelled' | 'generationOptions' | 'generationRequest' | 'seed' | 'progressPercent' | 'costCurrency' | 'costSource'>>) => void
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
   completeVideo: (id: string, filePath: string, durationMs: number, videoDuration: number, thumbnailPath?: string, cost?: number) => void
   updateStatus: (id: string, statusText: string | undefined) => void
@@ -117,16 +133,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           model,
           attachments,
           workspaceId,
-          negativePrompt: extra?.negativePrompt,
-          seed: extra?.seed,
-          inpaintSourceId: extra?.inpaintSourceId,
-          canvasSketchPath: extra?.canvasSketchPath,
-          projectId: extra?.projectId,
-          thumbnailStyle: extra?.thumbnailStyle,
-          faceFidelity: extra?.faceFidelity,
-          isLogo: extra?.isLogo,
-          logoStyle: extra?.logoStyle,
-          hasAlpha: extra?.hasAlpha,
+          ...extra,
         },
         ...state.images,
       ],
@@ -134,7 +141,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     return id
   },
 
-  addVideoPlaceholder: (prompt, aspectRatio, model, attachments, workspaceId) => {
+  addVideoPlaceholder: (prompt, aspectRatio, model, attachments, workspaceId, extra) => {
     const id = nanoid()
     set((state) => ({
       images: [
@@ -151,6 +158,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           workspaceId,
           type: 'video',
           statusText: 'Queued...',
+          ...extra,
         },
         ...state.images,
       ],
@@ -158,11 +166,16 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     return id
   },
 
+  updateMetadata: (id, metadata) => {
+    set((state) => ({ images: state.images.map((img) => img.id === id ? { ...img, ...metadata } : img) }))
+    debouncedPersist(get().persistToDisk)
+  },
+
   completeVideo: (id, filePath, durationMs, videoDuration, thumbnailPath, cost) => {
     set((state) => ({
       images: state.images.map((img) =>
         img.id === id
-          ? { ...img, filePath, isLoading: false, durationMs, videoDuration, videoThumbnailPath: thumbnailPath, statusText: undefined, ...(cost != null ? { cost } : {}) }
+          ? { ...img, filePath, isLoading: false, error: undefined, cancelRequested: false, cancelled: false, completedAt: Date.now(), durationMs, videoDuration, videoThumbnailPath: thumbnailPath, statusText: undefined, ...(cost != null ? { cost } : {}) }
           : img
       ),
     }))
@@ -172,7 +185,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
   updateStatus: (id, statusText) => {
     set((state) => ({
       images: state.images.map((img) =>
-        img.id === id ? { ...img, statusText } : img
+        img.id === id && img.isLoading ? { ...img, statusText } : img
       ),
     }))
   },
@@ -180,7 +193,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
   completeImage: (id, filePath, durationMs, cost) => {
     set((state) => ({
       images: state.images.map((img) =>
-        img.id === id ? { ...img, filePath, isLoading: false, durationMs, cost } : img
+        img.id === id ? { ...img, filePath, isLoading: false, error: undefined, statusText: undefined, cancelRequested: false, cancelled: false, completedAt: Date.now(), durationMs, cost } : img
       ),
     }))
     debouncedPersist(get().persistToDisk)
@@ -189,7 +202,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
   failImage: (id, error) => {
     set((state) => ({
       images: state.images.map((img) =>
-        img.id === id ? { ...img, isLoading: false, error } : img
+        img.id === id && img.isLoading ? { ...img, isLoading: false, error, statusText: undefined, completedAt: Date.now(), durationMs: Date.now() - img.timestamp, cancelled: error === 'Cancelled', cancelRequested: false } : img
       ),
     }))
   },
@@ -281,7 +294,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
           setTimeout(() => {
             const { images, updateResolution } = get()
             for (const img of images) {
-              if (!img.filePath || img.filePath.startsWith('data:')) continue
+              if (!img.filePath || img.filePath.startsWith('data:') || img.type === 'video') continue
               const imgEl = new window.Image()
               imgEl.onload = () => {
                 const actualRes = getResolutionLabel(imgEl.naturalWidth, imgEl.naturalHeight)

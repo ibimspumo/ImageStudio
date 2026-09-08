@@ -1,4 +1,5 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useLayoutEffect } from 'react'
+import { registerCanvasRenderer } from '../../lib/canvas-automation'
 import { useCanvasRenderer } from '../../hooks/useCanvasRenderer'
 
 type CanvasRendererValue = ReturnType<typeof useCanvasRenderer>
@@ -7,6 +8,7 @@ const CanvasRendererContext = createContext<CanvasRendererValue | null>(null)
 
 export function CanvasRendererProvider({ children }: { children: React.ReactNode }) {
   const renderer = useCanvasRenderer()
+  useLayoutEffect(() => registerCanvasRenderer(renderer), [renderer])
   return (
     <CanvasRendererContext.Provider value={renderer}>
       {children}

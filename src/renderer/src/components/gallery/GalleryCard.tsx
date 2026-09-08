@@ -8,6 +8,7 @@ import { useSettingsStore } from '../../stores/settings-store'
 import { cn } from '../../lib/utils'
 import { logger } from '../../lib/logger'
 import { neutralImageName } from '../../lib/anti-detection'
+import { cancelImageJob } from '../../hooks/useImageGeneration'
 
 interface GalleryCardProps {
   image: GalleryImage
@@ -30,6 +31,7 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
   const isThumbnailMode = !!onPreviewThumbnail
   const [showMoveMenu, setShowMoveMenu] = useState(false)
   const [moveQuery, setMoveQuery] = useState('')
+  const [cancelError, setCancelError] = useState('')
   const recentProjectIds = useUiRecentsStore((s) => s.recentProjectIds)
   const recentWorkspaceIds = useUiRecentsStore((s) => s.recentWorkspaceIds)
   const bumpProject = useUiRecentsStore((s) => s.bumpProject)
@@ -55,6 +57,19 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
   if (image.isLoading) {
     return (
       <div className="skeleton w-full h-full rounded-2xl relative">
+        {!isVideo && image.requestId && (
+          <button
+            className="absolute top-2 right-2 z-10 rounded-lg bg-surface-2 px-2 py-1 text-[11px] text-text-secondary hover:text-danger disabled:opacity-50"
+            title="Cancel all unfinished images in this model batch. Already completed images are kept. Provider charges may still apply."
+            disabled={image.cancelRequested}
+            onClick={(event) => {
+              event.stopPropagation()
+              setCancelError('')
+              void cancelImageJob(image.id).catch((error) => setCancelError(error instanceof Error ? error.message : 'Cancellation failed'))
+            }}
+          >{image.cancelRequested ? 'Cancelling…' : 'Cancel batch'}</button>
+        )}
+        {cancelError && <p role="alert" className="absolute bottom-2 inset-x-2 text-[11px] text-danger">{cancelError}</p>}
         {image.statusText && (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-[11px] font-medium text-text-muted/80 bg-surface-1/60 backdrop-blur-sm px-3 py-1.5 rounded-lg">
@@ -86,7 +101,8 @@ export const GalleryCard = memo(function GalleryCard({ image, onClick, onStartCh
     const filePath = image.filePath
     try {
       if (isVideo) {
-        const name = antiDetection ? neutralImageName('mp4') : `imagestudio-${image.id}.mp4`
+        const extension = filePath.split('.').pop()?.toLowerCase() || 'mp4'
+        const name = antiDetection ? neutralImageName(extension) : `imagestudio-${image.id}.${extension}`
         await window.api.exportVideo(filePath, name)
       } else {
         const result = await window.api.readImage(filePath)

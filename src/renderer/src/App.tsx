@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useAutomationBridge } from './automation/useAutomationBridge'
 import { useSettingsStore } from './stores/settings-store'
 import { useGalleryStore, type GalleryImage, toDisplayUrl } from './stores/gallery-store'
 import { useCollectionsStore } from './stores/collections-store'
@@ -50,6 +51,8 @@ export default function App() {
   const loadThumbnailMetaPrompts = useThumbnailMetaPromptsStore((s) => s.loadFromDisk)
   const loadUiRecents = useUiRecentsStore((s) => s.loadFromDisk)
   const queuePendingCount = useQueueStore((s) => s.items.filter(i => i.status === 'pending').length)
+  const hydrationPromise = useRef<Promise<void> | null>(null)
+  const [automationReady, setAutomationReady] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showCollections, setShowCollections] = useState(false)
   const [viewerState, setViewerState] = useState<ViewerState | null>(null)
@@ -74,19 +77,17 @@ export default function App() {
   const setPendingReuse = useCropStore((s) => s.setPendingReuse)
 
   useEffect(() => {
-    // Run migration first, then load stores
-    window.api.migrate().catch(() => {}).finally(() => {
-      hydrate()
-      loadGallery()
-      loadCollections()
-      loadChats()
-      loadWorkspaces()
-      loadPresets()
-      loadQueue()
-      loadThumbnailProjects()
-      loadThumbnailMetaPrompts()
-      loadUiRecents()
+    let cancelled = false
+    // Automation must not race startup hydration and overwrite persisted data.
+    hydrationPromise.current ??= window.api.migrate().catch(() => {}).then(async () => {
+      await Promise.all([hydrate(), loadGallery(), loadCollections(), loadChats(),
+        loadWorkspaces(), loadPresets(), loadQueue(), loadThumbnailProjects(),
+        loadThumbnailMetaPrompts(), loadUiRecents()])
     })
+    void hydrationPromise.current.then(() => {
+      if (!cancelled) setAutomationReady(true)
+    })
+    return () => { cancelled = true }
   }, [hydrate, loadGallery, loadCollections, loadChats, loadWorkspaces, loadPresets, loadQueue, loadThumbnailProjects, loadThumbnailMetaPrompts, loadUiRecents])
 
   const falApiKey = useSettingsStore((s) => s.falApiKey)
@@ -216,6 +217,40 @@ export default function App() {
     addPendingRef(croppedBase64, sourceImageId)
     setCropState(null)
   }
+
+  useAutomationBridge(automationReady, {
+    getView: () => ({ mode: appMode, viewerImageId: viewerState?.images[viewerState.index]?.id, chatId: activeChatId, settingsOpen: showSettings, collectionsOpen: showCollections, presetsOpen: showPresets, queueOpen: showQueue, canvasOpen: showCanvas, cropImageId: cropState?.imageId, inpaintImageId: inpaintState?.id, thumbnailPreviewImageId: thumbnailPreview?.images[thumbnailPreview.index]?.id }),
+    navigate: (target, id) => {
+      if (['image', 'logo', 'thumbnail', 'video'].includes(target)) setAppMode(target as AppMode)
+      else if (target === 'settings') setShowSettings(true)
+      else if (target === 'collections') setShowCollections(true)
+      else if (target === 'presets') setShowPresets(true)
+      else if (target === 'queue') setShowQueue(true)
+      else if (target === 'canvas') openCanvas()
+      else if (target === 'close_panels') {
+        setShowSettings(false); setShowCollections(false); setShowPresets(false); setShowQueue(false)
+        setViewerState(null); setActiveChatId(null); setCropState(null); setInpaintState(null)
+        setCompareState(null); setThumbnailPreview(null); useCanvasStore.getState().close()
+      }
+      else if (['crop', 'inpaint', 'compare', 'reuse_prompt'].includes(target) && id) {
+        const image = useGalleryStore.getState().images.find(image => image.id === id)
+        if (!image || !image.filePath || image.type === 'video') throw new Error('A completed image is required')
+        if (target === 'crop') handleCropImage(image.id, image.filePath)
+        if (target === 'inpaint') handleInpaint(image.id, image.filePath)
+        if (target === 'compare') handleCompare(image)
+        if (target === 'reuse_prompt') handleReusePrompt(image)
+      }
+      else if (target === 'chat' && id) handleOpenChat(id)
+      else if ((target === 'viewer' || target === 'thumbnail_preview') && id) {
+        const images = useGalleryStore.getState().images
+        const index = images.findIndex(image => image.id === id)
+        if (index >= 0) {
+          if (target === 'viewer') setViewerState({ images, index })
+          else setThumbnailPreview({ images, index })
+        }
+      }
+    },
+  })
 
   useKeyboardShortcuts({
     showShortcutsHelp: () => setShowShortcutsHelp(prev => !prev),

@@ -4,7 +4,7 @@ import { useGalleryStore, type GalleryImage, toDisplayUrl } from '../../stores/g
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
 import { ThumbnailFrame, type FrameChecks } from './ThumbnailFrame'
 import { useSettingsStore } from '../../stores/settings-store'
-import { renderYouTubeThumbnail } from '../../lib/image-utils'
+import { renderThumbnailExport } from '../../lib/image-export'
 import { neutralImageName } from '../../lib/anti-detection'
 import { logger } from '../../lib/logger'
 import { cn } from '../../lib/utils'
@@ -70,12 +70,7 @@ export function ThumbnailPreviewModal({ images, index, onNavigate, onClose }: Th
       const read = await window.api.readImage(image.filePath)
       if (!read.success || !read.base64DataUrl) throw new Error('Bild konnte nicht gelesen werden')
 
-      // YouTube rejects files over 2 MB, so step the quality down until it fits.
-      let rendered = await renderYouTubeThumbnail(read.base64DataUrl, 0.92)
-      for (const q of [0.85, 0.78, 0.7]) {
-        if (rendered.bytes <= 2_000_000) break
-        rendered = await renderYouTubeThumbnail(read.base64DataUrl, q)
-      }
+      const rendered = await renderThumbnailExport(read.base64DataUrl)
 
       // The project title is the user's own wording and gives nothing away; the
       // generic fallback does, so with anti-detection on it becomes a neutral name.

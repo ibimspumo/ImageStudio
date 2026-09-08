@@ -14,12 +14,14 @@ import {
   type LabeledAttachment,
 } from '../types/api'
 
-interface GenerateOptions {
+export interface GenerateOptions {
   prompt: string
   apiPrompt?: string  // if different from prompt, send this to the API
   aspectRatio: string
   resolution: string
   imageCount: number
+  /** Explicit destination for automation; null means unfiled. */
+  workspaceId?: string | null
   attachments?: string[]
   labeledAttachments?: LabeledAttachment[]
   models: string[]
@@ -83,33 +85,76 @@ async function uploadReferences(
   }))
 }
 
+// Shared between the gallery Cancel button and MCP. A request contains one model's
+// images; cancelling it affects every still-active image in that same batch.
+const activeImageRequests = new Map<string, { cancelled: boolean; submitted: boolean }>()
+
+export async function cancelImageJob(id: string): Promise<{ requestId: string; affectedIds: string[]; cancellationRequested: boolean }> {
+  const store = useGalleryStore.getState()
+  const image = store.images.find((item) => item.id === id)
+  if (!image) throw new Error(`Image job not found: ${id}`)
+  if (image.type === 'video') throw new Error('Video cancellation is not supported by the current provider pipeline.')
+  if (!image.requestId) throw new Error('This job has no cancellable generation request.')
+  const requestId = image.requestId
+  const affectedIds = store.images.filter((item) => item.requestId === requestId && item.isLoading).map((item) => item.id)
+  if (!affectedIds.length) return { requestId, affectedIds, cancellationRequested: false }
+  const active = activeImageRequests.get(requestId)
+  if (!active) throw new Error('This request is no longer active in the current app session.')
+  active.cancelled = true
+  for (const imageId of affectedIds) {
+    store.updateMetadata(imageId, { cancelRequested: true })
+    store.updateStatus(imageId, 'Cancellation requested…')
+  }
+  if (!active.submitted) {
+    for (const imageId of affectedIds) store.failImage(imageId, 'Cancelled')
+  } else {
+    // Do not mark failed here: a completed response may already be in flight.
+    // The authoritative provider response determines which images were cancelled.
+    try {
+      const result = await window.api.cancelImageGeneration(requestId)
+      if (!result.success) throw new Error('Could not request cancellation; poll the job for its final status.')
+    } catch (error) {
+      active.cancelled = false
+      for (const imageId of affectedIds) {
+        store.updateMetadata(imageId, { cancelRequested: false })
+        store.updateStatus(imageId, 'Cancellation failed; generation continues…')
+      }
+      throw error
+    }
+  }
+  return { requestId, affectedIds, cancellationRequested: true }
+}
+
 export function useImageGeneration() {
-  const { addPlaceholder, updateStatus, completeImage, failImage, updateResolution } = useGalleryStore()
-  const falApiKey = useSettingsStore((s) => s.falApiKey)
-  const antiDetection = useSettingsStore((s) => s.antiDetection)
+  const { addPlaceholder, updateStatus, completeImage, failImage, updateResolution, updateMetadata } = useGalleryStore()
 
   const generate = useCallback(
     (options: GenerateOptions) => {
-      if (!falApiKey) return
+      const { falApiKey, antiDetection } = useSettingsStore.getState()
+      if (!falApiKey) return []
 
       const models = options.models.length > 0 ? options.models : [DEFAULT_MODEL]
-      const activeWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId ?? undefined
+      const activeWorkspaceId = options.workspaceId === undefined
+        ? useWorkspaceStore.getState().activeWorkspaceId ?? undefined
+        : options.workspaceId ?? undefined
 
       // Create ALL placeholders upfront (across all models)
-      const modelPlaceholders: { model: string; ids: string[] }[] = []
+      const modelPlaceholders: { model: string; ids: string[]; requestId: string }[] = []
 
       for (const model of models) {
         const ids: string[] = []
+        const requestId = crypto.randomUUID()
+        activeImageRequests.set(requestId, { cancelled: false, submitted: false })
         // Transparency is a per-model capability: a model without a
         // `background` field never gets one, so its result has no alpha and
         // must not be marked as if it had.
         const hasAlpha =
           options.background === 'transparent' && getModel(model).supportsBackground
         for (let i = 0; i < options.imageCount; i++) {
-          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments, activeWorkspaceId, { seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, hasAlpha })
+          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments ?? options.labeledAttachments?.flatMap((group) => group.images), activeWorkspaceId, { seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, hasAlpha, requestId, generationOptions: structuredClone(options), costCurrency: 'USD', costSource: 'list-price-estimate' })
           ids.push(id)
         }
-        modelPlaceholders.push({ model, ids })
+        modelPlaceholders.push({ model, ids, requestId })
       }
 
       const batchUpdateStatus = (ids: string[], text: string | undefined) => {
@@ -125,11 +170,23 @@ export function useImageGeneration() {
 
       // Each model runs independently — a slow or failing one must not hold up
       // the others.
-      for (const { model, ids: placeholderIds } of modelPlaceholders) {
+      for (const { model, ids: placeholderIds, requestId } of modelPlaceholders) {
         void (async () => {
-          const requestId = crypto.randomUUID()
           const startTime = Date.now()
           const modelSpec = getModel(model)
+          const active = activeImageRequests.get(requestId)!
+          const unsub = window.api.onGenerateProgress((data) => {
+            if (data.requestId !== requestId) return
+            const id = placeholderIds[data.index]
+            if (!id) return
+            if (data.falRequestId) updateMetadata(id, { falRequestId: data.falRequestId })
+            if (data.status === 'progress' && !active.cancelled) updateStatus(id, data.message)
+            if (data.result) updateMetadata(id, {
+              falRequestId: data.result.id,
+              generationRequest: data.result.generationRequest,
+              ...(data.result.seed !== undefined ? { seed: data.result.seed } : {}),
+            })
+          })
 
           try {
             let groups = baseGroups
@@ -138,6 +195,7 @@ export function useImageGeneration() {
             if (groups.length > 0) {
               batchUpdateStatus(placeholderIds, 'Preparing references...')
               const packed = await packReferencesForModel(groups, modelSpec.maxReferenceImages)
+              if (active.cancelled) return
               groups = packed.groups
               if (packed.collapsed) {
                 logger.info(
@@ -149,6 +207,7 @@ export function useImageGeneration() {
 
               batchUpdateStatus(placeholderIds, 'Uploading references...')
               groups = await uploadReferences(groups)
+              if (active.cancelled) return
               batchUpdateStatus(placeholderIds, undefined)
             }
 
@@ -164,6 +223,8 @@ export function useImageGeneration() {
                 ? `${options.systemPrompt}\n\n---\n\n${basePrompt}`
                 : basePrompt
 
+            if (active.cancelled) return
+            active.submitted = true
             const response = await window.api.generateImage({
               prompt: promptText,
               systemPrompt: useSystemField ? options.systemPrompt : undefined,
@@ -194,6 +255,12 @@ export function useImageGeneration() {
             for (let i = 0; i < placeholderIds.length; i++) {
               const result = results[i]
               if (result?.status === 'complete' && result.result?.imageBase64) {
+                updateMetadata(placeholderIds[i], {
+                  falRequestId: result.result.id,
+                  generationRequest: result.result.generationRequest,
+                  ...(result.result.seed !== undefined ? { seed: result.result.seed } : {}),
+                })
+                updateStatus(placeholderIds[i], 'Saving image…')
                 try {
                   // Strip the generator's pixel signature before the image ever
                   // reaches disk, so gallery, export, copy and drag all hand out
@@ -236,13 +303,17 @@ export function useImageGeneration() {
           } catch (err) {
             const message = err instanceof Error ? err.message : 'Generation failed'
             logger.error('useImageGeneration', `Generation failed for ${model}`, err)
-            for (const id of placeholderIds) failImage(id, message)
+            for (const id of placeholderIds) failImage(id, active.cancelled ? 'Cancelled' : message)
+          } finally {
+            unsub()
+            activeImageRequests.delete(requestId)
           }
         })()
       }
+      return modelPlaceholders.flatMap(({ ids }) => ids)
     },
-    [falApiKey, antiDetection, addPlaceholder, updateStatus, completeImage, failImage, updateResolution]
+    [addPlaceholder, updateStatus, completeImage, failImage, updateResolution, updateMetadata]
   )
 
-  return { generate }
+  return { generate, cancel: cancelImageJob }
 }

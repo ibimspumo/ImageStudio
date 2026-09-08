@@ -61,6 +61,7 @@ export interface GenerateResult {
   error?: string
   cost?: number
   seed?: number
+  generationRequest?: { endpoint: string; input: Record<string, unknown> }
 }
 
 /**
@@ -211,7 +212,7 @@ function describeFalError(err: unknown): string {
 export async function generateImage(
   request: GenerateRequest,
   signal?: AbortSignal,
-  onProgress?: (status: string) => void
+  onProgress?: (status: string, requestId?: string) => void
 ): Promise<GenerateResult[]> {
   if (!request.apiKey) throw new Error('No fal.ai API key configured')
   fal.config({ credentials: request.apiKey })
@@ -250,14 +251,29 @@ export async function generateImage(
   onProgress?.('Generating…')
 
   let result: { data: unknown; requestId: string }
+  let providerRequestId: string | undefined
+  const requestProviderCancellation = () => {
+    if (!providerRequestId) return
+    // AbortSignal stops SDK polling but does not cancel the queued provider job.
+    // Cancellation is best effort: an already-running job may still incur a charge.
+    void fal.queue.cancel(endpoint, { requestId: providerRequestId }).catch(() => {
+      onProgress?.('Cancellation could not be confirmed; provider charges may still apply.', providerRequestId)
+    })
+  }
+  signal?.addEventListener('abort', requestProviderCancellation, { once: true })
   try {
     result = await fal.subscribe(endpoint, {
       input,
       logs: false,
       abortSignal: signal,
+      onEnqueue: (id) => {
+        providerRequestId = id
+        onProgress?.('Queued…', id)
+        if (signal?.aborted) requestProviderCancellation()
+      },
       onQueueUpdate: (update) => {
-        if (update.status === 'IN_QUEUE') onProgress?.('Queued…')
-        else if (update.status === 'IN_PROGRESS') onProgress?.('Generating…')
+        if (update.status === 'IN_QUEUE') onProgress?.('Queued…', providerRequestId)
+        else if (update.status === 'IN_PROGRESS') onProgress?.('Generating…', providerRequestId)
       },
     })
   } catch (err) {
@@ -267,6 +283,8 @@ export async function generateImage(
       throw abortError
     }
     throw new Error(describeFalError(err))
+  } finally {
+    signal?.removeEventListener('abort', requestProviderCancellation)
   }
 
   const data = result.data as {
@@ -300,6 +318,7 @@ export async function generateImage(
     text: data.description || undefined,
     seed: data.seed,
     cost,
+    generationRequest: { endpoint, input },
   }))
 }
 

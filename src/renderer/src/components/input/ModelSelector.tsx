@@ -7,15 +7,17 @@ interface ModelSelectorProps {
   selectedModels: string[]
   onChange: (models: string[]) => void
   compact?: boolean
+  single?: boolean
   /** Restrict the list — thumbnail mode only offers models that reach 2K. */
   available?: ImageModelOption[]
 }
 
-export function ModelSelector({ selectedModels, onChange, compact, available }: ModelSelectorProps) {
+export function ModelSelector({ selectedModels, onChange, compact, available, single }: ModelSelectorProps) {
   const [open, setOpen] = useState(false)
   const models = available ?? AVAILABLE_MODELS
 
   const toggleModel = (modelId: string) => {
+    if (single) { onChange([modelId]); return }
     if (selectedModels.includes(modelId)) {
       // Don't allow deselecting the last model
       if (selectedModels.length <= 1) return
@@ -57,7 +59,7 @@ export function ModelSelector({ selectedModels, onChange, compact, available }: 
           <div className="absolute bottom-full left-0 mb-2 bg-surface-3 border border-border-base rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] p-2 z-30 animate-scale-in min-w-[240px]">
             <div className="flex items-center justify-between px-2 pb-1.5">
               <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">Models</span>
-              <span className="text-[10px] text-text-muted">select multiple to compare</span>
+              <span className="text-[10px] text-text-muted">{single ? 'select one model' : 'select multiple to compare'}</span>
             </div>
 
             {models.map((model) => {
