@@ -73,15 +73,15 @@ The app registry defines capabilities, defaults and list-price estimates. Prices
 
 | Model | Provider | Aspect ratios | Resolution | Reference images | Seed | Price |
 |---|---|---|---|---|---|---|
-| **GPT Image 2.5 Flare** (image/logo default) | OpenAI | standard ratios and custom pixels | 1K–4K presets, six quality settings | up to 16 | no | high 1024²: ~$0.05268 |
-| **GPT Image 2.5 Sunburst** (thumbnail default) | OpenAI | standard ratios and custom pixels | 1K–4K presets, six quality settings | up to 16 | no | same published estimates as Flare |
+| **GPT Image 2.5 Flare** | OpenAI | standard ratios and custom pixels | 1K–4K presets, six quality settings | up to 16 | no | high 1024²: ~$0.05268 |
+| **GPT Image 2.5 Sunburst** (default in all image modes) | OpenAI | standard ratios and custom pixels | 1K–4K presets, six quality settings | up to 16 | no | same published estimates as Flare |
 | **Nano Banana 2** | Google | 15, incl. 4:1 and 8:1 | 0.5K–4K | up to 14 | yes | $0.08 at 1K, ×1.5 at 2K, ×2 at 4K |
 | **Nano Banana 2 Lite** | Google | 15, incl. 4:1 and 8:1 | fixed 1K | up to 14 | yes | ~$0.048 per image |
 | **Nano Banana Pro** | Google | 11 standard ratios | 1K–4K | up to 14 | yes | $0.15, ×2 at 4K |
 
 Flare favors fast everyday generation; Sunburst favors intricate detail and precise editing with longer generation times. Both currently have the same published fal pricing, so Sunburst is not presented as a confirmed more expensive tier. High quality is the default in all three image creation modes. The available quality settings are `auto`, `low`, `medium`, `high`, `xhigh` and `max`; higher settings increase detail, latency and token consumption. Both accept up to 16 references, 10 outputs per request and 32,000 prompt characters.
 
-Both support `background: auto | transparent | opaque` and PNG, JPEG or WebP output. Logo mode defaults to Flare and defaults to transparency and pins PNG while offering ratios, resolutions and custom dimensions. Normal image mode also exposes background and output options. `outputCompression` accepts 0–100 only for JPEG/WebP. Neither model supports seed or input fidelity controls. Enabled JPEG post-processing can change the provider's format/compression for opaque images; transparency is preserved and stored MIME types describe the actual file.
+Both support `background: auto | transparent | opaque` and PNG, JPEG or WebP output. Logo mode defaults to Sunburst and defaults to transparency and pins PNG while offering ratios, resolutions and custom dimensions. Normal image mode also exposes background and output options. `outputCompression` accepts 0–100 only for JPEG/WebP. Neither model supports seed or input fidelity controls. Enabled JPEG post-processing can change the provider's format/compression for opaque images; transparency is preserved and stored MIME types describe the actual file.
 
 **Custom pixels:** the size controls and MCP share the same normalization: each positive width/height rounds upward to a multiple of 16, then the final size must have edges at most 3840 px, a longest/shortest ratio at most 3:1 and 655,360–8,294,400 total pixels. Linked dimensions follow the chosen ratio with grid rounding; the resulting pixels are shown before generation. The A4 preset is exact-ratio **2240 × 3168**. A4 at 300 dpi exceeds the generation area limit. MCP can submit explicit dimensions and inspect the normalized effective size. Thumbnails use **1920 × 1088** for these models and export to exact **1920 × 1080**.
 
@@ -182,3 +182,6 @@ MIT. Issues and pull requests are welcome; discuss major changes before implemen
 Read-only prompts use `PromptText` to highlight collection/image markers in gallery captions, the viewer and activity without changing copied or stored text. Gallery captions use a deeper bottom gradient. In image composers, pasting plain text restores exact, unambiguous live collection mentions (deduplicated), and image mentions already attached to the draft; unknown markers remain text. MCP prompt-only `update_draft` uses the same resolver. Explicit `collectionIds` still replaces the collection list. Text-only image markers cannot identify an unattached source image; use variant preparation or attach the source.
 
 Sidebar folder and project entries offer a labelled trash button with inline confirmation and cancellation. Deleting keeps all media in the respective overview (All media / All thumbnails), preserves the other independent grouping, and uses the same organization actions as the management page and MCP.
+
+## Sunburst default migration (v1.3.3)
+GPT Image 2.5 Sunburst is the default for images, logos and thumbnails, including UI and MCP. On first launch after this update, every existing profile switches its saved image default to Sunburst, even if it previously selected Nano Banana or Flare. `shared/settings-migrations.ts` and the persisted internal `imageDefaultsRevision` marker make this a one-time migration; later explicit user selections survive restarts. Quality stays High; video defaults and existing media remain unchanged.

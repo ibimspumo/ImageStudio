@@ -9,7 +9,8 @@ import { registerFileOperationHandlers } from './file-operations'
 import { loadHistory, saveSession, deleteSession } from '../services/image-store'
 import { uploadImagesToUrls, clearUploadCache } from '../services/image-upload'
 import { checkForUpdates, downloadUpdate, installUpdate, getUpdateStatus, revealUpdate } from '../services/updater'
-import { DEFAULT_MODEL, normalizeModelId } from '../../shared/image-models'
+import { DEFAULT_MODEL } from '../../shared/image-models'
+import { IMAGE_DEFAULTS_REVISION, migrateImageDefaults } from '../../shared/settings-migrations'
 
 /** Valid settings keys — rejects unknown keys from renderer */
 const VALID_SETTINGS_KEYS = new Set([
@@ -25,6 +26,7 @@ const VALID_SETTINGS_KEYS = new Set([
 ])
 
 interface AppSettings {
+  imageDefaultsRevision: number
   falApiKey: string
   falBillingApiKey: string
   defaultModel: string
@@ -37,6 +39,7 @@ interface AppSettings {
 }
 
 const DEFAULTS: AppSettings = {
+  imageDefaultsRevision: IMAGE_DEFAULTS_REVISION,
   falApiKey: '',
   falBillingApiKey: '',
   defaultModel: DEFAULT_MODEL,
@@ -58,11 +61,10 @@ function loadSettings(): AppSettings {
 
   try {
     const raw = JSON.parse(readFileSync(path, 'utf-8'))
-    return {
+    const settings: AppSettings = {
+      ...migrateImageDefaults(raw),
       falBillingApiKey: typeof raw.falBillingApiKey === 'string' ? raw.falBillingApiKey : '',
       falApiKey: typeof raw.falApiKey === 'string' ? raw.falApiKey : DEFAULTS.falApiKey,
-      // Settings written before the move to fal.ai hold OpenRouter model ids.
-      defaultModel: normalizeModelId(raw.defaultModel),
       defaultAspectRatio: typeof raw.defaultAspectRatio === 'string' ? raw.defaultAspectRatio : DEFAULTS.defaultAspectRatio,
       defaultResolution: typeof raw.defaultResolution === 'string' ? raw.defaultResolution : DEFAULTS.defaultResolution,
       defaultImageCount: typeof raw.defaultImageCount === 'number' ? raw.defaultImageCount : DEFAULTS.defaultImageCount,
@@ -70,6 +72,8 @@ function loadSettings(): AppSettings {
       autoCheckUpdates: typeof raw.autoCheckUpdates === 'boolean' ? raw.autoCheckUpdates : DEFAULTS.autoCheckUpdates,
       antiDetection: typeof raw.antiDetection === 'boolean' ? raw.antiDetection : DEFAULTS.antiDetection,
     }
+    if (raw.imageDefaultsRevision !== IMAGE_DEFAULTS_REVISION) persistSettings(settings)
+    return settings
   } catch {
     console.error('[Settings] Failed to parse settings file, using defaults')
     return { ...DEFAULTS }

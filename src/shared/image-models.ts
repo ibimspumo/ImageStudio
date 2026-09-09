@@ -207,8 +207,8 @@ function gptImage25Model(variant: 'flare' | 'sunburst'): ImageModelOption {
     id: `openai/gpt-image-2.5/${variant}/text-to-image`,
     name: `GPT Image 2.5 ${variant === 'flare' ? 'Flare' : 'Sunburst'}`,
     description: variant === 'flare'
-      ? 'Fast, high-quality GPT Image 2.5 default for everyday images and transparent logos. Published fal.ai list prices currently match Sunburst; actual token usage and latency vary.'
-      : 'Precision-focused premium GPT Image 2.5 variant for intricate details, with longer generation times; recommended for thumbnails. Published fal.ai list prices currently match Flare; actual token usage varies.',
+      ? 'Fast, high-quality GPT Image 2.5 alternative for everyday images and transparent logos. Published fal.ai list prices currently match Sunburst; actual token usage and latency vary.'
+      : 'Precision-focused premium GPT Image 2.5 variant for intricate details, with longer generation times; ImageStudio default for images, logos and thumbnails. Published fal.ai list prices currently match Flare; actual token usage varies.',
     provider: 'OpenAI',
     outputFormats: ['png', 'jpeg', 'webp'],
     endpoint: `openai/gpt-image-2.5/${variant}/text-to-image`,
@@ -257,8 +257,8 @@ function gptImage25Model(variant: 'flare' | 'sunburst'): ImageModelOption {
 }
 
 export const AVAILABLE_MODELS: ImageModelOption[] = [
-  gptImage25Model('flare'),
   gptImage25Model('sunburst'),
+  gptImage25Model('flare'),
   {
     id: 'fal-ai/nano-banana-2',
     name: 'Nano Banana 2',
@@ -366,7 +366,7 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
   },
 ]
 
-export const DEFAULT_MODEL = GPT_IMAGE_FLARE_MODEL
+export const DEFAULT_MODEL = GPT_IMAGE_SUNBURST_MODEL
 
 /**
  * Models usable in thumbnail mode.
@@ -401,19 +401,19 @@ export function isLogoModel(modelId: string): boolean {
   return getLogoModels().some((m) => m.id === modelId)
 }
 
-export const DEFAULT_LOGO_MODEL = GPT_IMAGE_FLARE_MODEL
+export const DEFAULT_LOGO_MODEL = GPT_IMAGE_SUNBURST_MODEL
 
 /** Models the app used before it moved to fal.ai, mapped onto their replacement. */
 const LEGACY_MODEL_IDS: Record<string, string> = {
-  'openai/gpt-image-2': GPT_IMAGE_FLARE_MODEL,
-  'fal-ai/gpt-image-1.5': GPT_IMAGE_FLARE_MODEL,
+  'openai/gpt-image-2': GPT_IMAGE_SUNBURST_MODEL,
+  'fal-ai/gpt-image-1.5': GPT_IMAGE_SUNBURST_MODEL,
   'google/gemini-3.1-flash-image-preview': 'fal-ai/nano-banana-2',
   'google/gemini-3.1-flash-lite-image': 'google/nano-banana-2-lite',
   'google/gemini-3-pro-image-preview': 'fal-ai/nano-banana-pro',
-  'openai/gpt-5.4-image-2': GPT_IMAGE_FLARE_MODEL,
-  'openai/gpt-image-2 ': GPT_IMAGE_FLARE_MODEL,
-  'openai/gpt-5-image': GPT_IMAGE_FLARE_MODEL,
-  'openai/gpt-5-image-mini': GPT_IMAGE_FLARE_MODEL,
+  'openai/gpt-5.4-image-2': GPT_IMAGE_SUNBURST_MODEL,
+  'openai/gpt-image-2 ': GPT_IMAGE_SUNBURST_MODEL,
+  'openai/gpt-5-image': GPT_IMAGE_SUNBURST_MODEL,
+  'openai/gpt-5-image-mini': GPT_IMAGE_SUNBURST_MODEL,
   'sourceful/riverflow-v2-pro': 'fal-ai/nano-banana-2',
   'bytedance-seed/seedream-4.5': 'fal-ai/nano-banana-2',
   'black-forest-labs/flux.2-max': 'fal-ai/nano-banana-2',

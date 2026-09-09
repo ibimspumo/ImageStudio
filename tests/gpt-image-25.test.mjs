@@ -7,16 +7,16 @@ import { pathToFileURL } from 'node:url'
 
 const directory = await mkdtemp(join(process.cwd(), 'node_modules', '.gpt25-tests-'))
 after(() => rm(directory, { recursive: true, force: true }))
-for (const [name, entry] of [['registry', 'src/shared/image-models.ts'], ['provider', 'src/main/services/fal-image.ts']]) {
+for (const [name, entry] of [['migration', 'src/shared/settings-migrations.ts'], ['registry', 'src/shared/image-models.ts'], ['provider', 'src/main/services/fal-image.ts']]) {
   await build({ entryPoints: [entry], outfile: join(directory, name + '.mjs'), bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent' })
 }
 const r = await import(pathToFileURL(join(directory, 'registry.mjs')).href)
 const { buildInput } = await import(pathToFileURL(join(directory, 'provider.mjs')).href)
-const flare = r.getModel(r.DEFAULT_MODEL)
+const flare = r.getModel(r.GPT_IMAGE_FLARE_MODEL)
 const request = { prompt: 'A transparent logo', model: flare.id, apiKey: 'unused', aspectRatio: '1:1', resolution: '1K' }
 
 test('new defaults expose both variants while historical labels retain provenance', () => {
-  assert.match(r.DEFAULT_MODEL, /flare/)
+  assert.match(r.DEFAULT_MODEL, /sunburst/)
   assert.match(r.DEFAULT_THUMBNAIL_MODEL, /sunburst/)
   assert.equal(r.DEFAULT_LOGO_MODEL, r.DEFAULT_MODEL)
   assert.equal(r.getLogoModels().length, 2)
@@ -61,5 +61,16 @@ test('quality pricing uses all published tiers and both variants share list esti
     assert.equal(r.estimateImageCost(id,{imageSize:{width:1024,height:1024},quality:'high'}),.05268)
     assert.equal(r.estimateImageCost(id,{imageSize:{width:1024,height:1024},quality:'xhigh'}),.09366)
     assert.equal(r.estimateImageCost(id,{imageSize:{width:1024,height:1024},quality:'max'}),.21072)
+  }
+})
+
+const { migrateImageDefaults } = await import(pathToFileURL(join(directory, 'migration.mjs')).href)
+test('Sunburst migration replaces every old default once and preserves subsequent explicit choices', () => {
+  for (const defaultModel of [undefined, 'fal-ai/nano-banana-2', r.GPT_IMAGE_FLARE_MODEL, 'openai/gpt-image-2']) {
+    const migrated = migrateImageDefaults({ defaultModel })
+    assert.equal(migrated.defaultModel, r.GPT_IMAGE_SUNBURST_MODEL)
+    assert.equal(migrated.imageDefaultsRevision, 1)
+    const saved = JSON.parse(JSON.stringify({ ...migrated, defaultModel: 'fal-ai/nano-banana-2' }))
+    assert.equal(migrateImageDefaults(saved).defaultModel, 'fal-ai/nano-banana-2')
   }
 })

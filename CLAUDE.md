@@ -73,7 +73,7 @@ Everything — images, video, reference uploads — runs through fal.ai. There i
 
 ### Image Models (fal.ai)
 Defined in `src/shared/image-models.ts` as `AVAILABLE_MODELS`, re-exported through `types/api.ts`.
-Defaults: `DEFAULT_MODEL` and `DEFAULT_LOGO_MODEL` select `openai/gpt-image-2.5/flare/text-to-image`; `DEFAULT_THUMBNAIL_MODEL` selects `openai/gpt-image-2.5/sunburst/text-to-image`. Flare is first in `AVAILABLE_MODELS`. Each has a matching `/edit` endpoint; `fal-image.ts` uses it when references are attached. Retired GPT Image 2/1.5 aliases and saved generation defaults migrate, while original IDs on historical media and history files remain intact.
+Defaults: All image-mode defaults (`DEFAULT_MODEL`, `DEFAULT_LOGO_MODEL`, `DEFAULT_THUMBNAIL_MODEL`) select `openai/gpt-image-2.5/sunburst/text-to-image`. Sunburst is first in `AVAILABLE_MODELS`. Each has a matching `/edit` endpoint; `fal-image.ts` uses it when references are attached. Retired GPT Image 2/1.5 aliases and saved generation defaults migrate, while original IDs on historical media and history files remain intact.
 
 | Model | Endpoint | Aspect ratios / resolutions | Refs | Seed | Price |
 |---|---|---|---|---|---|
@@ -164,7 +164,7 @@ Projects (`thumbnail-projects-store.ts`, persisted as `thumbnail-projects`) are 
 inside thumbnail mode. `GalleryImage` carries `projectId`, `thumbnailStyle` and `faceFidelity`.
 
 ### Logo Mode
-An `AppMode` (`MainContent.tsx`) using transparent PNG output from GPT Image 2.5 Flare (default) or Sunburst. Both expose the background capability.
+An `AppMode` (`MainContent.tsx`) using transparent PNG output from GPT Image 2.5 Sunburst (default) or Flare. Both expose the background capability.
 `getLogoModels()` derives the model list from that capability rather than a hand-kept list.
 It reuses `PromptBar` via the `logoMode` prop — references, @-mentions, drag & drop and collections stay
 identical; only `ControlsRow` is swapped for `LogoControls`.
@@ -253,3 +253,6 @@ Composer readability: `studio-composer-dock::before` in app.css provides the sha
 Read-only prompts use `PromptText` to highlight collection/image markers in gallery captions, the viewer and activity without changing copied or stored text. Gallery captions use a deeper bottom gradient. In image composers, pasting plain text restores exact, unambiguous live collection mentions (deduplicated), and image mentions already attached to the draft; unknown markers remain text. MCP prompt-only `update_draft` uses the same resolver. Explicit `collectionIds` still replaces the collection list. Text-only image markers cannot identify an unattached source image; use variant preparation or attach the source.
 
 Sidebar folder and project entries offer a labelled trash button with inline confirmation and cancellation. Deleting keeps all media in the respective overview (All media / All thumbnails), preserves the other independent grouping, and uses the same organization actions as the management page and MCP.
+
+## Sunburst default migration (v1.3.3)
+GPT Image 2.5 Sunburst is the default for images, logos and thumbnails, including UI and MCP. On first launch after this update, every existing profile switches its saved image default to Sunburst, even if it previously selected Nano Banana or Flare. `shared/settings-migrations.ts` and the persisted internal `imageDefaultsRevision` marker make this a one-time migration; later explicit user selections survive restarts. Quality stays High; video defaults and existing media remain unchanged.

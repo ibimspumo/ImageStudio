@@ -56,7 +56,7 @@ export async function runGpt25UiChecks(page, { app, call, client }) {
   assert.equal((await client.callTool({ name: 'update_draft', arguments: { mode: 'thumbnail', patch: { imageSize: { width: 1024, height: 1024 } } } })).isError, true)
   await call('navigate', { target: 'logo' })
   draft = await call('get_draft', { mode: 'logo' })
-  assert.deepEqual(draft.models, [flare]); assert.equal(draft.background, 'transparent'); assert.equal(draft.outputFormat, 'png')
+  assert.deepEqual(draft.models, [sunburst]); assert.equal(draft.background, 'transparent'); assert.equal(draft.outputFormat, 'png')
   await call('update_draft', { mode: 'logo', patch: { imageSize: { width: 2240, height: 3168 }, quality: 'high', resolution: '2K' } })
   await page.getByTitle('Alle weiteren Einstellungen', { exact: true }).click()
   assert.equal(await width.inputValue(), '2240')
