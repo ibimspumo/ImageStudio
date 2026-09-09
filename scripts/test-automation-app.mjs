@@ -1,5 +1,6 @@
 // Real Electron + MCP smoke test. Uses a disposable profile; never calls fal.ai.
 import assert from 'node:assert/strict'
+import { runGpt25UiChecks } from './ui-gpt25-checks.mjs'
 import { runCreationUiChecks } from './ui-creation-checks.mjs'
 import { runProcessingUiChecks } from './ui-processing-checks.mjs'
 import { mkdir, mkdtemp, writeFile, rm, readFile } from 'node:fs/promises'
@@ -212,7 +213,7 @@ try {
     ipcMain.handle('image:upload-urls', (_event, { images }) => ({ success: true, urls: images.map((_, index) => `https://test.invalid/reference-${index}.png`) }))
     ipcMain.removeHandler('image:generate')
     ipcMain.handle('image:generate', (_event, request) => {
-      globalThis.__automationTestCalls.push({ kind: 'image', hasReferences: !!request.attachments?.length, prompt: request.prompt, referenceLabels: request.labeledAttachments?.map(group => group.label) })
+      globalThis.__automationTestCalls.push({ kind: 'image', hasReferences: !!request.attachments?.length, prompt: request.prompt, referenceLabels: request.labeledAttachments?.map(group => group.label), model: request.model, imageSize: request.imageSize, quality: request.quality, background: request.background, outputFormat: request.outputFormat, outputCompression: request.outputCompression })
       return { success: true, results: Array.from({ length: request.count }, (_, index) => ({ status: 'complete', result: { id: `mock-image-${globalThis.__automationTestCalls.length}-${index}`, imageBase64: `data:image/png;base64,${png}`, cost: 0.1 } })) }
     })
     ipcMain.removeHandler('video:generate')
@@ -269,6 +270,7 @@ try {
   await page.getByText(/0\.017 USD von fal\.ai bestätigt/).waitFor()
   await page.getByRole('button', { name: 'Kosten mit fal.ai abgleichen', exact: true }).click()
   await page.getByText(/0\.017 USD von fal\.ai bestätigt/).waitFor()
+  await runGpt25UiChecks(page, { app, call, client })
   await runProcessingUiChecks(page, { app, call, client, temp, projectId: project.id, workspaceId: folder.id })
   await call('update_settings', { falApiKey: '', falBillingApiKey: '' })
   await runCreationUiChecks(page, { call, imageId })

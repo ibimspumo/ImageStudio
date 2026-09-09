@@ -79,6 +79,7 @@ export interface ElectronAPI {
     thinkingLevel?: 'minimal' | 'high'
     safetyTolerance?: string
     outputFormat?: 'png' | 'jpeg' | 'webp'
+    outputCompression?: number
   }): Promise<{
     success: boolean
     results?: Array<{

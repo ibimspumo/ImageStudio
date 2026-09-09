@@ -2,6 +2,7 @@ import { fal } from '@fal-ai/client'
 import {
   estimateImageCost,
   getModel,
+  normalizeGptImageSize,
   resolveAspectRatio,
   resolveResolution,
   toFixedImageSize,
@@ -30,16 +31,18 @@ export interface GenerateRequest {
   seed?: number
   /** Both OpenAI models */
   quality?: string
+  /** JPEG/WebP compression 0–100; omitted for PNG. */
+  outputCompression?: number
   /**
-   * GPT Image 1.5 only — `transparent` is what logo mode is built on. It only
+   * GPT Image 2.5 — `transparent` is what logo mode is built on. It only
    * survives if `outputFormat` is png or webp.
    */
   background?: FalBackground
-  /** GPT Image 1.5 edit only — how literally the reference is preserved. */
+  /** Legacy setting; ignored by GPT Image 2.5, which has no input_fidelity field. */
   inputFidelity?: FalInputFidelity
   /**
    * Explicit output size for models that take pixels instead of a ratio
-   * (GPT Image 2). Set by thumbnail mode, which needs one exact format;
+   * (GPT Image 2.5). Set by thumbnail mode, which needs one exact format;
    * otherwise the size is derived from aspect ratio + resolution.
    */
   imageSize?: { width: number; height: number }
@@ -101,13 +104,25 @@ function flattenGroups(groups: LabeledAttachment[]): string[] {
   return groups.flatMap((g) => g.images)
 }
 
-function buildInput(
+export function buildInput(
   model: ImageModelOption,
   request: GenerateRequest,
   imageUrls: string[],
   prompt: string,
   numImages: number
 ): Record<string, unknown> {
+  if (!prompt.trim() || (model.maxPromptLength != null && prompt.length > model.maxPromptLength)) {
+    throw new Error(`${model.name}: composed prompt must contain 1–${model.maxPromptLength ?? 'unlimited'} characters; got ${prompt.length}. Shorten the prompt, meta-prompt or reference labels.`)
+  }
+  if (!Number.isInteger(numImages) || numImages < 1 || numImages > model.maxImagesPerRequest) {
+    throw new Error(`${model.name}: number of images must be 1–${model.maxImagesPerRequest}.`)
+  }
+  if (request.imageSize && model.imageSizeMode !== 'pixels') {
+    throw new Error(`${model.name} does not support custom pixel sizes. Select a GPT Image 2.5 model or use aspect ratio and resolution.`)
+  }
+  if (request.outputCompression != null && (!Number.isInteger(request.outputCompression) || request.outputCompression < 0 || request.outputCompression > 100)) {
+    throw new Error('Output compression must be an integer from 0 to 100.')
+  }
   const input: Record<string, unknown> = {
     prompt,
     num_images: numImages,
@@ -135,11 +150,10 @@ function buildInput(
   }
 
   if (model.imageSizeMode === 'pixels') {
-    // GPT Image 2 has no aspect_ratio field — the ratio becomes an explicit size.
-    // fal snaps both edges to multiples of 16, so a caller-supplied size has to
-    // already be valid (thumbnail mode passes 1920 x 1088 for exactly that reason).
+    // GPT Image 2.5 takes pixels; explicit user dimensions round upward to
+    // multiples of 16 and are checked against the shared provider constraints.
     input.image_size =
-      request.imageSize ?? toGptImageSize(request.aspectRatio, request.resolution)
+      request.imageSize ? normalizeGptImageSize(request.imageSize) : toGptImageSize(request.aspectRatio, request.resolution)
   } else if (model.imageSizeMode === 'size-enum') {
     // GPT Image 1.5 takes one of three fixed strings. An explicit pixel size
     // from the caller means nothing here, so the ratio decides.
@@ -155,7 +169,11 @@ function buildInput(
     }
   }
 
-  // input_fidelity only exists on the edit endpoint.
+  if (model.supportsOutputCompression && request.outputCompression != null && input.output_format !== 'png') {
+    input.output_compression = request.outputCompression
+  }
+
+  // Legacy compatibility: no current GPT Image 2.5 endpoint accepts input_fidelity.
   if (model.supportsInputFidelity && request.inputFidelity && imageUrls.length > 0) {
     input.input_fidelity = request.inputFidelity
   }
@@ -233,12 +251,14 @@ export async function generateImage(
     )
   }
 
+  const prompt = buildReferencePreamble(groups) + request.prompt
+  buildInput(model, request, imageUrls, prompt, 1)
+
   if (imageUrls.length > 0) {
     onProgress?.('Uploading references…')
     imageUrls = await uploadImagesToUrls(imageUrls, request.apiKey)
   }
 
-  const prompt = buildReferencePreamble(groups) + request.prompt
   const endpoint = imageUrls.length > 0 ? model.editEndpoint : model.endpoint
   const input = buildInput(model, request, imageUrls, prompt, 1)
 

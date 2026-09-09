@@ -1,3 +1,5 @@
+import { OutputControls, type OutputControlProps } from '../input/OutputControls'
+import type { GptImageQuality } from '../../types/api'
 import { Send, XCircle, Settings, ListOrdered } from 'lucide-react'
 import { ModelSelector } from '../input/ModelSelector'
 import { ImageCountSelector } from '../input/ImageCountSelector'
@@ -9,7 +11,9 @@ import { useThumbnailMetaPromptsStore } from '../../stores/thumbnail-meta-prompt
 import { getCombinedCapabilities, getThumbnailModels, THUMBNAIL_STYLES, type ThumbnailStyle } from '../../types/api'
 import { cn } from '../../lib/utils'
 
-interface ThumbnailControlsProps {
+interface ThumbnailControlsProps extends OutputControlProps {
+  quality?: GptImageQuality
+  onQualityChange?: (quality: GptImageQuality) => void
   selectedModels: string[]
   onModelsChange: (models: string[]) => void
   style: ThumbnailStyle
@@ -26,6 +30,7 @@ interface ThumbnailControlsProps {
 }
 
 export function ThumbnailControls({
+  quality = 'high', onQualityChange, outputFormat, onOutputFormatChange, outputCompression, onOutputCompressionChange,
   selectedModels,
   onModelsChange,
   style,
@@ -83,6 +88,11 @@ export function ThumbnailControls({
               ))}
             </TuneGroup>
 
+            {caps.qualities && onQualityChange && <TuneGroup label="Detailgrad">
+              {caps.qualities.map((q) => <TuneOption key={q} selected={quality === q} onClick={() => onQualityChange(q)} title="Detailgrad beeinflusst Preis und Dauer"><span className="capitalize">{q}</span></TuneOption>)}
+            </TuneGroup>}
+            <TuneGroup label="Bildgröße"><p className="text-[12px] leading-relaxed text-text-secondary">{caps.supportsCustomImageSize ? 'Generierung: 1920 × 1088 px. ' : ''}Export: 1920 × 1080 px · 16:9.</p></TuneGroup>
+            <OutputControls outputFormat={outputFormat} onOutputFormatChange={onOutputFormatChange} outputCompression={outputCompression} onOutputCompressionChange={onOutputCompressionChange} supportsCompression={caps.supportsOutputCompression} />
             <TuneGroup label="Meta-Prompt">
               <MetaPromptSelector />
             </TuneGroup>

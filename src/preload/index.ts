@@ -41,6 +41,7 @@ const api = {
     thinkingLevel?: 'minimal' | 'high'
     safetyTolerance?: string
     outputFormat?: 'png' | 'jpeg' | 'webp'
+    outputCompression?: number
   }) => ipcRenderer.invoke('image:generate', request),
 
   cancelImageGeneration: (requestId: string) =>

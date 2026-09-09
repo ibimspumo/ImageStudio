@@ -9,6 +9,10 @@ export interface QueueItem {
   negativePrompt?: string
   seed?: number
   quality?: string
+  imageSize?: { width: number; height: number }
+  outputFormat?: 'png' | 'jpeg' | 'webp'
+  outputCompression?: number
+  background?: 'auto' | 'opaque' | 'transparent'
   aspectRatio: string
   resolution: string
   models: string[]

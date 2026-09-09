@@ -13,6 +13,6 @@ export function prepareImageVariant(imageId: string): void {
   useCropStore.getState().setPendingReuse(
     '[Image 1] als Ausgangsbild verwenden. ',
     [image.filePath], undefined, image.seed,
-    { model, aspectRatio: image.aspectRatio, resolution: image.resolution, background: image.hasAlpha ? 'transparent' : undefined },
+    { model, aspectRatio: image.aspectRatio, resolution: image.resolution, background: image.hasAlpha ? 'transparent' : undefined, imageSize: (image.generationOptions && 'imageSize' in image.generationOptions ? image.generationOptions.imageSize : undefined), quality: (image.generationOptions && 'quality' in image.generationOptions ? image.generationOptions.quality : undefined), outputFormat: (image.generationOptions && 'outputFormat' in image.generationOptions ? image.generationOptions.outputFormat : undefined), outputCompression: (image.generationOptions && 'outputCompression' in image.generationOptions ? image.generationOptions.outputCompression : undefined) },
   )
 }

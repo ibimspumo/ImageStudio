@@ -1,3 +1,5 @@
+import { PixelSizeControls, type PixelSizeProps } from './PixelSizeControls'
+import { OutputControls, type OutputControlProps } from './OutputControls'
 import { Send, XCircle, Settings, Brush, ListOrdered, Dices } from 'lucide-react'
 import { ImageCountSelector } from './ImageCountSelector'
 import { ModelSelector } from './ModelSelector'
@@ -16,7 +18,7 @@ import type {
 } from '../../types/api'
 import { cn } from '../../lib/utils'
 
-interface ControlsRowProps {
+interface ControlsRowProps extends PixelSizeProps, OutputControlProps {
   selectedModels: string[]
   onModelsChange: (models: string[]) => void
   aspectRatio: AspectRatio
@@ -55,6 +57,8 @@ const BACKGROUND_OPTIONS: { id: FalBackground; label: string; hint: string }[] =
 ]
 
 export function ControlsRow({
+  imageSize, onImageSizeChange, onSizeErrorChange,
+  outputFormat, onOutputFormatChange, outputCompression, onOutputCompressionChange,
   selectedModels,
   onModelsChange,
   aspectRatio,
@@ -95,7 +99,7 @@ export function ControlsRow({
   // the bar stays readable without opening the panel.
   const tuneBadge = [
     aspectRatio !== '1:1',
-    resolution !== '2K' && caps.resolutions.length > 0,
+    resolution !== '1K' && caps.resolutions.length > 0,
     !!caps.qualities && quality !== 'high',
     caps.supportsBackground && background !== 'auto',
     caps.supportsInputFidelity && !!hasReferences && inputFidelity !== 'high',
@@ -103,17 +107,7 @@ export function ControlsRow({
     !!activePresetId,
   ].filter(Boolean).length
 
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-5 py-3">
-      <ModelSelector selectedModels={selectedModels} onChange={onModelsChange} />
-
-      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
-
-      <ImageCountSelector value={imageCount} onChange={onImageCountChange} max={caps.maxImagesPerRequest} />
-
-      <TuneMenu badge={tuneBadge} width={360} summary={`${aspectRatio === 'custom' ? customRatio : aspectRatio} · ${caps.resolutions.length ? resolution : '1K'}`}>
-        {(close) => (
-          <>
+  const sizePresets = <>
             <TuneGroup label="Format">
               <TuneRatioOptions
                 ratios={caps.aspectRatios}
@@ -140,9 +134,30 @@ export function ControlsRow({
                   </TuneOption>
                 ))
               )}
+
+            </TuneGroup>
+
+  </>
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-5 py-3">
+      <ModelSelector selectedModels={selectedModels} onChange={onModelsChange} />
+
+      <div className="w-px h-4 bg-border-dim/40 mx-0.5 shrink-0" />
+
+      <ImageCountSelector value={imageCount} onChange={onImageCountChange} max={caps.maxImagesPerRequest} />
+
+      <TuneMenu badge={tuneBadge} width={360} summary={imageSize ? `${imageSize.width} × ${imageSize.height}` : `${aspectRatio === 'custom' ? customRatio : aspectRatio} · ${caps.resolutions.length ? resolution : '1K'}`}>
+        {(close) => (
+          <>
+            {caps.supportsCustomImageSize && onImageSizeChange ? (
+              <PixelSizeControls imageSize={imageSize} onImageSizeChange={onImageSizeChange} onSizeErrorChange={onSizeErrorChange} ratio={aspectRatio === 'custom' ? customRatio : aspectRatio} resolution={resolution}>
+                {sizePresets}
+              </PixelSizeControls>
+            ) : sizePresets}
+            {caps.qualities && <TuneGroup label="Detailgrad">
               {caps.qualities && onQualityChange && (
                 <>
-                  <div className="w-px h-4 bg-border-dim mx-1 shrink-0" />
                   {caps.qualities.map((q) => (
                     <TuneOption
                       key={q}
@@ -155,7 +170,8 @@ export function ControlsRow({
                   ))}
                 </>
               )}
-            </TuneGroup>
+            </TuneGroup>}
+            <OutputControls outputFormat={outputFormat} onOutputFormatChange={onOutputFormatChange} outputCompression={outputCompression} onOutputCompressionChange={onOutputCompressionChange} supportsCompression={caps.supportsOutputCompression} transparent={background === 'transparent'} />
 
             {caps.supportsBackground && onBackgroundChange && (
               <TuneGroup label="Hintergrund">

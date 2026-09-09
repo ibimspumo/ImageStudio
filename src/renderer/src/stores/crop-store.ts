@@ -13,6 +13,10 @@ export interface ReuseOptions {
   model?: string
   aspectRatio?: string
   resolution?: string
+  imageSize?: { width: number; height: number }
+  quality?: string
+  outputFormat?: 'png' | 'jpeg' | 'webp'
+  outputCompression?: number
 }
 
 interface PendingReuse extends ReuseOptions {

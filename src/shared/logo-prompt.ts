@@ -7,9 +7,8 @@
  * noticeably more reliably than German ones, while the user's own prompt stays
  * in whatever language they typed it.
  *
- * GPT Image 1.5 has no `system_prompt` field, so this block is prepended to the
- * prompt (see `useImageGeneration`). It is the only model in the registry with
- * a `background` field, which is what the whole mode is built on.
+ * GPT Image 2.5 has no `system_prompt` field, so this block is prepended to the
+ * prompt (see `useImageGeneration`). Both variants support the `background` field used by logo mode.
  */
 
 /** `auto` adds no style block at all — the base rules alone, model decides. */
@@ -27,7 +26,7 @@ export const LOGO_OUTPUT_FORMAT = 'png' as const
 /** A logo is square unless the user says otherwise. */
 export const LOGO_DEFAULT_ASPECT_RATIO = '1:1'
 
-/** The three ratios GPT Image 1.5 offers, as logo mode labels them. */
+/** Legacy logo presets. The live controls now derive ratios from the registry. */
 export const LOGO_ASPECT_RATIOS = ['1:1', '3:2', '2:3'] as const
 
 export interface LogoStyleOption {

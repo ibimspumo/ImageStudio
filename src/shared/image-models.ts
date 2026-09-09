@@ -31,13 +31,13 @@ export type FalAspectRatio =
 
 export type FalResolution = '0.5K' | '1K' | '2K' | '4K'
 
-/** GPT Image 2 has no aspect_ratio/resolution — it takes image_size + quality. */
-export type GptImageQuality = 'auto' | 'low' | 'medium' | 'high'
+/** GPT Image 2.5 has no aspect_ratio/resolution — it takes image_size + quality. */
+export type GptImageQuality = 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export type OutputFormat = 'png' | 'jpeg' | 'webp'
 
 /**
- * `background` — GPT Image 1.5 only. `transparent` is the single route in the
+ * `background` — GPT Image 2.5. `transparent` is the generation route in the
  * whole registry to an image with a real alpha channel, and it only survives
  * when `output_format` is `png` or `webp`.
  */
@@ -49,7 +49,7 @@ export type FalInputFidelity = 'low' | 'high'
 /**
  * How a model takes its output size.
  * - `aspect-ratio` — an `aspect_ratio` string plus a `resolution` tier (Gemini)
- * - `pixels` — an explicit `{ width, height }` object (GPT Image 2)
+ * - `pixels` — an explicit `{ width, height }` object (GPT Image 2.5)
  * - `size-enum` — one of a handful of fixed `WxH` strings (GPT Image 1.5)
  */
 export type ImageSizeMode = 'aspect-ratio' | 'pixels' | 'size-enum'
@@ -69,15 +69,18 @@ export interface ImagePricing {
   /** Multiplier applied on top of `perImage` per resolution tier. */
   resolutionMultiplier?: Partial<Record<FalResolution, number>>
   /**
-   * Models priced by exact output size and quality tier (GPT Image 2). The
+   * Models priced by exact output size and quality tier (GPT Image 2.5). The
    * nearest row by pixel count wins — fal snaps sizes to multiples of 16, so an
    * exact match is the exception.
    */
-  sizeTiers?: { pixels: number; low: number; medium: number; high: number }[]
+  sizeTiers?: { pixels: number; low: number; medium: number; high: number; xhigh?: number; max?: number }[]
   /** Added once per request when web search runs. */
   webSearchSurcharge?: number
   /** Added once per request at `thinking_level: 'high'`. */
   highThinkingSurcharge?: number
+  /** Official price pages and verification date for discovery. */
+  sources?: string[]
+  checkedAt?: string
   /** Shown next to the estimate so the number can be judged. */
   note: string
 }
@@ -86,6 +89,13 @@ export interface ImageModelOption {
   /** Canonical model id — identical to the text-to-image endpoint id on fal.ai */
   id: string
   name: string
+  outputFormats?: OutputFormat[]
+  description?: string
+  maxPromptLength?: number
+  supportsOutputCompression?: boolean
+  pixelConstraints?: typeof GPT_IMAGE_SIZE_CONSTRAINTS
+  providerSizePresets?: readonly string[]
+  providerDefaultImageSize?: string
   provider: string
   /** Endpoint used when no reference images are attached */
   endpoint: string
@@ -93,12 +103,12 @@ export interface ImageModelOption {
   editEndpoint: string
   /**
    * Aspect ratios the endpoint accepts, or null when the model has no
-   * `aspect_ratio` field (GPT Image 2 — it uses explicit pixel sizes).
+   * `aspect_ratio` field (GPT Image 2.5 — it uses explicit pixel sizes).
    */
   aspectRatios: FalAspectRatio[] | null
   /** Output resolutions, or null when the model has a fixed output size. */
   resolutions: FalResolution[] | null
-  /** Quality tiers (the two OpenAI models; GPT Image 1.5 has no `auto`). */
+  /** Quality tiers exposed by the model endpoint. */
   qualities: GptImageQuality[] | null
   /** How `image_size` is expressed for this endpoint. */
   imageSizeMode: ImageSizeMode
@@ -124,8 +134,7 @@ export interface ImageModelOption {
    */
   supportsNegativePrompt: false
   /**
-   * `background` — transparency. Only GPT Image 1.5 has it, which is the whole
-   * reason logo mode exists.
+   * `background` — explicit transparency support, required for logo mode.
    */
   supportsBackground: boolean
   /** `input_fidelity` — GPT Image 1.5 edit only. */
@@ -135,13 +144,13 @@ export interface ImageModelOption {
   defaultQuality: GptImageQuality | null
   /**
    * Aspect ratios the user can pick for this model. Usually identical to
-   * `aspectRatios`, but GPT Image 2 has no `aspect_ratio` field and still
+   * `aspectRatios`, but GPT Image 2.5 has no `aspect_ratio` field and still
    * honours a ratio through an explicit `image_size` — so it offers the ratios
    * its pixel-size rules allow (up to 3:1).
    */
   uiAspectRatios: FalAspectRatio[]
   /**
-   * Resolutions the user can pick. GPT Image 2 has no `resolution` field but
+   * Resolutions the user can pick. GPT Image 2.5 has no `resolution` field but
    * reaches these through `image_size`; Nano Banana 2 Lite genuinely cannot.
    */
   uiResolutions: FalResolution[]
@@ -161,102 +170,95 @@ const GEMINI_RATIOS_STANDARD: FalAspectRatio[] = [
   'auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16',
 ]
 
-/**
- * The only three `image_size` values GPT Image 1.5 accepts, in the endpoint's
- * own spelling. They are 1:1, 3:2 and 2:3 — there is no resolution axis at all.
- */
-const GPT_IMAGE_15_SIZES = ['1024x1024', '1536x1024', '1024x1536']
+export const GPT_IMAGE_SIZE_CONSTRAINTS = {
+  multipleOf: 16,
+  maxEdge: 3840,
+  minPixels: 655_360,
+  maxPixels: 8_294_400,
+  maxAspectRatio: 3,
+} as const
 
-export const AVAILABLE_MODELS: ImageModelOption[] = [
-  {
-    id: 'openai/gpt-image-2',
-    name: 'GPT Image 2',
+/** Round user dimensions upward, then reject invalid sizes instead of silently resizing. */
+export function normalizeGptImageSize(size: { width: number; height: number }): { width: number; height: number } {
+  if (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
+    throw new Error('Image width and height must be positive finite pixel values.')
+  }
+  const width = Math.ceil(size.width / 16) * 16
+  const height = Math.ceil(size.height / 16) * 16
+  const pixels = width * height
+  const prefix = `Rounded image size ${width} × ${height}: `
+  if (Math.max(width, height) > GPT_IMAGE_SIZE_CONSTRAINTS.maxEdge) {
+    throw new Error(prefix + 'each edge must be at most 3840 pixels. Reduce the larger dimension.')
+  }
+  if (Math.max(width / height, height / width) > GPT_IMAGE_SIZE_CONSTRAINTS.maxAspectRatio) {
+    throw new Error(prefix + 'aspect ratio must be between 1:3 and 3:1. Increase the shorter dimension or reduce the longer one.')
+  }
+  if (pixels < GPT_IMAGE_SIZE_CONSTRAINTS.minPixels || pixels > GPT_IMAGE_SIZE_CONSTRAINTS.maxPixels) {
+    throw new Error(prefix + `total pixels must be between 655,360 and 8,294,400 (currently ${pixels.toLocaleString('en-US')}). Adjust both dimensions.`)
+  }
+  return { width, height }
+}
+
+export const GPT_IMAGE_FLARE_MODEL = 'openai/gpt-image-2.5/flare/text-to-image'
+export const GPT_IMAGE_SUNBURST_MODEL = 'openai/gpt-image-2.5/sunburst/text-to-image'
+
+function gptImage25Model(variant: 'flare' | 'sunburst'): ImageModelOption {
+  return {
+    id: `openai/gpt-image-2.5/${variant}/text-to-image`,
+    name: `GPT Image 2.5 ${variant === 'flare' ? 'Flare' : 'Sunburst'}`,
+    description: variant === 'flare'
+      ? 'Fast, high-quality GPT Image 2.5 default for everyday images and transparent logos. Published fal.ai list prices currently match Sunburst; actual token usage and latency vary.'
+      : 'Precision-focused premium GPT Image 2.5 variant for intricate details, with longer generation times; recommended for thumbnails. Published fal.ai list prices currently match Flare; actual token usage varies.',
     provider: 'OpenAI',
-    endpoint: 'openai/gpt-image-2',
-    editEndpoint: 'openai/gpt-image-2/edit',
+    outputFormats: ['png', 'jpeg', 'webp'],
+    endpoint: `openai/gpt-image-2.5/${variant}/text-to-image`,
+    editEndpoint: `openai/gpt-image-2.5/${variant}/edit`,
     aspectRatios: null,
     resolutions: null,
-    qualities: ['auto', 'low', 'medium', 'high'],
+    qualities: ['auto', 'low', 'medium', 'high', 'xhigh', 'max'],
     imageSizeMode: 'pixels',
     fixedImageSizes: null,
     defaultImageSize: null,
     maxReferenceImages: 16,
-    maxImagesPerRequest: 4,
+    maxImagesPerRequest: 10,
+    maxPromptLength: 32000,
     supportsSeed: false,
     supportsSystemPrompt: false,
     supportsWebSearch: false,
     supportsThinkingLevel: false,
     supportsSafetyTolerance: false,
     supportsNegativePrompt: false,
-    supportsBackground: false,
+    supportsBackground: true,
     supportsInputFidelity: false,
+    supportsOutputCompression: true,
+    pixelConstraints: GPT_IMAGE_SIZE_CONSTRAINTS,
+    providerSizePresets: ['square_hd', 'square', 'portrait_4_3', 'portrait_16_9', 'landscape_4_3', 'landscape_16_9', 'auto'],
+    providerDefaultImageSize: 'landscape_4_3',
     defaultAspectRatio: null,
     defaultResolution: null,
     defaultQuality: 'high',
-    // No aspect_ratio field — ratios become explicit pixel sizes, capped at 3:1.
     uiAspectRatios: GEMINI_RATIOS_STANDARD,
     uiResolutions: ['1K', '2K', '4K'],
-    fixedOutputNote: 'Size derived from the aspect ratio; quality is tiered',
+    fixedOutputNote: 'Custom pixels round up to multiples of 16; max edge 3840, 0.655–8.294 MP, max ratio 3:1',
     pricing: {
-      // fal's published table of canonical sizes; `auto` bills as `high`.
+      sources: [`https://fal.ai/models/openai/gpt-image-2.5/${variant}/text-to-image`, `https://fal.ai/models/openai/gpt-image-2.5/${variant}/edit`],
+      checkedAt: '2026-09-09',
       sizeTiers: [
-        { pixels: 1024 * 768, low: 0.005, medium: 0.037, high: 0.145 },
-        { pixels: 1024 * 1024, low: 0.006, medium: 0.053, high: 0.211 },
-        { pixels: 1024 * 1536, low: 0.005, medium: 0.042, high: 0.165 },
-        { pixels: 1920 * 1080, low: 0.005, medium: 0.040, high: 0.158 },
-        { pixels: 2560 * 1440, low: 0.007, medium: 0.056, high: 0.222 },
-        { pixels: 3840 * 2160, low: 0.012, medium: 0.101, high: 0.401 },
+        { pixels: 1024 * 768, low: 0.00402, medium: 0.00903, high: 0.03612, xhigh: 0.06420, max: 0.14445 },
+        { pixels: 1024 * 1024, low: 0.00588, medium: 0.01317, high: 0.05268, xhigh: 0.09366, max: 0.21072 },
+        { pixels: 1024 * 1536, low: 0.00474, medium: 0.01029, high: 0.04116, xhigh: 0.07377, max: 0.16464 },
+        { pixels: 1920 * 1080, low: 0.00441, medium: 0.01029, high: 0.03960, xhigh: 0.07041, max: 0.15840 },
+        { pixels: 2560 * 1440, low: 0.00615, medium: 0.01434, high: 0.05529, xhigh: 0.09828, max: 0.22110 },
+        { pixels: 3840 * 2160, low: 0.01113, medium: 0.02595, high: 0.10008, xhigh: 0.17790, max: 0.40026 },
       ],
-      note: 'Token-based — depends on output size and quality tier',
+      note: 'fal.ai list prices checked 2026-09-09; both variants currently share the same table. Nearest published pixel-count example; auto estimated at high, not guaranteed. Prompt/reference tokens add variability. USD per 1M tokens: text input 5/cached 1.25/output 10; image input 8/cached 2/output 30.',
     },
-  },
-  {
-    id: 'fal-ai/gpt-image-1.5',
-    name: 'GPT Image 1.5',
-    provider: 'OpenAI',
-    endpoint: 'fal-ai/gpt-image-1.5',
-    editEndpoint: 'fal-ai/gpt-image-1.5/edit',
-    // No aspect_ratio and no resolution field — three fixed sizes, nothing else.
-    aspectRatios: null,
-    resolutions: null,
-    // `auto` is absent here; the endpoint only takes low / medium / high.
-    qualities: ['low', 'medium', 'high'],
-    imageSizeMode: 'size-enum',
-    fixedImageSizes: GPT_IMAGE_15_SIZES,
-    defaultImageSize: '1024x1024',
-    // The schema states no upper bound on image_urls; OpenAI's own limit for
-    // this model is 16, so that is what we enforce rather than letting the
-    // request fail at the endpoint.
-    maxReferenceImages: 16,
-    maxImagesPerRequest: 4,
-    supportsSeed: false,
-    supportsSystemPrompt: false,
-    supportsWebSearch: false,
-    supportsThinkingLevel: false,
-    supportsSafetyTolerance: false,
-    supportsNegativePrompt: false,
-    // The one model in the registry that can return a real alpha channel.
-    supportsBackground: true,
-    supportsInputFidelity: true,
-    defaultAspectRatio: null,
-    defaultResolution: null,
-    defaultQuality: 'high',
-    // The three sizes expressed as ratios — anything else is mapped onto the
-    // nearest of them, since the endpoint accepts nothing else.
-    uiAspectRatios: ['1:1', '3:2', '2:3'],
-    uiResolutions: [],
-    fixedOutputNote: 'Fixed sizes: 1024x1024, 1536x1024, 1024x1536',
-    pricing: {
-      // Both non-square sizes have the same pixel count (1,572,864) and are
-      // priced within $0.001 of each other, so one row covers them; the higher
-      // (portrait) figures are used so the estimate never reads low.
-      sizeTiers: [
-        { pixels: 1024 * 1024, low: 0.009, medium: 0.034, high: 0.133 },
-        { pixels: 1536 * 1024, low: 0.013, medium: 0.051, high: 0.200 },
-      ],
-      note: 'Token-based - $0.133 square / $0.20 landscape+portrait at high',
-    },
-  },
+  }
+}
+
+export const AVAILABLE_MODELS: ImageModelOption[] = [
+  gptImage25Model('flare'),
+  gptImage25Model('sunburst'),
   {
     id: 'fal-ai/nano-banana-2',
     name: 'Nano Banana 2',
@@ -364,7 +366,7 @@ export const AVAILABLE_MODELS: ImageModelOption[] = [
   },
 ]
 
-export const DEFAULT_MODEL = 'openai/gpt-image-2'
+export const DEFAULT_MODEL = GPT_IMAGE_FLARE_MODEL
 
 /**
  * Models usable in thumbnail mode.
@@ -382,14 +384,13 @@ export function isThumbnailModel(modelId: string): boolean {
   return getThumbnailModels().some((m) => m.id === modelId)
 }
 
-export const DEFAULT_THUMBNAIL_MODEL = 'openai/gpt-image-2'
+export const DEFAULT_THUMBNAIL_MODEL = GPT_IMAGE_SUNBURST_MODEL
 
 /**
  * Models usable in logo mode.
  *
  * A logo without a transparent background is a picture of a logo, not a logo —
- * so the mode is defined by the capability, not by a hand-kept list. Today that
- * is GPT Image 1.5 alone; a future model with a `background` field joins on its
+ * so the mode is defined by the capability, not by a hand-kept list. Both GPT Image 2.5 variants support it; a future model with a `background` field joins on its
  * own.
  */
 export function getLogoModels(): ImageModelOption[] {
@@ -400,17 +401,19 @@ export function isLogoModel(modelId: string): boolean {
   return getLogoModels().some((m) => m.id === modelId)
 }
 
-export const DEFAULT_LOGO_MODEL = 'fal-ai/gpt-image-1.5'
+export const DEFAULT_LOGO_MODEL = GPT_IMAGE_FLARE_MODEL
 
 /** Models the app used before it moved to fal.ai, mapped onto their replacement. */
 const LEGACY_MODEL_IDS: Record<string, string> = {
+  'openai/gpt-image-2': GPT_IMAGE_FLARE_MODEL,
+  'fal-ai/gpt-image-1.5': GPT_IMAGE_FLARE_MODEL,
   'google/gemini-3.1-flash-image-preview': 'fal-ai/nano-banana-2',
   'google/gemini-3.1-flash-lite-image': 'google/nano-banana-2-lite',
   'google/gemini-3-pro-image-preview': 'fal-ai/nano-banana-pro',
-  'openai/gpt-5.4-image-2': 'openai/gpt-image-2',
-  'openai/gpt-image-2 ': 'openai/gpt-image-2',
-  'openai/gpt-5-image': 'openai/gpt-image-2',
-  'openai/gpt-5-image-mini': 'openai/gpt-image-2',
+  'openai/gpt-5.4-image-2': GPT_IMAGE_FLARE_MODEL,
+  'openai/gpt-image-2 ': GPT_IMAGE_FLARE_MODEL,
+  'openai/gpt-5-image': GPT_IMAGE_FLARE_MODEL,
+  'openai/gpt-5-image-mini': GPT_IMAGE_FLARE_MODEL,
   'sourceful/riverflow-v2-pro': 'fal-ai/nano-banana-2',
   'bytedance-seed/seedream-4.5': 'fal-ai/nano-banana-2',
   'black-forest-labs/flux.2-max': 'fal-ai/nano-banana-2',
@@ -433,7 +436,7 @@ export function getModelName(modelId: string): string {
   if (known) return known.name
   // Historical images keep their original model id — show it rather than lying
   // about which model produced them.
-  return modelId
+  return ({ 'openai/gpt-image-2': 'GPT Image 2', 'fal-ai/gpt-image-1.5': 'GPT Image 1.5' } as Record<string, string>)[modelId] ?? modelId
 }
 
 /**
@@ -500,6 +503,8 @@ export function getCombinedCapabilities(modelIds: string[]): {
   supportsSeed: boolean
   supportsBackground: boolean
   supportsInputFidelity: boolean
+  supportsCustomImageSize: boolean
+  supportsOutputCompression: boolean
   qualities: GptImageQuality[] | null
   notes: string[]
 } {
@@ -521,10 +526,9 @@ export function getCombinedCapabilities(modelIds: string[]): {
   }
 
   // Quality only applies when every selected model has the field, and then
-  // only for the tiers all of them accept — GPT Image 2 has an `auto` tier
-  // that GPT Image 1.5 would reject.
+  // only for the tiers all selected models accept.
   const qualityModels = models.filter((m) => m.qualities)
-  const allTiers: GptImageQuality[] = ['auto', 'low', 'medium', 'high']
+  const allTiers: GptImageQuality[] = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']
   const qualities =
     qualityModels.length === models.length && qualityModels.length > 0
       ? allTiers.filter((q) => qualityModels.every((m) => m.qualities!.includes(q)))
@@ -538,6 +542,8 @@ export function getCombinedCapabilities(modelIds: string[]): {
     supportsSeed: models.every((m) => m.supportsSeed),
     supportsBackground: models.every((m) => m.supportsBackground),
     supportsInputFidelity: models.every((m) => m.supportsInputFidelity),
+    supportsCustomImageSize: models.every((m) => m.imageSizeMode === 'pixels'),
+    supportsOutputCompression: models.every((m) => m.supportsOutputCompression === true),
     qualities,
     notes,
   }
@@ -546,7 +552,7 @@ export function getCombinedCapabilities(modelIds: string[]): {
 export interface CostEstimateInput {
   /** Requested resolution tier; clamped to what the model offers. */
   resolution?: string
-  /** GPT Image 2 quality tier. `auto` bills like `high`, which is fal's default. */
+  /** GPT Image 2.5 quality tier. `auto` is estimated using high; actual usage can differ. */
   quality?: string
   /** Explicit output size, when the caller already resolved one. */
   imageSize?: { width: number; height: number }
@@ -573,7 +579,7 @@ export function estimateImageCost(modelId: string, opts: CostEstimateInput = {})
 
   if (pricing.sizeTiers) {
     const size =
-      opts.imageSize ??
+      (opts.imageSize ? normalizeGptImageSize(opts.imageSize) : undefined) ??
       (() => {
         // A size-enum model bills by the fixed size the ratio maps onto — it
         // has no resolution axis, so deriving pixels from one would be wrong.
@@ -598,8 +604,8 @@ export function estimateImageCost(modelId: string, opts: CostEstimateInput = {})
       }
     }
 
-    const quality = opts.quality === 'low' || opts.quality === 'medium' ? opts.quality : 'high'
-    perImage = tier[quality]
+    const quality = ['low', 'medium', 'high', 'xhigh', 'max'].includes(opts.quality ?? '') ? opts.quality as Exclude<GptImageQuality, 'auto'> : 'high'
+    perImage = tier[quality] ?? tier.high
   } else {
     const base = pricing.perImage ?? 0
     const tier = resolveResolution(model, opts.resolution ?? model.defaultResolution ?? '1K')
@@ -627,8 +633,10 @@ export function formatCost(usd: number): string {
 /** "16:9" → 1.777…; returns null for `auto` and unparseable input. */
 export function parseRatio(ratio: string): number | null {
   if (!ratio || ratio === 'auto') return null
-  const [w, h] = ratio.split(':').map(Number)
-  if (!w || !h) return null
+  const parts = ratio.split(':').map(Number)
+  if (parts.length !== 2) return null
+  const [w, h] = parts
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null
   return w / h
 }
 
@@ -668,7 +676,7 @@ export function toFixedImageSize(model: ImageModelOption, requestedRatio: string
 }
 
 /**
- * Translate an aspect ratio + resolution into a GPT Image 2 `image_size`.
+ * Translate an aspect ratio + resolution into a GPT Image 2.5 `image_size`.
  * fal.ai requires both dimensions to be multiples of 16, max edge 3840,
  * aspect ratio <= 3:1, and 655,360–8,294,400 total pixels.
  */
@@ -679,7 +687,7 @@ export function toGptImageSize(
   const ratio = parseRatio(aspectRatio)
   if (ratio == null) return 'auto'
 
-  // GPT Image 2 rejects anything past 3:1 in either direction.
+  // GPT Image 2.5 rejects anything past 3:1 in either direction.
   const clamped = Math.min(3, Math.max(1 / 3, ratio))
 
   const targetPixels =
@@ -708,5 +716,8 @@ export function toGptImageSize(
     h = round16(h * scale)
   }
 
-  return { width: w, height: h }
+  // Keep extreme ratios valid after rounding either edge.
+  if (w > h * 3) h = Math.ceil(w / 3 / 16) * 16
+  if (h > w * 3) w = Math.ceil(h / 3 / 16) * 16
+  return normalizeGptImageSize({ width: w, height: h })
 }

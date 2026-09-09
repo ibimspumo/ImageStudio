@@ -30,7 +30,7 @@ function startQueueRunner(context: AutomationContext): () => void {
     if (!useSettingsStore.getState().falApiKey) { current.pauseProcessing(); return }
     advancing = true
     try {
-      const ids = context.generate({ prompt: next.presetSuffix ? `${next.prompt}, ${next.presetSuffix}` : next.prompt, models: next.models, aspectRatio: next.aspectRatio, resolution: next.resolution, imageCount: next.imageCount, attachments: next.attachments, labeledAttachments: next.labeledAttachments, seed: next.seed, quality: next.quality ?? 'high', inputFidelity: 'high' })
+      const ids = context.generate({ prompt: next.presetSuffix ? `${next.prompt}, ${next.presetSuffix}` : next.prompt, models: next.models, aspectRatio: next.aspectRatio, resolution: next.resolution, imageCount: next.imageCount, attachments: next.attachments, labeledAttachments: next.labeledAttachments, seed: next.seed, quality: next.quality ?? 'high', imageSize: next.imageSize, outputFormat: next.outputFormat, outputCompression: next.outputCompression, background: next.background })
       if (!ids.length) throw new Error('No generation jobs were started')
       current.updateItem(next.id, { status: 'active', resultImageIds: ids })
     } catch (error) {

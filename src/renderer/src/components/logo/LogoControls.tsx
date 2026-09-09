@@ -1,15 +1,14 @@
+import { PixelSizeControls, type PixelSizeProps } from '../input/PixelSizeControls'
+import type { Resolution } from '../../types/api'
 import { Send, XCircle, Settings, ListOrdered } from 'lucide-react'
 import { ModelSelector } from '../input/ModelSelector'
 import { ImageCountSelector } from '../input/ImageCountSelector'
-import { TuneMenu, TuneGroup, TuneOption, TuneRow, RatioBox } from '../input/TunePanel'
+import { TuneMenu, TuneGroup, TuneOption, TuneRow, TuneRatioOptions } from '../input/TunePanel'
 import { QueueButton } from '../queue/QueueButton'
 import { useQueueStore } from '../../stores/queue-store'
 import {
   getCombinedCapabilities,
   getLogoModels,
-  getModel,
-  toFixedImageSize,
-  LOGO_ASPECT_RATIOS,
   LOGO_DEFAULT_ASPECT_RATIO,
   LOGO_STYLES,
   type FalBackground,
@@ -19,7 +18,11 @@ import {
 } from '../../types/api'
 import { cn } from '../../lib/utils'
 
-interface LogoControlsProps {
+interface LogoControlsProps extends PixelSizeProps {
+  resolution?: Resolution
+  onResolutionChange?: (resolution: Resolution) => void
+  customRatio?: string
+  onCustomRatioChange?: (ratio: string) => void
   selectedModels: string[]
   onModelsChange: (models: string[]) => void
   style: LogoStyle
@@ -52,6 +55,8 @@ const BACKGROUND_OPTIONS: { id: FalBackground; label: string; hint: string }[] =
 ]
 
 export function LogoControls({
+  imageSize, onImageSizeChange, onSizeErrorChange,
+  resolution = '1K', onResolutionChange, customRatio = '1:1', onCustomRatioChange,
   selectedModels,
   onModelsChange,
   style,
@@ -80,14 +85,6 @@ export function LogoControls({
     (s) => s.items.filter((i) => i.status === 'pending' || i.status === 'active').length
   )
 
-  // The sizes come from the model itself, so the menu shows the pixels the
-  // request will actually carry rather than a ratio it only approximates.
-  const primary = getModel(selectedModels[0] ?? '')
-  const sizeOptions = LOGO_ASPECT_RATIOS.map((ratio) => ({
-    ratio,
-    size: toFixedImageSize(primary, ratio),
-  }))
-
   const tuneBadge = [
     style !== 'auto',
     aspectRatio !== LOGO_DEFAULT_ASPECT_RATIO,
@@ -95,6 +92,15 @@ export function LogoControls({
     !!caps.qualities && quality !== 'high',
     caps.supportsInputFidelity && hasReferences && inputFidelity !== 'high',
   ].filter(Boolean).length
+
+  const sizePresets = <>
+              <TuneGroup label="Format">
+                <TuneRatioOptions ratios={caps.aspectRatios} value={aspectRatio} onChange={onAspectRatioChange} customRatio={customRatio} onCustomRatioChange={onCustomRatioChange} />
+              </TuneGroup>
+              <TuneGroup label="Auflösung">
+                {caps.resolutions.map((res) => <TuneOption key={res} selected={resolution === res} onClick={() => onResolutionChange?.(res as Resolution)}>{res}</TuneOption>)}
+              </TuneGroup>
+  </>
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-5 py-3">
@@ -112,7 +118,7 @@ export function LogoControls({
         max={caps.maxImagesPerRequest}
       />
 
-      <TuneMenu badge={tuneBadge} width={340} summary={`${aspectRatio} · PNG`}>
+      <TuneMenu badge={tuneBadge} width={360} summary={`${imageSize ? `${imageSize.width} × ${imageSize.height}` : aspectRatio === 'custom' ? customRatio : aspectRatio} · PNG`}>
         {(close) => (
           <>
             <TuneGroup label="Logo-Typ">
@@ -128,19 +134,9 @@ export function LogoControls({
               ))}
             </TuneGroup>
 
-            <TuneGroup label="Größe">
-              {sizeOptions.map((opt) => (
-                <TuneOption
-                  key={opt.ratio}
-                  selected={aspectRatio === opt.ratio}
-                  onClick={() => onAspectRatioChange(opt.ratio)}
-                  title={`Ausgabe exakt ${opt.size} px`}
-                >
-                  <RatioBox ratio={opt.ratio} size={14} active={aspectRatio === opt.ratio} />
-                  {opt.size}
-                </TuneOption>
-              ))}
-            </TuneGroup>
+            {caps.supportsCustomImageSize && onImageSizeChange ? <PixelSizeControls imageSize={imageSize} onImageSizeChange={onImageSizeChange} onSizeErrorChange={onSizeErrorChange} ratio={aspectRatio === 'custom' ? customRatio : aspectRatio} resolution={resolution}>
+              {sizePresets}
+            </PixelSizeControls> : sizePresets}
 
             {/* Background — transparent is the default and the reason this mode exists. */}
             <TuneGroup label="Hintergrund">

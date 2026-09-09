@@ -15,6 +15,11 @@ export interface DraftPatch {
   logoStyle?: LogoStyle
   background?: FalBackground
   inputFidelity?: FalInputFidelity
+  imageSize?: { width: number; height: number }
+  clearImageSize?: boolean
+  outputFormat?: 'png' | 'jpeg' | 'webp'
+  outputCompression?: number
+  clearOutputCompression?: boolean
   references?: string[]
   collectionIds?: string[]
   model?: string

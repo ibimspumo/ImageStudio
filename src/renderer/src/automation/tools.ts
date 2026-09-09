@@ -1,3 +1,4 @@
+import { normalizeGptImageSize, GPT_IMAGE_SIZE_CONSTRAINTS, toGptImageSize } from '../../../shared/image-models'
 import { IMAGE_PROCESSING_MODELS, IMAGE_PROCESSING_INPUT_FORMATS, IMAGE_PROCESSING_LIMITS } from '../../../shared/image-processing'
 import { useSettingsStore } from '../stores/settings-store'
 import { useGalleryStore, isThumbnailImage, type GalleryImage } from '../stores/gallery-store'
@@ -49,11 +50,16 @@ export const collectionIdsSchema = array(str('Collection ID from collections act
 const modelIdsSchema = { ...array(choice(AVAILABLE_MODELS.map(m => m.id)), 8), minItems: 1 }
 const ratioSchema: Schema = { type: 'string', pattern: '^(auto|[1-9][0-9]{0,3}:[1-9][0-9]{0,3})$' }
 const resolutionSchema = choice(['0.5K', '1K', '2K', '4K'])
-const qualitySchema = choice(['auto', 'low', 'medium', 'high'])
+export const qualitySchema = choice([...new Set(AVAILABLE_MODELS.flatMap(model => model.qualities ?? []))])
+export const customImageSizeSchema = { ...object({ width: integer(1, GPT_IMAGE_SIZE_CONSTRAINTS.maxEdge), height: integer(1, GPT_IMAGE_SIZE_CONSTRAINTS.maxEdge) }, ['width', 'height']), description: 'Explicit output pixels for supported GPT models. Both dimensions round upward to multiples of 16, then registry pixel/edge/aspect limits apply. Overrides aspectRatio and resolution. Thumbnail mode has a locked size; use normal image mode for custom pixels. Read preview_generation for normalized dimensions.' }
+const maxImageCount = Math.max(...AVAILABLE_MODELS.map(model => model.maxImagesPerRequest))
 const nameSchema: Schema = { ...str(), minLength: 1, maxLength: 300 }
 const commonGeneration = {
   prompt: { ...str(REFERENCE_PROMPT_DESCRIPTION), minLength: 1 }, models: modelIdsSchema,
-  aspectRatio: ratioSchema, resolution: resolutionSchema, imageCount: integer(1, 4),
+  aspectRatio: ratioSchema, resolution: resolutionSchema, imageCount: integer(1, maxImageCount),
+  imageSize: customImageSizeSchema,
+  background: choice(['auto', 'opaque', 'transparent']), outputFormat: choice(['png', 'jpeg', 'webp']),
+  outputCompression: { ...integer(0, 100), description: 'JPEG/WebP compression quality. Omit to use the provider default (not specified by its schema). Only supported models; unavailable for PNG and logo mode.' },
   quality: qualitySchema, seed: integer(0, 2147483647),
   references: referencesSchema, collectionIds: collectionIdsSchema,
   workspaceId: str('Destination folder/workspace ID. Empty string means unfiled; omitted uses active folder.'),
@@ -67,8 +73,6 @@ export const generationSchema = object({
   customMetaPrompt: str('Additional custom thumbnail rules, appended to the chosen saved meta prompt.'),
   style: choice(['auto', 'minimal', 'wordmark', 'emblem', 'mascot', 'clean', 'balanced', 'bold']),
   brandName: str(), faceFidelity: bool,
-  background: choice(['auto', 'opaque', 'transparent']), outputFormat: choice(['png', 'jpeg', 'webp']),
-  inputFidelity: choice(['low', 'high']),
 }, ['prompt'])
 
 export interface GenerationArgs {
@@ -77,7 +81,7 @@ export interface GenerationArgs {
   collectionIds?: string[]; workspaceId?: string; presetId?: string; projectId?: string;
   metaPromptId?: string; customMetaPrompt?: string; style?: string; brandName?: string;
   faceFidelity?: boolean; background?: 'auto' | 'opaque' | 'transparent';
-  outputFormat?: 'png' | 'jpeg' | 'webp'; inputFidelity?: 'low' | 'high';
+  outputFormat?: 'png' | 'jpeg' | 'webp'; outputCompression?: number; imageSize?: { width: number; height: number };
 }
 
 export function requireItem<T extends { id: string }>(items: T[], id: string | undefined, kind = 'Item'): T {
@@ -132,6 +136,19 @@ export async function prepareGeneration(args: GenerationArgs): Promise<GenerateO
   const style = args.style ?? 'auto'
   if (mode === 'logo' && !LOGO_STYLES.some(s => s.id === style)) throw new Error('Invalid logo style')
   if (mode === 'thumbnail' && !THUMBNAIL_STYLES.some(s => s.id === style)) throw new Error('Invalid thumbnail style')
+  if (mode === 'thumbnail' && args.imageSize) throw new Error('Thumbnail mode uses its fixed landscape output size. Use mode=image for custom imageSize pixels.')
+  const imageSize = args.imageSize ? normalizeGptImageSize(args.imageSize) : undefined
+  for (const id of models) {
+    const model = getModel(id)
+    if (imageSize && model.imageSizeMode !== 'pixels') throw new Error(`${model.name} does not support custom imageSize; inspect get_capabilities`)
+    if (args.quality && model.qualities && !model.qualities.includes(args.quality as never)) throw new Error(`${model.name} does not support quality ${args.quality}; use ${model.qualities.join(', ')}`)
+    if (args.background && !model.supportsBackground) throw new Error(`${model.name} does not support background controls`)
+    if (args.outputFormat && model.outputFormats && !model.outputFormats.includes(args.outputFormat)) throw new Error(`${model.name} does not support outputFormat ${args.outputFormat}`)
+    if (args.outputCompression !== undefined && !model.supportsOutputCompression) throw new Error(`${model.name} does not support outputCompression`)
+  }
+  const outputFormat = mode === 'logo' ? 'png' : args.outputFormat ?? 'png'
+  if (mode === 'logo' && args.outputFormat && args.outputFormat !== 'png') throw new Error('Logo mode requires PNG output to preserve the shared logo format')
+  if (args.outputCompression !== undefined && outputFormat === 'png') throw new Error('outputCompression is only available for JPEG or WebP output; omit it for PNG')
   const groups = await references(args)
   const hasReferences = groups.some(g => g.images.length > 0)
   const projects = useThumbnailProjectsStore.getState()
@@ -150,12 +167,11 @@ export async function prepareGeneration(args: GenerationArgs): Promise<GenerateO
     prompt: preset ? `${args.prompt}, ${preset.suffix}` : args.prompt,
     models, imageCount: args.imageCount ?? settings.defaultImageCount,
     aspectRatio: mode === 'thumbnail' ? '16:9' : args.aspectRatio ?? (mode === 'logo' ? '1:1' : settings.defaultAspectRatio),
-    resolution: mode === 'thumbnail' ? '2K' : mode === 'logo' ? '1K' : args.resolution ?? settings.defaultResolution,
+    resolution: mode === 'thumbnail' ? '2K' : args.resolution ?? (mode === 'logo' ? '1K' : settings.defaultResolution),
     quality: args.quality ?? 'high', seed: args.seed,
     attachments: groups.flatMap(g => g.images), labeledAttachments: groups,
     workspaceId: args.workspaceId === '' ? null : args.workspaceId,
-    background, inputFidelity: args.inputFidelity ?? 'high',
-    outputFormat: mode === 'logo' || background === 'transparent' ? 'png' : args.outputFormat,
+    background, imageSize, outputFormat, outputCompression: args.outputCompression,
   }
   if (mode === 'thumbnail') Object.assign(options, {
     systemPrompt: buildThumbnailSystemPrompt({ style: style as ThumbnailStyle, faceFidelity: args.faceFidelity ?? hasReferences, videoTitle: project?.title, videoAngle: project?.angle, customMetaPrompt: [metaText, args.customMetaPrompt].filter(Boolean).join('\n\n') }),
@@ -165,10 +181,15 @@ export async function prepareGeneration(args: GenerationArgs): Promise<GenerateO
     systemPrompt: buildLogoSystemPrompt({ style: style as LogoStyle, transparent: background === 'transparent', hasReferences, brandName: args.brandName }),
     isLogo: true, logoStyle: style,
   })
+  for (const id of models) {
+    const model = getModel(id)
+    const composedLength = [options.systemPrompt, options.prompt].filter(Boolean).join('\n\n').length
+    if (model.maxPromptLength && composedLength > model.maxPromptLength) throw new Error(`${model.name} prompt and composed rules exceed ${model.maxPromptLength} characters; shorten the prompt, preset or mode rules.`)
+  }
   return options
 }
 export function estimateGeneration(options: GenerateOptions) {
-  const models = options.models.map(id => ({ id, aspectRatio: resolveAspectRatio(getModel(id), options.aspectRatio), resolution: resolveResolution(getModel(id), options.resolution), estimatedCostUsd: estimateImageCost(id, { ...options, count: options.imageCount }) }))
+  const models = options.models.map(id => ({ id, imageSize: getModel(id).imageSizeMode === 'pixels' ? options.imageSize ?? toGptImageSize(options.aspectRatio, options.resolution) : undefined, aspectRatio: resolveAspectRatio(getModel(id), options.aspectRatio), resolution: resolveResolution(getModel(id), options.resolution), estimatedCostUsd: estimateImageCost(id, { ...options, count: options.imageCount }) }))
   return { currency: 'USD', estimateOnly: true, estimatedCostUsd: models.reduce((sum, m) => sum + m.estimatedCostUsd, 0), models }
 }
 export function imageSummary(image: GalleryImage) {
@@ -190,6 +211,8 @@ export function createAutomationTools(context: AutomationContext) {
   }
   add('get_capabilities', 'Discover all live image/video models, aspect ratios, resolutions, qualities, reference limits, pricing estimates and mode rules. This is the app registry, not an external model list.', object({}), () => ({
     models: AVAILABLE_MODELS, videoModels: AVAILABLE_VIDEO_MODELS,
+    defaults: { image: useSettingsStore.getState().defaultModel, logo: DEFAULT_LOGO_MODEL, thumbnail: DEFAULT_THUMBNAIL_MODEL, quality: 'high', outputFormat: 'png', outputCompression: null },
+    customImageSize: { ...GPT_IMAGE_SIZE_CONSTRAINTS, rounding: 'Each edge rounds upward to a multiple of 16; limits apply afterward. Overrides aspectRatio/resolution.', thumbnail: { supported: false, fixedSize: THUMBNAIL_GPT_IMAGE_SIZE }, transparentFormats: ['png', 'webp'], logoFormat: 'png' },
     imageProcessing: { models: IMAGE_PROCESSING_MODELS, inputMimeTypes: IMAGE_PROCESSING_INPUT_FORMATS, limits: IMAGE_PROCESSING_LIMITS, previewTool: 'preview_image_processing', tools: ['image_upscale', 'image_remove_background'], source: 'Completed or imported gallery image ID. Reads original pixels; no prompt. Auto-selects Topaz Transparent for actual alpha.' },
     modes: ['image', 'logo', 'thumbnail', 'video'], logoStyles: LOGO_STYLES, thumbnailStyles: THUMBNAIL_STYLES,
     exports: { images: ['png', 'jpeg', 'webp'], imageExportTool: 'image_export', thumbnailExport: { width: 1920, height: 1080, format: 'jpeg', maxBytesTarget: 2000000 }, originalMediaExportTool: 'export_media', videoDisplay: 'read_media returns resource links; playback depends on the MCP client. read_image embeds native image content.' },
@@ -207,7 +230,7 @@ export function createAutomationTools(context: AutomationContext) {
   add<{ ids?: string[] }>('refresh_costs', 'Read fal.ai billing events for retained gallery jobs and persist exact request totals after discounts in the same gallery used by the UI. No generation. Requires a fal.ai Admin key (optional falBillingApiKey, otherwise falApiKey). Missing events remain estimates; legacy jobs without falRequestId cannot be reconciled. ids optionally restricts gallery IDs. Returns access/pending errors without credentials.', object({ ids: imageIdsSchema }), ({ ids }) => refreshGalleryBilling(ids))
   const settingsSchema = object({
     falApiKey: str(), falBillingApiKey: str(), defaultModel: choice(AVAILABLE_MODELS.map(m => m.id)), defaultVideoModel: choice(AVAILABLE_VIDEO_MODELS.map(m => m.id)),
-    defaultAspectRatio: ratioSchema, defaultResolution: resolutionSchema, defaultImageCount: integer(1, 4), autoCheckUpdates: bool, antiDetection: bool,
+    defaultAspectRatio: ratioSchema, defaultResolution: resolutionSchema, defaultImageCount: integer(1, maxImageCount), autoCheckUpdates: bool, antiDetection: bool,
   })
   add<Partial<AppSettings>>('update_settings', 'Update specified app settings, including falApiKey and the optional falBillingApiKey Admin key for read-only costs. Unspecified settings stay unchanged.', settingsSchema, async args => {
     for (const key of Object.keys(args) as (keyof AppSettings)[]) await useSettingsStore.getState().setSetting(key, args[key]!)
@@ -389,7 +412,7 @@ export function createAutomationTools(context: AutomationContext) {
   add<GenerationArgs>('enqueue', 'Add a normal image generation to the persistent queue. Does not start it automatically; use queue start. Thumbnail/logo jobs use generate directly so no mode rules are lost.', object(commonGeneration, ['prompt']), async args => {
     const options = await prepareGeneration({ ...args, mode: 'image' })
     if (args.workspaceId !== undefined) throw new Error('Queue uses the active workspace when each item starts; select a workspace before starting the queue')
-    const id = useQueueStore.getState().addToQueue({ prompt: options.prompt, models: options.models, aspectRatio: options.aspectRatio, resolution: options.resolution, imageCount: options.imageCount, seed: options.seed, quality: options.quality, attachments: options.attachments, labeledAttachments: options.labeledAttachments })
+    const id = useQueueStore.getState().addToQueue({ prompt: options.prompt, models: options.models, aspectRatio: options.aspectRatio, resolution: options.resolution, imageCount: options.imageCount, seed: options.seed, quality: options.quality, imageSize: options.imageSize, outputFormat: options.outputFormat, outputCompression: options.outputCompression, background: options.background, attachments: options.attachments, labeledAttachments: options.labeledAttachments })
     await useQueueStore.getState().persistToDisk()
     return { id, ...estimateGeneration(options) }
   })

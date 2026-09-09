@@ -125,14 +125,15 @@ export async function prepareForStorage(
   enabled: boolean,
   preserveAlpha = false
 ): Promise<{ dataUrl: string; extension: string }> {
-  if (!enabled) return { dataUrl: base64DataUrl, extension: 'png' }
+  const originalExtension = /^data:image\/jpe?g[;,]/i.test(base64DataUrl) ? 'jpg' : /^data:image\/webp[;,]/i.test(base64DataUrl) ? 'webp' : 'png'
+  if (!enabled) return { dataUrl: base64DataUrl, extension: originalExtension }
 
   if (preserveAlpha) {
     try {
       return { dataUrl: await reencodePreservingAlpha(base64DataUrl), extension: 'png' }
     } catch (err) {
       logger.warn('anti-detection', 'PNG re-encode failed, storing the original image', err)
-      return { dataUrl: base64DataUrl, extension: 'png' }
+      return { dataUrl: base64DataUrl, extension: originalExtension }
     }
   }
 
@@ -140,7 +141,7 @@ export async function prepareForStorage(
     return { dataUrl: await scrubGeneratedImage(base64DataUrl), extension: 'jpg' }
   } catch (err) {
     logger.warn('anti-detection', 'Scrub failed, storing the original image', err)
-    return { dataUrl: base64DataUrl, extension: 'png' }
+    return { dataUrl: base64DataUrl, extension: originalExtension }
   }
 }
 

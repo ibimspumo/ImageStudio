@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils'
 interface ImageCountSelectorProps {
   value: number
   onChange: (value: number) => void
-  /** Upper bound of the selected model(s) — 4 for every current fal.ai model */
+  /** Upper bound derived from the selected models */
   max?: number
 }
 

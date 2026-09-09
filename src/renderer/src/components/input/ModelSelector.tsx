@@ -92,6 +92,7 @@ export function ModelSelector({ selectedModels, onChange, compact, available, si
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-[12px] font-medium truncate">{model.name}</span>
                     <span className="text-[12px] text-text-muted">{model.provider}</span>
+                    {model.description && <span className="mt-0.5 text-[12px] leading-relaxed text-text-secondary">{model.description}</span>}
                   </div>
                 </button>
               )

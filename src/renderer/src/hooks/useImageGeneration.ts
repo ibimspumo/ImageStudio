@@ -11,6 +11,8 @@ import { normalizeImageProcessing, type ImageProcessingSpec, type ImageProcessin
 import { packReferencesForModel } from '../lib/reference-packing'
 import {
   getModel,
+  normalizeGptImageSize,
+  normalizeModelId,
   DEFAULT_MODEL,
   type FalBackground,
   type FalInputFidelity,
@@ -41,7 +43,7 @@ export interface GenerateOptions {
    * to the prompt where it does not (GPT Image 2).
    */
   systemPrompt?: string
-  /** Exact output size for models that take pixels — thumbnail mode only. */
+  /** Explicit pixel size, shared by the composer and MCP. */
   imageSize?: { width: number; height: number }
   /** Thumbnail mode metadata, stored on the image so it survives a reuse. */
   projectId?: string
@@ -55,6 +57,7 @@ export interface GenerateOptions {
   background?: FalBackground
   /** File format fal.ai returns. Logo mode pins png; alpha needs it. */
   outputFormat?: 'png' | 'jpeg' | 'webp'
+  outputCompression?: number
   /** How literally the edit endpoint keeps the references it is given. */
   inputFidelity?: FalInputFidelity
   /** Logo mode metadata, stored on the image so it survives a reuse. */
@@ -144,7 +147,18 @@ export function useImageGeneration() {
       if (processing && (options.imageCount !== 1 || options.models.length !== 1 || options.models[0] !== processing.modelId || !options.attachments?.[0])) {
         throw new Error('Image processing requires one source image and its dedicated processing model.')
       }
-      const models = processing ? [processing.modelId] : options.models.length > 0 ? options.models : [DEFAULT_MODEL]
+      const models = processing ? [processing.modelId] : [...new Set((options.models.length > 0 ? options.models : [DEFAULT_MODEL]).map(normalizeModelId))]
+      options.models = models
+      if (!processing) {
+        if (!Number.isInteger(options.imageCount) || options.imageCount < 1 || models.some(id => options.imageCount > getModel(id).maxImagesPerRequest)) throw new Error('Image count exceeds the selected model limits.')
+        if (options.imageSize) {
+          if (!options.thumbnailStyle && models.some(id => getModel(id).imageSizeMode !== 'pixels')) throw new Error('Custom pixel sizes require pixel-capable models only.')
+          options.imageSize = normalizeGptImageSize(options.imageSize)
+          if (!options.thumbnailStyle) options.aspectRatio = `${options.imageSize.width}:${options.imageSize.height}`
+        }
+        if (options.outputCompression !== undefined && (models.some(id => !getModel(id).supportsOutputCompression) || !['jpeg', 'webp'].includes(options.outputFormat ?? 'png') || !Number.isInteger(options.outputCompression) || options.outputCompression < 0 || options.outputCompression > 100)) throw new Error('Output compression requires JPEG or WebP, a supported model, and an integer from 0 to 100.')
+        if (options.background === 'transparent' && options.outputFormat === 'jpeg') throw new Error('JPEG cannot preserve transparency. Choose PNG or WebP.')
+      }
       const activeWorkspaceId = options.workspaceId === undefined
         ? useWorkspaceStore.getState().activeWorkspaceId ?? undefined
         : options.workspaceId ?? undefined
@@ -249,7 +263,7 @@ export function useImageGeneration() {
               prompt: promptText,
               imageProcessing,
               systemPrompt: useSystemField ? options.systemPrompt : undefined,
-              imageSize: options.imageSize,
+              imageSize: modelSpec?.imageSizeMode === 'pixels' ? options.imageSize : undefined,
               model,
               apiKey: falApiKey,
               aspectRatio: options.aspectRatio,
@@ -262,6 +276,7 @@ export function useImageGeneration() {
               quality: options.quality,
               background: options.background,
               outputFormat: options.outputFormat,
+              outputCompression: options.outputCompression,
               inputFidelity: options.inputFidelity,
             })
 
@@ -296,10 +311,11 @@ export function useImageGeneration() {
                   // the same processed file.
                   // A transparent result stays PNG: the scrub's JPEG rounds
                   // would flatten the alpha channel it was generated for.
+                  const sourcePixels = await inspectProcessingPixels(result.result.imageBase64).catch(() => undefined)
                   const stored = await prepareForStorage(
                     result.result.imageBase64,
                     antiDetection,
-                    !!processing || (options.background === 'transparent' && !!modelSpec?.supportsBackground)
+                    !!processing || (sourcePixels?.hasAlpha ?? options.background === 'transparent')
                   )
                   // Dedicated restoration stays lossless even with anti-detection enabled:
                   // JPEG/resampling would undo detail restoration and destroy cutout edges.
@@ -308,6 +324,7 @@ export function useImageGeneration() {
                     updateMetadata(placeholderIds[i], { ...actual, mimeType: 'image/png' })
                     updateResolution(placeholderIds[i], getResolutionLabel(actual.width, actual.height))
                   }
+                  updateMetadata(placeholderIds[i], { ...sourcePixels, mimeType: /^data:([^;]+)/.exec(stored.dataUrl)?.[1] })
                   const filename = `${placeholderIds[i]}.${stored.extension}`
                   const saveResult = await window.api.saveImage(stored.dataUrl, filename)
                   if (saveResult.success && saveResult.filePath) {

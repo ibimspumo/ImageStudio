@@ -2,6 +2,7 @@ import { flushSync } from 'react-dom'
 import { getLiveDraft, mountedDraftModes, type DraftMode, type DraftPatch } from './live-drafts'
 import { object, str, array, choice, integer, bool } from './schema'
 import type { RegisterTool } from './tools'
+import { GPT_IMAGE_SIZE_CONSTRAINTS } from '../../../shared/image-models'
 import { AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, LOGO_STYLES, THUMBNAIL_STYLES } from '../types/api'
 import { useGalleryStore } from '../stores/gallery-store'
 import { REFERENCE_PROMPT_DESCRIPTION, REFERENCE_PROMPT_GUIDANCE } from '../../../shared/reference-mentions'
@@ -12,10 +13,12 @@ export const draftPatchSchema = object({
   prompt: str(`Replaces editor text. For image editors, recognized inline mentions become real UI chips at that text position. When collectionIds is omitted, exact unambiguous [@Collection name] markers automatically attach matching live collections, like human paste. Explicit collectionIds replaces that list; unknown or ambiguous names remain text. Image markers resolve only against attached references. ${REFERENCE_PROMPT_DESCRIPTION} ${REFERENCE_PROMPT_GUIDANCE.video}`),
   models: { ...array(choice(AVAILABLE_MODELS.map(m => m.id)), 8), minItems: 1 },
   aspectRatio: { type: 'string', pattern: '^(auto|[1-9][0-9]{0,3}:[1-9][0-9]{0,3})$' },
-  resolution: str(), imageCount: integer(1, Math.max(...AVAILABLE_MODELS.map(model => model.maxImagesPerRequest))), quality: choice(['auto', 'low', 'medium', 'high']),
+  resolution: str(), imageCount: integer(1, Math.max(...AVAILABLE_MODELS.map(model => model.maxImagesPerRequest))), quality: choice([...new Set(AVAILABLE_MODELS.flatMap(model => model.qualities ?? []))]),
+  imageSize: { ...object({ width: integer(1, GPT_IMAGE_SIZE_CONSTRAINTS.maxEdge), height: integer(1, GPT_IMAGE_SIZE_CONSTRAINTS.maxEdge) }, ['width', 'height']), description: 'Custom pixels; edges round upward to multiples of 16 and shared GPT limits apply. Overrides ratio/resolution. Unavailable in thumbnail mode.' }, clearImageSize: bool,
+  outputFormat: choice(['png', 'jpeg', 'webp']), outputCompression: integer(0, 100), clearOutputCompression: bool,
   seed: integer(0, 2147483647), clearSeed: bool,
   thumbnailStyle: choice(THUMBNAIL_STYLES.map(s => s.id)), logoStyle: choice(LOGO_STYLES.map(s => s.id)),
-  background: choice(['auto', 'opaque', 'transparent']), inputFidelity: choice(['low', 'high']),
+  background: choice(['auto', 'opaque', 'transparent']),
   references: array(referenceSchema, 32), collectionIds: array(str('Collection ID to attach. Place its exact promptReference from collections list, e.g. [@Timo], inside patch.prompt at the relevant sentence; otherwise the editor appends the collection chip at the end.'), 32),
   model: choice(AVAILABLE_VIDEO_MODELS.map(m => m.id)), duration: integer(1, 120),
   generateAudio: bool, cameraFixed: bool, startFrame: referenceSchema, clearStartFrame: bool,

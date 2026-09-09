@@ -8,6 +8,8 @@ export {
   resolveResolution,
   parseRatio,
   toGptImageSize,
+  normalizeGptImageSize,
+  GPT_IMAGE_SIZE_CONSTRAINTS,
   getCombinedCapabilities,
   getThumbnailModels,
   isThumbnailModel,

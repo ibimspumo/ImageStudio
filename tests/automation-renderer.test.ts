@@ -77,7 +77,7 @@ test('renderer automation boundary and generation contracts', async () => {
   assert.equal(generated?.background, 'transparent')
   assert.equal(generated?.outputFormat, 'png')
   assert.equal(generated?.isLogo, true)
-  assert.equal((await call('generate', { prompt: 'bad count', imageCount: 5 })).error, true)
+  assert.equal((await call('generate', { prompt: 'bad count', imageCount: 11 })).error, true)
   const queued = await call('enqueue', { prompt: 'Queued only', quality: 'medium' })
   assert.equal(queued.error, false)
   assert.equal(useQueueStore.getState().isProcessing, false)
@@ -126,4 +126,44 @@ test('inline collection and image references remain bound at their prompt positi
   assert.ok(capabilities.models.every((model: Record<string, unknown>) => !('maskField' in model)))
   assert.ok(capabilities.referencePrompting.example.includes('[@Timo]'))
   assert.ok(registry.definitions.find(tool => tool.name === 'generate')?.inputSchema.properties?.prompt.description?.includes('inline'))
+})
+
+
+test('GPT 2.5 discovery, exact pixels, formats and queue retain shared options', async () => {
+  const capabilities = (await call('get_capabilities')).data
+  const models = capabilities.models.filter((model: { id: string }) => model.id.includes('gpt-image'))
+  assert.equal(models.length, 2)
+  assert.ok(models.every((model: { id: string; qualities: string[]; description: string }) => model.id.includes('2.5') && model.qualities.includes('max') && model.description.length > 20))
+  assert.equal(capabilities.defaults.quality, 'high')
+  const base = { prompt: 'An A4 poster', models: [DEFAULT_LOGO_MODEL], presetId: '', imageSize: { width: 1001, height: 1415 }, outputFormat: 'webp', outputCompression: 87, background: 'transparent', quality: 'xhigh', imageCount: 10 }
+  const preview = await call('preview_generation', base)
+  assert.equal(preview.error, false, preview.text)
+  assert.deepEqual(preview.data.request.imageSize, { width: 1008, height: 1424 })
+  assert.deepEqual(preview.data.models[0].imageSize, { width: 1008, height: 1424 })
+  assert.equal(preview.data.request.outputFormat, 'webp')
+  assert.equal(preview.data.request.outputCompression, 87)
+  const queued = await call('enqueue', base)
+  assert.equal(queued.error, false, queued.text)
+  const item = useQueueStore.getState().items.find(item => item.id === queued.data.id)!
+  assert.deepEqual(item.imageSize, { width: 1008, height: 1424 })
+  assert.equal(item.outputCompression, 87)
+  assert.equal(item.outputFormat, 'webp')
+  assert.equal(item.background, 'transparent')
+  for (const patch of [
+    { imageSize: { width: 16, height: 16 } },
+    { imageSize: { width: 3840, height: 3840 } },
+    { imageSize: { width: 3840, height: 1008 } },
+    { imageSize: { width: 1001.5, height: 1415 } },
+    { outputFormat: 'png' }, { outputFormat: 'jpeg' },
+    { outputCompression: 101 }, { quality: 'ultra' },
+    { mode: 'thumbnail' }, { mode: 'logo' },
+    { models: ['fal-ai/nano-banana-2'] },
+    { inputFidelity: 'high' }, { models: ['fal-ai/gpt-image-2'] },
+  ]) {
+    const rejected = await call('preview_generation', { ...base, ...patch })
+    assert.equal(rejected.error, true, JSON.stringify(patch))
+  }
+  const format = await call('preview_generation', { ...base, outputFormat: 'jpeg', background: 'opaque', quality: 'max', outputCompression: 0 })
+  assert.equal(format.error, false, format.text)
+  assert.equal(format.data.request.outputCompression, 0)
 })

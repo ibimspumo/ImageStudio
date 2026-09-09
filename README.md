@@ -73,18 +73,21 @@ The app registry defines capabilities, defaults and list-price estimates. Prices
 
 | Model | Provider | Aspect ratios | Resolution | Reference images | Seed | Price |
 |---|---|---|---|---|---|---|
-| **GPT Image 2** (default) | OpenAI | 11 standard ratios | 1K–4K, quality-tiered | up to 16 | no | $0.005–$0.40 per image |
-| **GPT Image 1.5** | OpenAI | 1:1, 3:2, 2:3 only | three fixed sizes, quality-tiered | up to 16 | no | $0.009–$0.20 per image |
+| **GPT Image 2.5 Flare** (image/logo default) | OpenAI | standard ratios and custom pixels | 1K–4K presets, six quality settings | up to 16 | no | high 1024²: ~$0.05268 |
+| **GPT Image 2.5 Sunburst** (thumbnail default) | OpenAI | standard ratios and custom pixels | 1K–4K presets, six quality settings | up to 16 | no | same published estimates as Flare |
 | **Nano Banana 2** | Google | 15, incl. 4:1 and 8:1 | 0.5K–4K | up to 14 | yes | $0.08 at 1K, ×1.5 at 2K, ×2 at 4K |
 | **Nano Banana 2 Lite** | Google | 15, incl. 4:1 and 8:1 | fixed 1K | up to 14 | yes | ~$0.048 per image |
 | **Nano Banana Pro** | Google | 11 standard ratios | 1K–4K | up to 14 | yes | $0.15, ×2 at 4K |
 
-**GPT Image 1.5 is the only prompt-based generation model in this registry that can return transparency.** Its `background` field takes
-`auto`, `transparent` or `opaque`, and `transparent` gives you a PNG with a real alpha channel —
-which is what Logo mode is built on. It has no aspect ratio and no resolution axis at
-all: the endpoint accepts exactly 1024 × 1024, 1536 × 1024 and 1024 × 1536, so any other ratio is
-mapped onto the nearest of those three. It also exposes `input_fidelity` on its edit endpoint, which
-controls how literally a reference image is preserved.
+Flare favors fast everyday generation; Sunburst favors intricate detail and precise editing with longer generation times. Both currently have the same published fal pricing, so Sunburst is not presented as a confirmed more expensive tier. High quality is the default in all three image creation modes. The available quality settings are `auto`, `low`, `medium`, `high`, `xhigh` and `max`; higher settings increase detail, latency and token consumption. Both accept up to 16 references, 10 outputs per request and 32,000 prompt characters.
+
+Both support `background: auto | transparent | opaque` and PNG, JPEG or WebP output. Logo mode defaults to Flare and defaults to transparency and pins PNG while offering ratios, resolutions and custom dimensions. Normal image mode also exposes background and output options. `outputCompression` accepts 0–100 only for JPEG/WebP. Neither model supports seed or input fidelity controls. Enabled JPEG post-processing can change the provider's format/compression for opaque images; transparency is preserved and stored MIME types describe the actual file.
+
+**Custom pixels:** the size controls and MCP share the same normalization: each positive width/height rounds upward to a multiple of 16, then the final size must have edges at most 3840 px, a longest/shortest ratio at most 3:1 and 655,360–8,294,400 total pixels. Linked dimensions follow the chosen ratio with grid rounding; the resulting pixels are shown before generation. The A4 preset is exact-ratio **2240 × 3168**. A4 at 300 dpi exceeds the generation area limit. MCP can submit explicit dimensions and inspect the normalized effective size. Thumbnails use **1920 × 1088** for these models and export to exact **1920 × 1080**.
+
+Pricing remains an estimate: fal publishes high-quality 1024² at $0.05268 and 1920 × 1080 at $0.03960. The latter is only an approximate reference for the valid, rounded 1920 × 1088 request; custom sizes and prompt/reference token usage affect actual charges. Only matched billing events establish provider-reported cost. Sources checked 2026-09-09: [Flare](https://fal.ai/models/openai/gpt-image-2.5/flare/text-to-image), [Sunburst](https://fal.ai/models/openai/gpt-image-2.5/sunburst/text-to-image), [generation schema](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=openai/gpt-image-2.5/flare/text-to-image), [edit schema](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=openai/gpt-image-2.5/sunburst/edit).
+
+GPT Image 2 and 1.5 are retired from generation choices. Saved defaults/aliases migrate to supported models; existing media, original model IDs in historical metadata and legacy histories are preserved.
 
 Every control in the prompt bar reflects what the selected model genuinely accepts — options a model
 does not have are hidden rather than silently ignored. None of the five support a negative prompt, so
@@ -151,7 +154,7 @@ npm run test:automation:app
 npm run test:ui:surfaces
 ```
 
-The automation suite covers transport, validation and generation lifecycle behavior. The app smoke test launches real Electron with a disposable profile and MCP client, checks both directions of sidebar navigation, removed tools, inline draft references and variant preparation, and runs image → image → video with mocked provider responses. Dedicated-processing checks exercise UI and MCP upscaling/removal, original PNG uploads, alpha preservation with anti-detection enabled, parent/folder/project metadata and native PNG export. Provider-unit tests verify the exact dedicated endpoints, singular output shape, cost boundaries and cancellation. The extended checks include breadcrumb/sidebar exits, creation menus, export options, deletion and simulated exact billing. The supporting UI suite covers settings drafts, collection/preset/project CRUD and actual canvas drawing, undo/redo and local PNG export. These tests do not make paid provider requests.
+The automation suite covers transport, validation and generation lifecycle behavior. GPT Image 2.5 changes require provider-contract checks plus disposable UI/MCP parity checks for model discovery/defaults, size normalization, output controls and shared generation state. The app smoke test launches real Electron with a disposable profile and MCP client, checks both directions of sidebar navigation, removed tools, inline draft references and variant preparation, and runs image → image → video with mocked provider responses. Dedicated-processing checks exercise UI and MCP upscaling/removal, original PNG uploads, alpha preservation with anti-detection enabled, parent/folder/project metadata and native PNG export. Provider-unit tests verify the exact dedicated endpoints, singular output shape, cost boundaries and cancellation. The extended checks include breadcrumb/sidebar exits, creation menus, export options, deletion and simulated exact billing. The supporting UI suite covers settings drafts, collection/preset/project CRUD and actual canvas drawing, undo/redo and local PNG export. These tests do not make paid provider requests.
 
 For a settings screenshot from that disposable test, set `IMAGESTUDIO_TEST_SCREENSHOT` to an absolute PNG output path when running `npm run test:automation:app`. Older images under `docs/` predate the redesign and are not shown here as current UI captures.
 

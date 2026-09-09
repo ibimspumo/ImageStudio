@@ -73,27 +73,22 @@ Everything — images, video, reference uploads — runs through fal.ai. There i
 
 ### Image Models (fal.ai)
 Defined in `src/shared/image-models.ts` as `AVAILABLE_MODELS`, re-exported through `types/api.ts`.
-Default: `openai/gpt-image-2` (both `DEFAULT_MODEL` and `DEFAULT_THUMBNAIL_MODEL`; it is also first in
-`AVAILABLE_MODELS`, which is what `getModel()` falls back to). Each model has a text-to-image endpoint
-and an `/edit` endpoint; `fal-image.ts` picks the edit endpoint whenever reference images are attached.
+Defaults: `DEFAULT_MODEL` and `DEFAULT_LOGO_MODEL` select `openai/gpt-image-2.5/flare/text-to-image`; `DEFAULT_THUMBNAIL_MODEL` selects `openai/gpt-image-2.5/sunburst/text-to-image`. Flare is first in `AVAILABLE_MODELS`. Each has a matching `/edit` endpoint; `fal-image.ts` uses it when references are attached. Retired GPT Image 2/1.5 aliases and saved generation defaults migrate, while original IDs on historical media and history files remain intact.
 
-| Model | Endpoint | Aspect ratios | Resolutions | Refs | Seed | Price |
-|---|---|---|---|---|---|---|
-| GPT Image 2 (default) | `openai/gpt-image-2` | via `image_size` | via `image_size` | 16 | no | size × quality table |
-| GPT Image 1.5 | `fal-ai/gpt-image-1.5` | 3 fixed `image_size` values | none | 16 | no | size × quality table |
-| Nano Banana 2 | `fal-ai/nano-banana-2` | 15 incl. 4:1/8:1 | 0.5K–4K | 14 | yes | $0.08 @1K, ×0.75/×1.5/×2 |
-| Nano Banana 2 Lite | `google/nano-banana-2-lite` | 15 incl. 4:1/8:1 | fixed 1K | 14 | yes | ~$0.048 |
-| Nano Banana Pro | `fal-ai/nano-banana-pro` | 11 (no extremes) | 1K–4K | 14 | yes | $0.15, ×2 @4K |
+| Model | Endpoint | Aspect ratios / resolutions | Refs | Seed | Price |
+|---|---|---|---|---|---|
+| GPT Image 2.5 Flare | `openai/gpt-image-2.5/flare/text-to-image` | presets and custom `image_size` | 16 | no | size × quality estimate |
+| GPT Image 2.5 Sunburst | `openai/gpt-image-2.5/sunburst/text-to-image` | presets and custom `image_size` | 16 | no | same published table as Flare |
+| Nano Banana 2 | `fal-ai/nano-banana-2` | 15 ratios incl. 4:1/8:1; 0.5K–4K | 14 | yes | $0.08 @1K, ×0.75/×1.5/×2 |
+| Nano Banana 2 Lite | `google/nano-banana-2-lite` | 15 ratios incl. 4:1/8:1; fixed 1K | 14 | yes | ~$0.048 |
+| Nano Banana Pro | `fal-ai/nano-banana-pro` | 11 ratios; 1K–4K | 14 | yes | $0.15, ×2 @4K |
 
-**None of the five accept `negative_prompt`** — the control is gone from the UI.
-GPT Image 2 has no `aspect_ratio`/`resolution`/`seed`: ratios become an explicit `image_size`
-(multiples of 16, ≤3840 px per edge, ≤3:1, 655,360–8,294,400 px) and it exposes a `quality` tier instead.
-GPT Image 1.5 has none of those either, and no pixel freedom: `image_size` is an enum of exactly
-`1024x1024` / `1536x1024` / `1024x1536` (the edit endpoint adds `auto`), so `imageSizeMode: 'size-enum'`
-routes it through `toFixedImageSize()`. Its `quality` has no `auto` tier. It is the **only** model with
-a `background` field (`auto` | `transparent` | `opaque`) — the sole prompt-generation route to an alpha channel — and the
-only one with `input_fidelity` (edit endpoint only). Mask request fields are not exposed; Inpaint is retired.
-Values a model cannot take are mapped to its nearest supported one rather than rejected.
+**None of the five accepts `negative_prompt`.** GPT Image 2.5 also has no `aspect_ratio`, `resolution`, `seed` or `input_fidelity` provider field. Shared normalization converts ratio/resolution presets or explicit custom pixels to `image_size`. Positive dimensions round upward to multiples of 16; validate the rounded result against ≤3840 px per edge, longest/shortest ratio ≤3:1 and area 655,360–8,294,400 px. Do not trust the generic fal `ImageSize` schema's 14142 edge maximum over its model-specific description. Invalid explicit sizes must return actionable errors, not silently map to another canvas. The UI's linked-ratio custom controls and MCP use this same normalization; A4 is exactly 2240 × 3168. Grid rounding can approximate other ratios; show the effective dimensions.
+
+Both variants expose `quality: auto | low | medium | high | xhigh | max` (app default `high`), `background: auto | transparent | opaque`, `output_format: png | jpeg | webp` (default PNG), and `output_compression` 0–100 only for JPEG/WebP (`outputCompression` in shared app/MCP options). Transparent output must use an alpha-capable format. References are limited to 16, batch size to 10 and composed prompt length to 32,000. The `/edit` endpoint allows references; mask fields remain unexposed because Inpaint is retired. Ordinary unsupported preset values can resolve to supported presets; this does not authorize changing invalid explicit pixel requests.
+
+Flare targets lower-latency everyday work; Sunburst targets intricate detail and precise editing with longer generation. This supports the thumbnail default but is provider positioning, not a local paid benchmark. Both publish the same price table: high 1024² $0.05268; high 1920×1080 $0.03960. The second row is an approximation for valid 1920×1088 output because 1080 violates the 16-pixel grid. Custom-size estimates and prompt/reference usage are not actual bills; preserve reconciliation provenance. Sources checked 2026-09-09: [Flare](https://fal.ai/models/openai/gpt-image-2.5/flare/text-to-image), [Sunburst](https://fal.ai/models/openai/gpt-image-2.5/sunburst/text-to-image), [Flare schema](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=openai/gpt-image-2.5/flare/text-to-image), [Sunburst edit schema](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=openai/gpt-image-2.5/sunburst/edit). Use provider-contract tests and disposable UI/MCP suites for affected defaults, discovery, dimensions, format/background validation and generation state; no paid provider calls are needed to verify wiring.
+
 Multi-model generation: PromptBar allows selecting multiple models; `useImageGeneration` runs each model
 independently and packs references per model.
 
@@ -151,7 +146,7 @@ Reference images go to fal.ai storage (`fal.storage.upload`) — the endpoints o
 models or several images of a batch is transferred once. The cache is cleared when the API key changes.
 
 ### Thumbnail Mode
-An `AppMode` (`MainContent.tsx`), built around one fixed output: 16:9, 2K generated, exactly 1920 × 1080 exported.
+An `AppMode` (`MainContent.tsx`) targeting a 16:9 thumbnail export at exactly 1920 × 1080. GPT Image 2.5 uses the fixed valid 1920 × 1088 generation canvas; other models use supported 16:9/2K controls.
 `getThumbnailModels()` derives the model list from the registry (`uiResolutions` contains `'2K'`), which drops Nano Banana 2 Lite.
 It reuses `PromptBar` via the `thumbnailMode` prop — references, @-mentions, drag & drop and collections stay identical;
 only `ControlsRow` is swapped for `ThumbnailControls` and the format controls disappear.
@@ -161,42 +156,36 @@ only `ControlsRow` is swapped for `ThumbnailControls` and the format controls di
 user's prompt and explicitly wins over the built-in rules. Custom meta prompts are user-saved rule
 blocks (e.g. one per channel format), managed via `MetaPromptSelector` in the controls row and stored
 in `thumbnail-meta-prompts-store.ts` (persisted as `thumbnail-meta-prompts`, active selection included). `useImageGeneration` delivers it as `system_prompt` where `supportsSystemPrompt` is true and prepends it to the
-prompt otherwise — GPT Image 2 has no such field, and silently dropping the rules there would be worse than a long prompt.
+prompt otherwise — GPT Image 2.5 has no such field, and silently dropping the rules there would be worse than a long prompt.
 
-**Exact pixels:** no model returns 1920 × 1080. Gemini at 16:9/2K returns 2752 × 1536 (ratio 1.792); fal.ai rounds GPT Image 2's
-`image_size` to multiples of 16, so 1080 becomes 1072 (both verified against the live endpoints). Thumbnail mode therefore sends
-`imageSize: 1920 × 1088` for GPT Image 2 and normalises on export via `renderYouTubeThumbnail()` — centre-crop to 16:9, scale to
-1920 × 1080, step JPEG quality down until under YouTube's 2 MB limit.
+**Exact pixels:** GPT Image 2.5 thumbnail requests lock `imageSize: 1920 × 1088`, which satisfies its 16-pixel grid. Other thumbnail models use their supported 16:9/2K controls; do not assume a provider returns exact export dimensions. `renderYouTubeThumbnail()` centre-crops to 16:9, scales to 1920 × 1080 and steps JPEG quality down until under YouTube's 2 MB limit.
 
 Projects (`thumbnail-projects-store.ts`, persisted as `thumbnail-projects`) are a second axis next to workspaces and only filter
 inside thumbnail mode. `GalleryImage` carries `projectId`, `thumbnailStyle` and `faceFidelity`.
 
 ### Logo Mode
-An `AppMode` (`MainContent.tsx`), and the reason GPT Image 1.5 is in the registry at all: it is the
-only model with a `background` field, so it is the only route to a real alpha channel.
+An `AppMode` (`MainContent.tsx`) using transparent PNG output from GPT Image 2.5 Flare (default) or Sunburst. Both expose the background capability.
 `getLogoModels()` derives the model list from that capability rather than a hand-kept list.
 It reuses `PromptBar` via the `logoMode` prop — references, @-mentions, drag & drop and collections stay
 identical; only `ControlsRow` is swapped for `LogoControls`.
 
 `buildLogoSystemPrompt()` assembles base rules + optional style block (`auto` adds none — the default;
 otherwise `minimal` | `wordmark` | `emblem` | `mascot`) + the transparency block when the background is
-transparent + a reference block when references are attached. GPT Image 1.5 has no `system_prompt` field,
+transparent + a reference block when references are attached. GPT Image 2.5 has no `system_prompt` field,
 so `useImageGeneration` prepends it to the prompt.
 
-Logo mode locks `background: 'transparent'` and `output_format: 'png'`, and keeps the workspace axis
+Logo mode offers ratios, resolution presets and shared custom dimensions instead of three fixed sizes. It locks `background: 'transparent'` and `output_format: 'png'`, and keeps the workspace axis
 (no separate project store — a logo is an ordinary asset with an alpha channel). `GalleryImage` carries
 `isLogo`, `logoStyle` and **`hasAlpha`**. `hasAlpha` is the load-bearing one: it is computed per model
 (`background === 'transparent' && model.supportsBackground`), it routes the image around the JPEG scrub,
 and it drives the `.alpha-checker` backdrop in `GalleryCard`/`ImageViewer`. `prepareImageVariant` preserves the alpha intent and selects a background-capable model when needed.
 
-`background` and `input_fidelity` are also offered in normal image mode via `ControlsRow`, gated on
-`getCombinedCapabilities().supportsBackground` / `.supportsInputFidelity` — they are ordinary model
-capabilities, not mode-specific switches.
+`background` and output format/compression are offered in normal image mode through canonical capabilities. Input fidelity is not supported by either GPT Image 2.5 endpoint and is not exposed as a current control.
 
 ### Anti-Detection
 Prompt-generated images run through `prepareForStorage()` **before** `window.api.saveImage` — in
 the shared `useImageGeneration` pipeline, including generative viewer transformations (zoom out, aspect ratio). Dedicated Upscale/Remove results are streamed to disk unchanged by `image-processing-files.ts`; provider PNG/JPEG encoding is retained. Videos never do. Doing it before storage rather than on export is what makes
-gallery, export, clipboard and drag & drop all hand out the same processed file.
+gallery, export, clipboard and drag & drop all hand out the same processed file. Enabled JPEG post-processing can override the requested provider format/compression for opaque output; stored MIME/extension must match the actual file. With it disabled, retain the returned format. Transparency takes the alpha-preserving branch.
 
 The pipeline is JPEG 95 → squeeze X to 99 % → squeeze Y to 99 % → scale back → JPEG 95. The JPEG
 round has to be decoded again in between, otherwise the quantisation never reaches the pixels the
@@ -211,7 +200,7 @@ save/export/clipboard chain hand out a transparent file. Output keeps the genera
 average delta of 1.5/255. A failed scrub falls back to the untouched image — never lose a generation
 over post-processing.
 
-Consequences to keep in mind when touching this: stored files are `.jpg`, not `.png`, so never
+Consequences to keep in mind when touching this: opaque files processed by the enabled scrub are `.jpg`; other results may be PNG or WebP. Never
 hardcode the extension — take it from `prepareForStorage().extension` or the stored `filePath`.
 Export names come from `neutralImageName()` while the setting is on, and `ExportPopover`'s quick save
 derives its encoder from the name's extension. PNG metadata embedding is not offered while it is on.

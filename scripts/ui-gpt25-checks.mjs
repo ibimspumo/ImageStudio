@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict'
+
+/** Real composer/MCP state and submission contract, with disposable mocked IPC. */
+export async function runGpt25UiChecks(page, { app, call, client }) {
+  const flare = 'openai/gpt-image-2.5/flare/text-to-image'
+  const sunburst = 'openai/gpt-image-2.5/sunburst/text-to-image'
+  const button = name => page.getByRole('button', { name, exact: true })
+  await call('navigate', { target: 'image' })
+  await call('update_draft', { mode: 'image', patch: { prompt: 'Exact-size test', models: [flare], references: [], collectionIds: [], clearImageSize: true, background: 'opaque', outputFormat: 'png' } })
+  await page.getByTitle('Alle weiteren Einstellungen', { exact: true }).click()
+  await button('Exakte Pixel').click()
+  await page.getByRole('combobox', { name: 'Pixel-Seitenverhältnis' }).selectOption('210:297')
+  assert.deepEqual((await call('get_draft', { mode: 'image' })).imageSize, { width: 2240, height: 3168 })
+  await button('Seitenverhältnis entsperren').click()
+  const width = page.getByRole('textbox', { name: 'Bildbreite in Pixeln' })
+  await width.fill('2225'); await width.press('Enter')
+  assert.equal(await width.inputValue(), '2240')
+  await width.fill('4000'); await width.press('Enter')
+  assert.equal((await call('get_draft', { mode: 'image' })).ready, false)
+  await page.keyboard.press('Escape')
+  await width.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Generieren' && !b.disabled))
+  assert.equal((await call('get_draft', { mode: 'image' })).sizeError, null, 'Closing discards uncommitted invalid size')
+  await call('update_draft', { mode: 'image', patch: { outputFormat: 'jpeg', background: 'opaque' } })
+  await call('update_draft', { mode: 'image', patch: { imageSize: { width: 1001, height: 1001 }, quality: 'xhigh', outputFormat: 'webp', outputCompression: 83, background: 'transparent' } })
+  await page.getByTitle('Alle weiteren Einstellungen', { exact: true }).click()
+  assert.equal(await width.inputValue(), '1008')
+  assert.equal((await call('get_draft', { mode: 'image' })).outputFormat, 'webp', 'Atomic format/background patch uses the final format')
+  assert.equal(await page.getByRole('slider', { name: 'Provider-Kompression Bildqualität' }).inputValue(), '83')
+  await page.getByRole('slider', { name: 'Provider-Kompression Bildqualität' }).fill('77')
+  assert.equal((await call('get_draft', { mode: 'image' })).outputCompression, 77)
+  await page.getByRole('combobox', { name: 'Pixel-Seitenverhältnis' }).selectOption('210:297')
+  if (process.env.IMAGESTUDIO_GPT25_SCREENSHOT) await page.screenshot({ path: process.env.IMAGESTUDIO_GPT25_SCREENSHOT, animations: 'disabled' })
+  await page.keyboard.press('Escape')
+  // Button submission reaches the same live hook and immutable effective options.
+  const before = (await call('list_images', { limit: 100 })).images.map(i => i.id)
+  await button('Generieren').click()
+  let job
+  for (let attempt = 0; attempt < 50; attempt++) {
+    job = (await call('list_images', { limit: 100 })).images.find(i => !before.includes(i.id))
+    if (job) break
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+  assert.ok(job, 'Human generation creates MCP-visible job')
+  await call('wait_for_jobs', { ids: [job.id], timeoutMs: 20000 })
+  const sent = await app.evaluate(() => globalThis.__automationTestCalls.at(-1))
+  assert.equal(sent.model, flare)
+  assert.deepEqual(sent.imageSize, { width: 2240, height: 3168 })
+  assert.equal(sent.quality, 'xhigh'); assert.equal(sent.outputFormat, 'webp'); assert.equal(sent.outputCompression, 77)
+  assert.equal(sent.background, 'transparent')
+  await call('navigate', { target: 'thumbnail' })
+  let draft = await call('get_draft', { mode: 'thumbnail' })
+  assert.deepEqual(draft.models, [sunburst]); assert.equal(draft.quality, 'high')
+  await call('update_draft', { mode: 'thumbnail', patch: { quality: 'max' } })
+  assert.equal((await call('get_draft', { mode: 'thumbnail' })).quality, 'max')
+  assert.equal((await client.callTool({ name: 'update_draft', arguments: { mode: 'thumbnail', patch: { imageSize: { width: 1024, height: 1024 } } } })).isError, true)
+  await call('navigate', { target: 'logo' })
+  draft = await call('get_draft', { mode: 'logo' })
+  assert.deepEqual(draft.models, [flare]); assert.equal(draft.background, 'transparent'); assert.equal(draft.outputFormat, 'png')
+  await call('update_draft', { mode: 'logo', patch: { imageSize: { width: 2240, height: 3168 }, quality: 'high', resolution: '2K' } })
+  await page.getByTitle('Alle weiteren Einstellungen', { exact: true }).click()
+  assert.equal(await width.inputValue(), '2240')
+  await page.keyboard.press('Escape')
+  await call('navigate', { target: 'image' })
+  console.log('PASS GPT2.5 UI/MCP defaults, A4, rounding, invalid sizes, formats, compression, submission, thumbnail and logo controls')
+}

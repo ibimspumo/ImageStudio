@@ -12,6 +12,7 @@ import type {
   LogoStyle,
   FalBackground,
   FalInputFidelity,
+  OutputFormat,
 } from '../../types/api'
 import {
   DEFAULT_MODEL,
@@ -19,6 +20,8 @@ import {
   DEFAULT_LOGO_MODEL,
   getCombinedCapabilities,
   getModel,
+  normalizeGptImageSize,
+  toGptImageSize,
   normalizeModelId,
   isThumbnailModel,
   isLogoModel,
@@ -30,7 +33,6 @@ import {
   LOGO_BACKGROUND,
   LOGO_OUTPUT_FORMAT,
   LOGO_DEFAULT_ASPECT_RATIO,
-  LOGO_ASPECT_RATIOS,
 } from '../../types/api'
 import { CostEstimate } from './CostEstimate'
 import { ThumbnailControls } from '../thumbnail/ThumbnailControls'
@@ -82,7 +84,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     thumbnailMode ? '16:9' : logoMode ? (LOGO_DEFAULT_ASPECT_RATIO as AspectRatio) : useSettingsStore.getState().defaultAspectRatio as AspectRatio
   )
   const [customRatio, setCustomRatio] = useState<string>('4:3')
-  const [resolution, setResolution] = useState<Resolution>(useSettingsStore.getState().defaultResolution as Resolution)
+  const [resolution, setResolution] = useState<Resolution>(logoMode ? '1K' : useSettingsStore.getState().defaultResolution as Resolution)
   const [imageCount, setImageCount] = useState(useSettingsStore.getState().defaultImageCount)
   const [selectedModels, setSelectedModels] = useState<string[]>(() => {
     const fallback = thumbnailMode
@@ -113,6 +115,29 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   const [isDragOver, setIsDragOver] = useState(false)
   const [quality, setQuality] = useState<GptImageQuality>('high')
   const [seed, setSeed] = useState<number | undefined>(undefined)
+  const [imageSize, setImageSize] = useState<{ width: number; height: number } | undefined>()
+  const [sizeError, setSizeError] = useState<string | undefined>()
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>('png')
+  const [outputCompression, setOutputCompression] = useState<number | undefined>()
+  const changeFormat = (format: OutputFormat) => {
+    setOutputFormat(format)
+    if (format === 'png') setOutputCompression(undefined)
+    if (format === 'jpeg' && background === 'transparent') setBackground('opaque')
+  }
+  const changeBackground = (value: FalBackground) => {
+    setBackground(value)
+    if (value === 'transparent' && outputFormat === 'jpeg') changeFormat('png')
+  }
+  const changeModels = (models: string[]) => {
+    const caps = getCombinedCapabilities(models)
+    setSelectedModels(models)
+    setImageCount(count => Math.min(count, caps.maxImagesPerRequest))
+    if (!caps.supportsCustomImageSize) { setImageSize(undefined); setSizeError(undefined) }
+    if (!caps.supportsOutputCompression) setOutputCompression(undefined)
+    if (!caps.supportsBackground) setBackground('auto')
+    if (!caps.qualities?.includes(quality)) setQuality('high')
+    if (!caps.supportsSeed) setSeed(undefined)
+  }
 
   const {
     editorRef,
@@ -205,7 +230,11 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       setResolution(reuse.resolution && caps.resolutions.includes(reuse.resolution as Resolution)
         ? reuse.resolution as Resolution : config.defaultResolution ?? caps.resolutions[0] ?? '1K')
       setBackground(caps.supportsBackground ? reuse.background ?? 'auto' : 'auto')
-      setQuality(config.defaultQuality ?? 'high')
+      setQuality(config.qualities?.includes(reuse.quality as GptImageQuality) ? reuse.quality as GptImageQuality : config.defaultQuality ?? 'high')
+      setImageSize(caps.supportsCustomImageSize ? reuse.imageSize : undefined)
+      setSizeError(undefined)
+      setOutputFormat(reuse.outputFormat ?? 'png')
+      setOutputCompression(caps.supportsOutputCompression ? reuse.outputCompression : undefined)
       setSeed(caps.supportsSeed ? reuse.seed : undefined)
       if (reuse.aspectRatio === 'auto' || caps.aspectRatios.includes(reuse.aspectRatio as never)) {
         setAspectRatio(reuse.aspectRatio as AspectRatio)
@@ -248,6 +277,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   const handleSubmit = useCallback(async () => {
     const text = getPromptText()
     if (!text || !falApiKey || referenceLoading || referenceError) return
+    if (sizeError) throw new Error(sizeError)
 
     const { attachments, labeledAttachments } = await buildAttachments()
 
@@ -315,7 +345,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       prompt: canvasContext ? `Canvas: ${text}` : finalPrompt,
       apiPrompt: apiPromptText || undefined,
       aspectRatio: thumbnailMode ? THUMBNAIL_ASPECT_RATIO : resolvedAspectRatio,
-      resolution: thumbnailMode ? THUMBNAIL_RESOLUTION : logoMode ? '1K' : resolution,
+      resolution: thumbnailMode ? THUMBNAIL_RESOLUTION : resolution,
       imageCount,
       attachments: attachments.length > 0 ? attachments : undefined,
       labeledAttachments: labeledAttachments.length > 0 ? labeledAttachments : undefined,
@@ -324,13 +354,14 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       quality,
       canvasSketchPath,
       systemPrompt: thumbnailSystemPrompt ?? logoSystemPrompt,
-      imageSize: thumbnailMode ? { ...THUMBNAIL_GPT_IMAGE_SIZE } : undefined,
+      imageSize: thumbnailMode ? { ...THUMBNAIL_GPT_IMAGE_SIZE } : imageSize,
       projectId: thumbnailMode ? (project?.id ?? undefined) : undefined,
       thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined,
       faceFidelity: thumbnailMode ? hasRefs : undefined,
       background,
       // Transparency only survives in a format that has an alpha channel.
-      outputFormat: logoMode || background === 'transparent' ? LOGO_OUTPUT_FORMAT : undefined,
+      outputFormat: logoMode ? LOGO_OUTPUT_FORMAT : outputFormat,
+      outputCompression: logoMode ? undefined : outputCompression,
       inputFidelity,
       isLogo: logoMode || undefined,
       logoStyle: logoMode ? logoStyle : undefined,
@@ -341,7 +372,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       canvasContext.onClose()
     }
     return jobIds
-  }, [getPromptText, falApiKey, referenceLoading, referenceError, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, canvasContext, thumbnailMode, thumbnailStyle, logoMode, logoStyle, background, inputFidelity])
+  }, [getPromptText, falApiKey, referenceLoading, referenceError, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, canvasContext, thumbnailMode, thumbnailStyle, logoMode, logoStyle, background, inputFidelity, imageSize, sizeError, outputFormat, outputCompression])
 
   useLiveDraft({
     mode: canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : 'image',
@@ -353,8 +384,11 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       return {
         mode: canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : 'image',
         prompt: text, models: selectedModels, aspectRatio: thumbnailMode ? '16:9' : aspectRatio === 'custom' ? customRatio : aspectRatio,
-        resolution: thumbnailMode ? '2K' : logoMode ? '1K' : resolution, imageCount, quality, seed: seed ?? null,
-        background, inputFidelity, thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined, logoStyle: logoMode ? logoStyle : undefined,
+        resolution: thumbnailMode ? '2K' : resolution, imageCount, quality, seed: seed ?? null,
+        imageSize: thumbnailMode ? THUMBNAIL_GPT_IMAGE_SIZE : imageSize ?? null,
+        resolvedImageSize: selectedModels.every(id => getModel(id).imageSizeMode === 'pixels') ? thumbnailMode ? THUMBNAIL_GPT_IMAGE_SIZE : imageSize ?? toGptImageSize(aspectRatio === 'custom' ? customRatio : aspectRatio, resolution) : null,
+        outputFormat: logoMode ? 'png' : outputFormat, outputCompression: outputCompression ?? null, sizeError: sizeError ?? null,
+        background, thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined, logoStyle: logoMode ? logoStyle : undefined,
         references: imageRefs.map(ref => ({ id: ref.id, name: ref.name, promptReference: imageMention(ref.name), mimeType: /^data:([^;]+)/.exec(ref.base64)?.[1] })),
         collections: collectionRefs.map(ref => ({ id: ref.id, collectionId: ref.collectionId, name: ref.name, promptReference: collectionMention(ref.name), imageCount: ref.images.length })),
         activePresetId: usePresetsStore.getState().activePresetId, finalPrompt: preset ? `${text}, ${preset.suffix}` : text,
@@ -362,7 +396,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         systemPrompt: thumbnailMode ? buildThumbnailSystemPrompt({ style: thumbnailStyle, faceFidelity: hasRefs, videoTitle: project?.title, videoAngle: project?.angle, customMetaPrompt: useThumbnailMetaPromptsStore.getState().getActiveText() })
           : logoMode ? buildLogoSystemPrompt({ style: logoStyle, transparent: background === 'transparent', hasReferences: hasRefs }) : undefined,
         capabilities: getCombinedCapabilities(selectedModels),
-        ready: !!text && !!useSettingsStore.getState().falApiKey && !referenceLoading && !referenceError,
+        ready: !!text && !!useSettingsStore.getState().falApiKey && !referenceLoading && !referenceError && !sizeError,
         referenceLoadStatus: referenceLoading ? 'loading' : referenceError ? 'error' : 'ready',
         referenceError,
           contextRequirement: canvasContext ? 'Canvas must contain a sketch' : undefined,
@@ -370,20 +404,29 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     },
     update: async patch => {
       const common = ['prompt', 'models', 'imageCount', 'references', 'collectionIds'] as const
-      rejectDraftFields(patch, thumbnailMode ? [...common, 'thumbnailStyle'] : logoMode ? [...common, 'logoStyle', 'aspectRatio', 'background', 'inputFidelity', 'quality'] : [...common, 'aspectRatio', 'resolution', 'quality', 'seed', 'clearSeed', 'background', 'inputFidelity'])
+      const formatFields = ['outputFormat', 'outputCompression', 'clearOutputCompression'] as const
+      const sizeFields = ['imageSize', 'clearImageSize', 'aspectRatio', 'resolution'] as const
+      rejectDraftFields(patch, thumbnailMode ? [...common, 'thumbnailStyle', 'quality', ...formatFields] : logoMode ? [...common, 'logoStyle', 'background', 'quality', ...sizeFields] : [...common, 'quality', 'seed', 'clearSeed', 'background', ...sizeFields, ...formatFields])
       const models = patch.models ?? selectedModels
       if (new Set(models).size !== models.length) throw new Error('Select each model only once')
       if (thumbnailMode && models.some(id => !isThumbnailModel(id))) throw new Error('This model is unavailable in thumbnail mode')
       if (logoMode && models.some(id => !isLogoModel(id))) throw new Error('This model is unavailable in logo mode')
       const caps = getCombinedCapabilities(models)
       if (patch.imageCount !== undefined && patch.imageCount > caps.maxImagesPerRequest) throw new Error(`Selected models allow at most ${caps.maxImagesPerRequest} images per request`)
-      if (logoMode && patch.aspectRatio !== undefined && !LOGO_ASPECT_RATIOS.includes(patch.aspectRatio as typeof LOGO_ASPECT_RATIOS[number])) throw new Error(`Logo ratio must be one of ${LOGO_ASPECT_RATIOS.join(', ')}`)
       if (patch.resolution !== undefined && !caps.resolutions.includes(patch.resolution as Resolution)) throw new Error(`Resolution must be one of ${caps.resolutions.join(', ')}`)
       if (patch.quality !== undefined && !caps.qualities?.includes(patch.quality)) throw new Error('Quality control is unavailable for the selected models or this quality is unsupported')
       if (patch.seed !== undefined && !caps.supportsSeed) throw new Error('Selected models do not support a seed')
       if (patch.seed !== undefined && patch.clearSeed) throw new Error('Specify seed or clearSeed, not both')
       if (patch.background !== undefined && !caps.supportsBackground) throw new Error('Selected models do not support background control')
       if (patch.inputFidelity !== undefined && !caps.supportsInputFidelity) throw new Error('Selected models do not support input fidelity')
+      if (patch.imageSize && patch.clearImageSize) throw new Error('Specify imageSize or clearImageSize, not both')
+      if (patch.imageSize && !caps.supportsCustomImageSize) throw new Error('Custom pixel sizes require pixel-capable models only')
+      const nextSize = patch.clearImageSize || !caps.supportsCustomImageSize ? undefined : patch.imageSize ? normalizeGptImageSize(patch.imageSize) : imageSize
+      const nextFormat = patch.outputFormat ?? outputFormat
+      const nextBackground = patch.background ?? (caps.supportsBackground ? background : 'auto')
+      if (nextFormat === 'jpeg' && nextBackground === 'transparent') throw new Error('JPEG cannot preserve transparency. Choose PNG or WebP.')
+      if (patch.outputCompression !== undefined && patch.clearOutputCompression) throw new Error('Specify outputCompression or clearOutputCompression, not both')
+      if (patch.outputCompression !== undefined && (!caps.supportsOutputCompression || !['jpeg', 'webp'].includes(nextFormat))) throw new Error('Compression requires a supported model and JPEG or WebP')
       // Resolve every reference before changing any UI state.
       const nextImages = patch.references === undefined ? undefined : await Promise.all(patch.references.map(async (source, index) => ({ id: crypto.randomUUID(), name: `Image ${index + 1}`, base64: await compressImage(await resolveDraftReference(source)) })))
       const nextCollections = patch.collectionIds === undefined ? undefined : [...new Set(patch.collectionIds)].map(id => {
@@ -397,9 +440,12 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         setReferenceError(null)
       }
       if (patch.prompt !== undefined || nextImages || nextCollections) setDraftContent({ prompt: patch.prompt, images: nextImages, collections: nextCollections })
-      if (patch.models) setSelectedModels(patch.models)
+      if (patch.models) changeModels(patch.models)
+      if (patch.imageSize || patch.clearImageSize) { setImageSize(nextSize); setSizeError(undefined) }
+      if (patch.outputFormat) setOutputFormat(nextFormat)
+      if (patch.outputCompression !== undefined || patch.clearOutputCompression || nextFormat === 'png' || !caps.supportsOutputCompression) setOutputCompression(patch.clearOutputCompression || nextFormat === 'png' || !caps.supportsOutputCompression ? undefined : patch.outputCompression)
       if (patch.aspectRatio !== undefined) {
-        if (patch.aspectRatio === 'auto' || caps.aspectRatios.includes(patch.aspectRatio as never) || logoMode) setAspectRatio(patch.aspectRatio as AspectRatio)
+        if (patch.aspectRatio === 'auto' || caps.aspectRatios.includes(patch.aspectRatio as never)) setAspectRatio(patch.aspectRatio as AspectRatio)
         else { setAspectRatio('custom'); setCustomRatio(patch.aspectRatio) }
       }
       if (patch.resolution !== undefined) setResolution(patch.resolution as Resolution)
@@ -408,7 +454,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       if (patch.seed !== undefined || patch.clearSeed) setSeed(patch.clearSeed ? undefined : patch.seed)
       if (patch.thumbnailStyle !== undefined) setThumbnailStyle(patch.thumbnailStyle)
       if (patch.logoStyle !== undefined) setLogoStyle(patch.logoStyle)
-      if (patch.background !== undefined) setBackground(patch.background)
+      if (patch.background !== undefined) setBackground(nextBackground)
       if (patch.inputFidelity !== undefined) setInputFidelity(patch.inputFidelity)
     },
     submit: () => {
@@ -472,7 +518,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
   // ── Render ────────────────────────────────────────────────────────
 
   const hasContent = promptText || imageRefs.length > 0 || collectionRefs.length > 0
-  const canSend = !!promptText && !!falApiKey && !referenceLoading && !referenceError
+  const canSend = !!promptText && !!falApiKey && !referenceLoading && !referenceError && !sizeError
   const resolvedRatio = aspectRatio === 'custom' ? customRatio : aspectRatio
 
   // Warn when references exceed the strictest selected model's limit — they are
@@ -619,13 +665,20 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           {logoMode ? (
             <LogoControls
               selectedModels={selectedModels}
-              onModelsChange={setSelectedModels}
+              onModelsChange={changeModels}
               style={logoStyle}
               onStyleChange={setLogoStyle}
               aspectRatio={resolvedRatio}
               onAspectRatioChange={(r) => setAspectRatio(r as AspectRatio)}
+              customRatio={customRatio}
+              onCustomRatioChange={setCustomRatio}
+              resolution={resolution}
+              onResolutionChange={setResolution}
+              imageSize={imageSize}
+              onImageSizeChange={setImageSize}
+              onSizeErrorChange={setSizeError}
               background={background}
-              onBackgroundChange={setBackground}
+              onBackgroundChange={changeBackground}
               inputFidelity={inputFidelity}
               onInputFidelityChange={setInputFidelity}
               hasReferences={imageRefs.length > 0 || collectionRefs.length > 0}
@@ -644,7 +697,13 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           ) : thumbnailMode ? (
             <ThumbnailControls
               selectedModels={selectedModels}
-              onModelsChange={setSelectedModels}
+              onModelsChange={changeModels}
+              quality={quality}
+              onQualityChange={setQuality}
+              outputFormat={outputFormat}
+              onOutputFormatChange={changeFormat}
+              outputCompression={outputCompression}
+              onOutputCompressionChange={setOutputCompression}
               style={thumbnailStyle}
               onStyleChange={setThumbnailStyle}
               imageCount={imageCount}
@@ -660,11 +719,18 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
           ) : (
           <ControlsRow
             selectedModels={selectedModels}
-            onModelsChange={setSelectedModels}
+            onModelsChange={changeModels}
             aspectRatio={aspectRatio}
             onAspectRatioChange={setAspectRatio}
             customRatio={customRatio}
             onCustomRatioChange={setCustomRatio}
+            imageSize={imageSize}
+            onImageSizeChange={setImageSize}
+            onSizeErrorChange={setSizeError}
+            outputFormat={outputFormat}
+            onOutputFormatChange={changeFormat}
+            outputCompression={outputCompression}
+            onOutputCompressionChange={setOutputCompression}
             resolution={resolution}
             onResolutionChange={setResolution}
             imageCount={imageCount}
@@ -678,7 +744,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
             quality={quality}
             onQualityChange={setQuality}
             background={background}
-            onBackgroundChange={setBackground}
+            onBackgroundChange={changeBackground}
             inputFidelity={inputFidelity}
             onInputFidelityChange={setInputFidelity}
             hasReferences={imageRefs.length > 0 || collectionRefs.length > 0}
@@ -709,10 +775,10 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
                   <CostEstimate
                     models={selectedModels}
                     aspectRatio={thumbnailMode ? THUMBNAIL_ASPECT_RATIO : resolvedRatio}
-                    resolution={thumbnailMode ? THUMBNAIL_RESOLUTION : logoMode ? '1K' : resolution}
+                    resolution={thumbnailMode ? THUMBNAIL_RESOLUTION : resolution}
                     imageCount={imageCount}
                     quality={quality}
-                    imageSize={thumbnailMode ? THUMBNAIL_GPT_IMAGE_SIZE : undefined}
+                    imageSize={thumbnailMode ? THUMBNAIL_GPT_IMAGE_SIZE : imageSize}
                   />
                   {(imageRefs.length > 0 || collections.length > 0) && (
                     <>
