@@ -198,3 +198,7 @@ Sidebar folder and project entries offer a labelled trash button with inline con
 GPT Image 2.5 Sunburst is the default for images, logos and thumbnails, including UI and MCP. On first launch after this update, every existing profile switches its saved image default to Sunburst, even if it previously selected Nano Banana or Flare. `shared/settings-migrations.ts` and the persisted internal `imageDefaultsRevision` marker make this a one-time migration; later explicit user selections survive restarts. Quality stays High; video defaults and existing media remain unchanged.
 
 Print format selection in the composer header and pixel settings uses the same canonical catalog and live draft. DIN A uses A4 as the representative ratio; DIN lang 99/105 mm and business cards offer both orientations, with a 105 mm square. Preserve legacy format IDs for saved media and settings. MCP discovery exposes dimensions, normalized pixels and legacy status from the same registry.
+
+
+### Reusing reference images
+Prompt reuse in UI and MCP accepts both embedded image snapshots from the current session and internal attachment files from migrated histories. Do not treat data URLs as filesystem paths. Reference images are already retained in app history independently of desktop originals; they do not need additional generated-gallery entries. Preserve saved attachment labels and order when restoring references, including images not mentioned in the prompt.

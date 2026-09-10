@@ -1,3 +1,4 @@
+import { getReuseImageReferences } from '../../../../shared/reuse-references'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Plus, Send } from 'lucide-react'
 import { useImageGeneration } from '../../hooks/useImageGeneration'
@@ -285,20 +286,23 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         setAspectRatio(config.defaultAspectRatio ?? caps.aspectRatios[0] ?? '1:1')
       }
     }
-    const imageNames = [...new Set([...reuse.prompt.matchAll(/\[([^@\]][^\]]*)\]/g)].map(match => match[1]))]
     const collectionNames = [...new Set([...reuse.prompt.matchAll(/\[@([^\]]+)\]/g)].map(match => match[1]))]
     const nextCollections: CollectionRef[] = collectionNames.flatMap(name => {
       const collection = collections.find(item => item.name === name)
       return collection ? [{ id: crypto.randomUUID(), collectionId: collection.id, name: collection.name,
         thumbnail: collection.images[0] || '', images: collection.images }] : []
     })
-    const paths = (reuse.attachmentFilePaths ?? []).slice(0, imageNames.length)
+    const references = getReuseImageReferences({ prompt: reuse.prompt, attachments: reuse.attachmentFilePaths, labeledAttachments: reuse.labeledAttachments })
     void (async () => {
       try {
-        const images = await Promise.all(paths.map(async (path, index) => {
-          const result = await window.api.readImage(path)
-          if (!result.success || !result.base64DataUrl) throw new Error(`Referenz „${imageNames[index]}“ konnte nicht geladen werden.`)
-          return { id: crypto.randomUUID(), name: imageNames[index], base64: await compressImage(result.base64DataUrl, 1000, 0.75, reuse.background === 'transparent' ? 'png' : 'jpeg') }
+        const images = await Promise.all(references.map(async ({ source: path, name }) => {
+          // Live generations retain embedded reference snapshots; older histories
+          // are migrated to internal files at startup. Both are valid sources.
+          const result = path.startsWith('data:image/')
+            ? { success: true, base64DataUrl: path }
+            : await window.api.readImage(path)
+          if (!result.success || !result.base64DataUrl) throw new Error(`Referenz „${name}“ konnte nicht geladen werden.`)
+          return { id: crypto.randomUUID(), name, base64: await compressImage(result.base64DataUrl, 1000, 0.75, reuse.background === 'transparent' ? 'png' : 'jpeg') }
         }))
         if (referenceLoadVersion.current !== version) return
         setDraftContent({ prompt: reuse.prompt, images, collections: nextCollections })

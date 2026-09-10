@@ -9,6 +9,7 @@ interface PendingCropRef {
 }
 
 export interface ReuseOptions {
+  labeledAttachments?: { label: string; images: string[] }[]
   isPrint?: boolean
   printFormat?: import('../../../shared/print-prompt').PrintFormat
   printStyle?: import('../../../shared/print-prompt').PrintStyle
@@ -25,7 +26,7 @@ export interface ReuseOptions {
 
 interface PendingReuse extends ReuseOptions {
   prompt: string
-  attachmentFilePaths?: string[]  // file paths to load as references
+  attachmentFilePaths?: string[]  // internal paths or embedded image snapshots
   negativePrompt?: string
   seed?: number
 }

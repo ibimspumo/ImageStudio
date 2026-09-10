@@ -272,3 +272,7 @@ Automation exposes mode `print`, `printFormat`, `printStyle` and `customMetaProm
 Print production constraints are also included next to the user brief via `buildPrintArtworkPrompt`, retained as `apiPrompt` in previews, live drafts and generation details. This reinforces contrast and flat-artwork delivery on providers with separate system instructions. Import uses shared `importMediaToGallery` with `importMode: "print"`/optional `printFormat`; UI stays in Print and video classification is rejected. Shared settings writes are serialized in renderer invocation order; failed disk writes do not publish new settings.
 
 Print format selection in the composer header and pixel settings uses the same canonical catalog and live draft. DIN A uses A4 as the representative ratio; DIN lang 99/105 mm and business cards offer both orientations, with a 105 mm square. Preserve legacy format IDs for saved media and settings. MCP discovery exposes dimensions, normalized pixels and legacy status from the same registry.
+
+
+### Reusing reference images
+Prompt reuse in UI and MCP accepts both embedded image snapshots from the current session and internal attachment files from migrated histories. Do not treat data URLs as filesystem paths. Reference images are already retained in app history independently of desktop originals; they do not need additional generated-gallery entries. Preserve saved attachment labels and order when restoring references, including images not mentioned in the prompt.
