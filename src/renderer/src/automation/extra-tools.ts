@@ -1,3 +1,4 @@
+import { PRINT_FORMATS, type PrintFormat } from '../../../shared/print-prompt'
 import { useGalleryFilterStore } from '../stores/gallery-filter-store'
 import { useGalleryStore } from '../stores/gallery-store'
 import { useCanvasStore, type CanvasTool } from '../stores/canvas-store'
@@ -30,7 +31,7 @@ export function registerExtraTools(add: RegisterTool, context: AutomationContext
     if (action === 'install') return window.api.installUpdate()
     return window.api.revealUpdate()
   })
-  add<{ source: string; name?: string; workspaceId?: string; projectId?: string }>('import_media', 'Import an image or video from an absolute local file path or HTTP(S) URL into the live gallery. Returns a stable gallery ID usable as generate references or generate_video startImageId. Media is copied into app storage.', object({ source: { ...str(), maxLength: 30000000 }, name: str(), workspaceId: str(), projectId: str() }, ['source']), async args => importMediaToGallery(args))
+  add<{ source: string; name?: string; workspaceId?: string; projectId?: string; importMode?: 'print'; printFormat?: PrintFormat }>('import_media', 'Import an image or video from an absolute local file path or HTTP(S) URL into the live gallery. Returns a stable gallery ID usable as generate references or generate_video startImageId. Media is copied into app storage. Explicit importMode=print classifies an image as Print artwork; printFormat optionally sets its intended trim format, otherwise the saved Print format applies. Videos cannot be Print artwork. Actual dimensions and MIME are inspected; this does not resize media or invent generated design metadata.', object({ source: { ...str(), maxLength: 30000000 }, name: str(), workspaceId: str(), projectId: str(), importMode: choice(['print']), printFormat: choice(PRINT_FORMATS.map(format => format.id)) }, ['source']), async args => importMediaToGallery(args))
   add<{ id: string; destination: string; overwrite?: boolean }>('export_media', 'Copy an existing gallery image/video to an explicit absolute destination path without opening a dialog. Preserves original bytes. Use image_export for resized/formatted image exports.', object({ id: str(), destination: str(), overwrite: bool }, ['id', 'destination']), async args => {
     const image = requireItem(useGalleryStore.getState().images, args.id, 'Media')
     if (!image.filePath || image.isLoading) throw new Error('Media is not complete')

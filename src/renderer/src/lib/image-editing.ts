@@ -1,3 +1,4 @@
+import { useSettingsStore } from '../stores/settings-store'
 import type { GenerateOptions } from '../hooks/useImageGeneration'
 import type { GalleryImage } from '../stores/gallery-store'
 import { AVAILABLE_MODELS, normalizeModelId, type LabeledAttachment } from '../types/api'
@@ -19,13 +20,33 @@ export type ImageTransform =
 /** Canonical edit request builder used by ImageViewer and the automation tool. */
 export async function prepareImageTransform(image: GalleryImage, edit: ImageTransform): Promise<GenerateOptions> {
   if (image.type === 'video' || image.isLoading || image.error || !image.filePath) throw new Error('A completed image is required')
-  const model = edit.operation === 'zoom_out' ? normalizeModelId(image.model)
-    : edit.model ?? normalizeModelId(image.model)
+  const sourceModel = image.isPrint && image.model === 'imported' ? useSettingsStore.getState().defaultModel : image.model
+  const model = edit.operation === 'zoom_out' ? normalizeModelId(sourceModel)
+    : edit.model ?? normalizeModelId(sourceModel)
   const spec = AVAILABLE_MODELS.find((m) => m.id === model)
   if (!spec) throw new Error(`Unknown model: ${model}`)
   if (edit.operation === 'zoom_out' && !ZOOM_LEVELS.includes(edit.factor as typeof ZOOM_LEVELS[number])) throw new Error('Zoom factor must be 1.5, 2, 3 or 4')
   if (edit.operation === 'aspect_ratio' && (!EDIT_ASPECT_RATIOS.includes(edit.aspectRatio as typeof EDIT_ASPECT_RATIOS[number]) || edit.aspectRatio === image.aspectRatio)) throw new Error('Choose a different supported aspect ratio')
   const original = await readEditingImage(image.filePath)
+  if (image.isPrint) {
+    // Graphic design needs re-layout, not photographic scene outpainting. Pass
+    // the full original as a single reference instead of the 1000px JPEG canvas
+    // used for photos; its lettering and flat edges must remain readable.
+    const instruction = edit.operation === 'aspect_ratio'
+      ? `Re-layout the print artwork in [Image 1] to ${edit.aspectRatio}. Adapt the grid, margins, color fields and placement of existing elements to this new format. Preserve all existing content without cropping it.`
+      : `Extend the print artwork in [Image 1] with more deliberate breathing room: make the existing layout approximately 1/${edit.factor} of the canvas width and height, centered within the same aspect ratio. Continue its flat background and graphic fields into the additional space. Keep the original artwork content intact.`
+    return {
+      prompt: `${instruction} Preserve the exact visible copy from [Image 1], including all spelling, punctuation, numbers and contact details; this existing copy is explicitly approved content. Preserve the brand identity and typography. Do not invent new text, scenes, decorative objects or icons. Produce one flat finished design filling the canvas. Original design brief: ${image.prompt}`,
+      imageCount: 1, models: [model],
+      aspectRatio: edit.operation === 'aspect_ratio' ? edit.aspectRatio : image.aspectRatio,
+      resolution: image.resolution,
+      attachments: [image.filePath], labeledAttachments: [{ label: 'Image 1', images: [original] }],
+      parentImageId: image.id, workspaceId: image.workspaceId ?? null, projectId: image.projectId,
+      isPrint: true, printFormat: edit.operation === 'aspect_ratio' ? 'custom' : image.printFormat ?? 'custom',
+      printStyle: image.printStyle, printMetaPrompt: image.printMetaPrompt,
+      outputFormat: 'png', background: image.hasAlpha ? 'transparent' : 'auto',
+    }
+  }
   let apiPrompt: string
   let prompt: string
   let groups: LabeledAttachment[]

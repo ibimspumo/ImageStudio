@@ -10,7 +10,7 @@ import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store
 import { Image, SearchX } from 'lucide-react'
 import { MediaImport } from '../shared/MediaImport'
 import { normalizeModelId } from '../../../../shared/image-models'
-export type AppMode = 'image' | 'video' | 'thumbnail' | 'logo'
+export type AppMode = 'image' | 'video' | 'thumbnail' | 'logo' | 'print'
 interface MainContentProps {
   onImageClick: (images: GalleryImage[], index: number) => void
   onSettingsClick: () => void
@@ -37,7 +37,9 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   const images=useMemo(()=>{
     let list=allImages
     if(!library){
-      if(mode==='thumbnail')list=list.filter(isThumbnailImage)
+      if(mode==='image')list=list.filter(i=>i.type!=='video'&&!isThumbnailImage(i)&&!isLogoImage(i)&&!i.isPrint)
+      else if(mode==='thumbnail')list=list.filter(isThumbnailImage)
+      else if(mode==='print')list=list.filter(i=>i.isPrint)
       else if(mode==='logo')list=list.filter(isLogoImage)
       else if(mode==='video')list=list.filter(i=>i.type==='video')
     }
@@ -64,12 +66,12 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   const mainRef=useRef<HTMLElement>(null),promptRef=useRef<HTMLDivElement>(null)
   useEffect(()=>{const bar=promptRef.current,main=mainRef.current;if(!bar||!main)return;const update=()=>main.style.setProperty('--prompt-bar-h',library?'0px':`${bar.getBoundingClientRect().height}px`);const observer=new ResizeObserver(update);observer.observe(bar);update();return()=>observer.disconnect()},[mode,library])
   const activeName=library?undefined:mode==='thumbnail'?projects.find(p=>p.id===activeProjectId)?.title:workspaces.find(w=>w.id===activeWorkspaceId)?.name
-  const title=activeName||(library?'Deine Mediathek':{image:'Deine Bilder',video:'Deine Videos',thumbnail:'Deine Thumbnails',logo:'Deine Logos'}[mode])
-  const hint=library?'Bilder, Videos und fertige Ergebnisse an einem Ort.':{image:'Deine Ideen, Varianten und fertigen Ergebnisse.',video:'Ein Startbild. Deine Bewegung. Ein neuer Clip.',thumbnail:'Eine klare Bildidee für dein nächstes Video.',logo:'Form, Charakter und Wiedererkennung.'}[mode]
+  const title=activeName||(library?'Deine Mediathek':{image:'Deine Bilder',video:'Deine Videos',thumbnail:'Deine Thumbnails',logo:'Deine Logos',print:'Deine Print-Designs'}[mode])
+  const hint=library?'Bilder, Videos und fertige Ergebnisse an einem Ort.':{image:'Deine Ideen, Varianten und fertigen Ergebnisse.',video:'Ein Startbild. Deine Bewegung. Ein neuer Clip.',thumbnail:'Eine klare Bildidee für dein nächstes Video.',logo:'Form, Charakter und Wiedererkennung.',print:'Plakate, Flyer und Visitenkarten mit klarer Gestaltung.'}[mode]
   return <main ref={mainRef} className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative" aria-label={library?'Mediathek':'Erstellungsbereich'}>
-    <div className="studio-heading"><div className="min-w-0"><h1 className="truncate">{title}</h1><p>{hint}</p></div><div className="shrink-0"><MediaImport onImported={kind=>{filter.clearFilters();onModeChange(kind)}}/></div></div>
+    <div className="studio-heading"><div className="min-w-0"><h1 className="truncate">{title}</h1><p>{hint}</p></div><div className="shrink-0"><MediaImport importMode={!library&&mode==='print'?'print':undefined} onImported={kind=>{filter.clearFilters();onModeChange(kind)}}/></div></div>
     <GalleryToolbar allTags={allTags} totalCount={allImages.length} filteredCount={images.length}/>
-    {images.length?<ImageGallery images={images} onImageClick={onImageClick} onCreateVariant={onCreateVariant} onCropImage={onCropImage} onGenerateVideo={onGenerateVideo} onPreviewThumbnail={onPreviewThumbnail}/>:<div className="flex-1 flex flex-col items-center justify-center px-8 pb-[var(--prompt-bar-h,180px)] min-h-0"><div className="w-12 h-12 rounded-xl bg-surface-3 flex items-center justify-center mb-5">{filter.hasActiveFilters()?<SearchX className="w-6 h-6 text-text-muted"/>:<Image className="w-6 h-6 text-accent-main"/>}</div><h2 className="text-lg font-semibold mb-2">{filter.hasActiveFilters()?'Keine passenden Ergebnisse':activeName?'Hier ist Platz für deine nächste Idee.':library?'Deine Mediathek beginnt hier.':mode==='video'?'Dein erster Clip beginnt mit einem Bild.':'Was möchtest du gestalten?'}</h2><p className="text-[13px] text-text-muted text-center max-w-md">{filter.hasActiveFilters()?'Ändere den Suchbegriff oder setze deine Filter zurück.':library?'Importiere vorhandene Bilder oder Videos, oder erstelle dein erstes Bild im Studio.':mode==='video'?'Wähle ein Startbild aus der Mediathek oder lade eines hoch. Beschreibe anschließend die Bewegung.':'Beschreibe dein Motiv und füge bei Bedarf Personen oder Bilder als Referenz hinzu.'}</p>{filter.hasActiveFilters()&&<button onClick={filter.clearFilters} className="mt-4 text-sm text-accent-main hover:underline">Filter zurücksetzen</button>}</div>}
-    <div className="studio-composer-dock" style={{display:library?'none':undefined}}><div ref={promptRef}>{mode==='video'?<VideoPromptBar onSettingsClick={onSettingsClick} initialStartFrame={videoStartFrame}/>:<PromptBar key={mode} thumbnailMode={mode==='thumbnail'} logoMode={mode==='logo'} onSettingsClick={onSettingsClick} onCollectionsClick={onCollectionsClick} onPresetsManage={onPresetsManage} onQueueClick={onQueueClick} onCanvasClick={onCanvasClick}/>}</div></div>
+    {images.length?<ImageGallery images={images} onImageClick={onImageClick} onCreateVariant={onCreateVariant} onCropImage={onCropImage} onGenerateVideo={onGenerateVideo} onPreviewThumbnail={onPreviewThumbnail}/>:<div className="flex-1 flex flex-col items-center justify-center px-8 pb-[var(--prompt-bar-h,180px)] min-h-0"><div className="w-12 h-12 rounded-xl bg-surface-3 flex items-center justify-center mb-5">{filter.hasActiveFilters()?<SearchX className="w-6 h-6 text-text-muted"/>:<Image className="w-6 h-6 text-accent-main"/>}</div><h2 className="text-lg font-semibold mb-2">{filter.hasActiveFilters()?'Keine passenden Ergebnisse':activeName?'Hier ist Platz für deine nächste Idee.':library?'Deine Mediathek beginnt hier.':mode==='video'?'Dein erster Clip beginnt mit einem Bild.':'Was möchtest du gestalten?'}</h2><p className="text-[13px] text-text-muted text-center max-w-md">{filter.hasActiveFilters()?'Ändere den Suchbegriff oder setze deine Filter zurück.':library?'Importiere vorhandene Bilder oder Videos, oder erstelle dein erstes Bild im Studio.':mode==='print'?'Wähle ein Printformat. Beschreibe Anlass, Zielgruppe und die genauen Texte – die Gestaltungsregeln sorgen für Hierarchie und klare Flächen.':mode==='video'?'Wähle ein Startbild aus der Mediathek oder lade eines hoch. Beschreibe anschließend die Bewegung.':'Beschreibe dein Motiv und füge bei Bedarf Personen oder Bilder als Referenz hinzu.'}</p>{filter.hasActiveFilters()&&<button onClick={filter.clearFilters} className="mt-4 text-sm text-accent-main hover:underline">Filter zurücksetzen</button>}</div>}
+    <div className="studio-composer-dock" style={{display:library?'none':undefined}}><div ref={promptRef}>{mode==='video'?<VideoPromptBar onSettingsClick={onSettingsClick} initialStartFrame={videoStartFrame}/>:<PromptBar key={mode} thumbnailMode={mode==='thumbnail'} logoMode={mode==='logo'} printMode={mode==='print'} onSettingsClick={onSettingsClick} onCollectionsClick={onCollectionsClick} onPresetsManage={onPresetsManage} onQueueClick={onQueueClick} onCanvasClick={onCanvasClick}/>}</div></div>
   </main>
 }

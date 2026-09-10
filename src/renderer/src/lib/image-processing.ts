@@ -61,6 +61,7 @@ export async function prepareImageProcessing(image: GalleryImage, edit: ImagePro
     attachments: [image.filePath], parentImageId: image.id,
     workspaceId: image.workspaceId ?? null,
     projectId: image.projectId, thumbnailStyle: image.thumbnailStyle,
+    isPrint: image.isPrint, printFormat: image.printFormat, printStyle: image.printStyle, printMetaPrompt: image.printMetaPrompt,
     faceFidelity: image.faceFidelity, isLogo: image.isLogo, logoStyle: image.logoStyle,
     outputFormat: normalized.outputFormat,
     imageProcessing: { ...spec, options: normalized.options },

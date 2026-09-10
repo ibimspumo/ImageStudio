@@ -1,3 +1,6 @@
+export { PRINT_FORMATS, PRINT_STYLES, DEFAULT_PRINT_FORMAT, DEFAULT_PRINT_STYLE, PRINT_OUTPUT_NOTICE, getPrintFormat, preparePrintFormat, buildPrintSystemPrompt, getPrintResolutionInfo } from '../../../shared/print-prompt'
+export type { PrintFormat, PrintStyle, PrintFormatOption } from '../../../shared/print-prompt'
+
 export {
   AVAILABLE_MODELS,
   DEFAULT_MODEL,

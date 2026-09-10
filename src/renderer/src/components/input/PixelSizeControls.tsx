@@ -10,7 +10,8 @@ export interface PixelSizeProps {
 }
 
 /** Pixel drafts remain local until committed; invalid drafts block the shared composer. */
-export function PixelSizeControls({ imageSize, onImageSizeChange, onSizeErrorChange, ratio, resolution, children }: PixelSizeProps & {
+export function PixelSizeControls({ imageSize, onImageSizeChange, onSizeErrorChange, ratio, resolution, children, printMode }: PixelSizeProps & {
+  printMode?: boolean
   ratio: string
   resolution: string
   children: ReactNode
@@ -29,6 +30,7 @@ export function PixelSizeControls({ imageSize, onImageSizeChange, onSizeErrorCha
   useEffect(() => {
     if (imageSize) { setWidth(String(imageSize.width)); setHeight(String(imageSize.height)) }
   }, [imageSize?.width, imageSize?.height])
+  useEffect(() => { if (printMode) setRatioChoice(ratio === 'auto' ? '1:1' : ratio) }, [printMode, ratio])
   const report = (message?: string) => { setError(message); onSizeErrorChange?.(message) }
   const targetRatio = (choice = ratioChoice, custom = customRatio) => {
     const parts = (choice === 'custom' ? custom : choice).split(':').map(Number)
@@ -40,7 +42,7 @@ export function PixelSizeControls({ imageSize, onImageSizeChange, onSizeErrorCha
       report(commit ? undefined : 'Pixelgröße mit Enter oder durch Verlassen des Feldes übernehmen.')
       if (commit) {
         setRounded(size.width !== Number(w) || size.height !== Number(h))
-        setWidth(String(size.width)); setHeight(String(size.height)); onImageSizeChange?.(size)
+        setWidth(String(size.width)); setHeight(String(size.height)); if (size.width !== imageSize?.width || size.height !== imageSize?.height) onImageSizeChange?.(size)
       }
     } catch (err) { report(err instanceof Error ? err.message : 'Ungültige Bildgröße.') }
   }
@@ -90,14 +92,14 @@ export function PixelSizeControls({ imageSize, onImageSizeChange, onSizeErrorCha
             <input aria-label="Bildhöhe in Pixeln" inputMode="numeric" value={height} aria-invalid={!!error} className={`${inputClass} mt-1`} onChange={(e) => edit('height', e.target.value)} onBlur={(e) => edit('height', e.target.value, true)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); edit('height', e.currentTarget.value, true) } }} />
           </label>
         </div>
-        <div className="flex items-center gap-2">
+        {!printMode && <div className="flex items-center gap-2">
           <label className="text-[12px] text-text-secondary shrink-0" htmlFor={ratioId}>Verhältnis</label>
           <select id={ratioId} aria-label="Pixel-Seitenverhältnis" className={inputClass} value={ratioChoice} onChange={(e) => selectRatio(e.target.value)}>
             {[...new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', ratioChoice])].filter((r) => r !== '210:297' && r !== 'custom').map((r) => <option key={r} value={r}>{r}</option>)}
             <option value="210:297">A4 · 210:297</option><option value="custom">Eigenes Verhältnis</option>
           </select>
           {ratioChoice === 'custom' && <input aria-label="Eigenes Pixel-Seitenverhältnis" className={`${inputClass} max-w-20`} value={customRatio} onChange={(e) => { setCustomRatio(e.target.value); report('Verhältnis mit Enter oder durch Verlassen des Feldes übernehmen.') }} onBlur={() => selectRatio('custom')} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); selectRatio('custom') } }} />}
-        </div>
+        </div>}
         <div className="flex items-center justify-between text-[12px] text-text-secondary tabular-nums"><span>{imageSize.width} × {imageSize.height} px</span><span>{(imageSize.width * imageSize.height / 1e6).toFixed(2)} MP</span></div>
         {error && <p role="alert" className="text-[12px] leading-relaxed text-red-300">{error}</p>}
         <p className="text-[12px] leading-relaxed text-text-secondary">{rounded ? 'Aufgerundet. ' : ''}16er-Schritte; das Verhältnis kann dabei leicht abweichen. Max. {c.maxEdge} px je Seite, {c.minPixels.toLocaleString('de-DE')}–{c.maxPixels.toLocaleString('de-DE')} Pixel gesamt; höchstens {c.maxAspectRatio}:1.</p>

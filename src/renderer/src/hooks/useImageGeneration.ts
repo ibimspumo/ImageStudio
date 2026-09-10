@@ -1,3 +1,4 @@
+import { buildPrintSystemPrompt, buildPrintArtworkPrompt, preparePrintFormat, DEFAULT_PRINT_FORMAT, DEFAULT_PRINT_STYLE } from '../../../shared/print-prompt'
 import { useCallback } from 'react'
 import { useGalleryStore } from '../stores/gallery-store'
 import { useSettingsStore } from '../stores/settings-store'
@@ -61,6 +62,10 @@ export interface GenerateOptions {
   /** How literally the edit endpoint keeps the references it is given. */
   inputFidelity?: FalInputFidelity
   /** Logo mode metadata, stored on the image so it survives a reuse. */
+  isPrint?: boolean
+  printFormat?: import('../../../shared/print-prompt').PrintFormat
+  printStyle?: import('../../../shared/print-prompt').PrintStyle
+  printMetaPrompt?: string
   isLogo?: boolean
   logoStyle?: string
 }
@@ -149,12 +154,22 @@ export function useImageGeneration() {
       }
       const models = processing ? [processing.modelId] : [...new Set((options.models.length > 0 ? options.models : [DEFAULT_MODEL]).map(normalizeModelId))]
       options.models = models
+      if (options.isPrint && !processing) {
+        const settings = useSettingsStore.getState()
+        options.printFormat ??= settings.defaultPrintFormat ?? DEFAULT_PRINT_FORMAT
+        options.printStyle ??= settings.defaultPrintStyle ?? DEFAULT_PRINT_STYLE
+        options.printMetaPrompt ??= settings.printPrompt ?? ''
+        Object.assign(options, preparePrintFormat(options.printFormat, models, options))
+        options.systemPrompt = buildPrintSystemPrompt({ format: options.printFormat, style: options.printStyle, hasReferences: !!(options.attachments?.length || options.labeledAttachments?.length), customMetaPrompt: options.printMetaPrompt })
+        options.apiPrompt = buildPrintArtworkPrompt(options.prompt)
+        options.outputFormat ??= 'png'
+      }
       if (!processing) {
         if (!Number.isInteger(options.imageCount) || options.imageCount < 1 || models.some(id => options.imageCount > getModel(id).maxImagesPerRequest)) throw new Error('Image count exceeds the selected model limits.')
         if (options.imageSize) {
-          if (!options.thumbnailStyle && models.some(id => getModel(id).imageSizeMode !== 'pixels')) throw new Error('Custom pixel sizes require pixel-capable models only.')
+          if (!options.thumbnailStyle && !options.isPrint && models.some(id => getModel(id).imageSizeMode !== 'pixels')) throw new Error('Custom pixel sizes require pixel-capable models only.')
           options.imageSize = normalizeGptImageSize(options.imageSize)
-          if (!options.thumbnailStyle) options.aspectRatio = `${options.imageSize.width}:${options.imageSize.height}`
+          if (!options.thumbnailStyle && !options.isPrint) options.aspectRatio = `${options.imageSize.width}:${options.imageSize.height}`
         }
         if (options.outputCompression !== undefined && (models.some(id => !getModel(id).supportsOutputCompression) || !['jpeg', 'webp'].includes(options.outputFormat ?? 'png') || !Number.isInteger(options.outputCompression) || options.outputCompression < 0 || options.outputCompression > 100)) throw new Error('Output compression requires JPEG or WebP, a supported model, and an integer from 0 to 100.')
         if (options.background === 'transparent' && options.outputFormat === 'jpeg') throw new Error('JPEG cannot preserve transparency. Choose PNG or WebP.')
@@ -176,7 +191,7 @@ export function useImageGeneration() {
         const hasAlpha =
           processing ? processing.hasAlpha : options.background === 'transparent' && getModel(model).supportsBackground
         for (let i = 0; i < options.imageCount; i++) {
-          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments ?? options.labeledAttachments?.flatMap((group) => group.images), activeWorkspaceId, { parentImageId: options.parentImageId, ...(processing ? { width: processing.width, height: processing.height, mimeType: `image/${processing.outputFormat}`, estimatedCost: processing.estimatedCost } : {}), seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, hasAlpha, requestId, generationOptions: structuredClone(options), costCurrency: 'USD', costSource: 'list-price-estimate' })
+          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments ?? options.labeledAttachments?.flatMap((group) => group.images), activeWorkspaceId, { parentImageId: options.parentImageId, ...(processing ? { width: processing.width, height: processing.height, mimeType: `image/${processing.outputFormat}`, estimatedCost: processing.estimatedCost } : {}), seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, isPrint: options.isPrint, printFormat: options.printFormat, printStyle: options.printStyle, printMetaPrompt: options.printMetaPrompt, hasAlpha, requestId, generationOptions: structuredClone(options), costCurrency: 'USD', costSource: 'list-price-estimate' })
           ids.push(id)
         }
         modelPlaceholders.push({ model, ids, requestId })
@@ -314,7 +329,8 @@ export function useImageGeneration() {
                   const sourcePixels = await inspectProcessingPixels(result.result.imageBase64).catch(() => undefined)
                   const stored = await prepareForStorage(
                     result.result.imageBase64,
-                    antiDetection,
+                    // Preserve exact provider bytes for sharp print typography and flat color edges.
+                    antiDetection && !options.isPrint,
                     !!processing || (sourcePixels?.hasAlpha ?? options.background === 'transparent')
                   )
                   // Dedicated restoration stays lossless even with anti-detection enabled:

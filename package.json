@@ -1,6 +1,6 @@
 {
   "name": "imagestudio",
-  "version": "1.3.3",
+  "version": "1.5.0",
   "description": "AI Image Generation Studio",
   "main": "./out/main/index.js",
   "scripts": {
@@ -10,7 +10,7 @@
     "build:win": "electron-vite build && electron-builder --win",
     "preview": "electron-vite preview",
     "postinstall": "electron-vite build",
-    "test:automation": "node --test tests/automation-server.test.mjs tests/automation-renderer.test.mjs tests/generation-observability.test.mjs tests/settings-costs.test.mjs tests/export-result.test.mjs tests/fal-billing.test.mjs tests/image-processing.test.mjs tests/image-processing-files.test.mjs tests/gpt-image-25.test.mjs",
+    "test:automation": "node --test tests/automation-server.test.mjs tests/automation-renderer.test.mjs tests/generation-observability.test.mjs tests/settings-costs.test.mjs tests/export-result.test.mjs tests/fal-billing.test.mjs tests/image-processing.test.mjs tests/image-processing-files.test.mjs tests/gpt-image-25.test.mjs tests/print-design.test.mjs tests/settings-concurrency.test.mjs tests/print-transforms.test.mjs",
     "test:automation:app": "npm run build && node scripts/test-automation-app.mjs",
     "test:ui:surfaces": "npm run build && node scripts/test-ui-surfaces.mjs"
   },

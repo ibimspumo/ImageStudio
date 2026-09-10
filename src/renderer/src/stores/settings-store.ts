@@ -10,10 +10,23 @@ interface SettingsStore extends AppSettings {
   setSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => Promise<void>
 }
 
-export const useSettingsStore = create<SettingsStore>((set) => ({
+// UI edits and MCP settings mutations share one ordered stream. The main
+// process persists synchronously; this queue also keeps renderer acknowledgments
+// and subscriptions in invocation order, including when IPC responses are delayed.
+let pendingSettingsWrite: Promise<void> = Promise.resolve()
+function serializeSettingsWrite(write: () => Promise<void>): Promise<void> {
+  const result = pendingSettingsWrite.then(write)
+  pendingSettingsWrite = result.catch(() => undefined)
+  return result
+}
+
+export const useSettingsStore = create<SettingsStore>((set, get) => ({
   falApiKey: '',
   falBillingApiKey: '',
   defaultModel: DEFAULT_MODEL,
+  printPrompt: '',
+  defaultPrintFormat: 'a4-portrait',
+  defaultPrintStyle: 'auto',
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
   defaultImageCount: 1,
@@ -38,14 +51,12 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   },
 
   setFalApiKey: async (key: string) => {
-    const result = await window.api.setSetting('falApiKey', key)
-    if (!result.success) throw new Error('Der API-Schlüssel konnte nicht gespeichert werden. Bitte erneut versuchen.')
-    set({ falApiKey: key })
+    await get().setSetting('falApiKey', key)
   },
 
-  setSetting: async <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+  setSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => serializeSettingsWrite(async () => {
     const result = await window.api.setSetting(key, value)
     if (!result.success) throw new Error(`Die Einstellung ${key} konnte nicht gespeichert werden. Bitte erneut versuchen.`)
     set({ [key]: value } as Partial<AppSettings>)
-  }
+  })
 }))

@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Import, X } from 'lucide-react'
+import { getPrintFormatOptions, type PrintFormat } from '../../../../shared/print-prompt'
+import { useSettingsStore } from '../../stores/settings-store'
 import { importMediaToGallery } from '../../lib/media-actions'
 
-export function MediaImport({ onImported }: { onImported: (kind: 'image' | 'video') => void }) {
+export function MediaImport({ onImported, importMode }: { onImported: (kind: 'image' | 'video' | 'print') => void; importMode?: 'print' }) {
   const [open, setOpen] = useState(false)
+  const [printFormat, setPrintFormat] = useState<PrintFormat>(useSettingsStore.getState().defaultPrintFormat)
   const [source, setSource] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -14,8 +17,8 @@ export function MediaImport({ onImported }: { onImported: (kind: 'image' | 'vide
     setBusy(true)
     setError('')
     try {
-      const media = await importMediaToGallery({ source })
-      onImported(media.type ?? 'image')
+      const media = await importMediaToGallery({ source, importMode, printFormat: importMode === 'print' ? printFormat : undefined })
+      onImported(media.isPrint ? 'print' : media.type ?? 'image')
       setSource('')
       setOpen(false)
     } catch (cause) {
@@ -25,23 +28,29 @@ export function MediaImport({ onImported }: { onImported: (kind: 'image' | 'vide
 
   return (
     <div className="relative ml-auto no-drag">
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+      <button type="button" onClick={() => { setPrintFormat(useSettingsStore.getState().defaultPrintFormat); setOpen(!open) }} aria-expanded={open}
         className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-3 focus-visible:outline-accent-main">
         <Import className="w-3.5 h-3.5" /> Import
       </button>
       {open && createPortal(<div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-5" onClick={() => !busy && setOpen(false)}><form role="dialog" aria-modal="true" aria-label="Medien importieren" onClick={event => event.stopPropagation()} onSubmit={submit} className="w-full max-w-lg rounded-xl border border-border-base bg-surface-1 p-6 space-y-4">
         <div className="flex items-center justify-between gap-2">
-          <label htmlFor="media-import-source" className="text-[13px] font-medium text-text-primary">Bild oder Video importieren</label>
+          <label htmlFor="media-import-source" className="text-[13px] font-medium text-text-primary">{importMode === 'print' ? 'Print-Design importieren' : 'Bild oder Video importieren'}</label>
           <button type="button" aria-label="Import schließen" onClick={() => setOpen(false)} className="text-text-secondary hover:text-text-primary"><X className="w-4 h-4" /></button>
         </div>
         <input id="media-import-source" autoFocus value={source} onChange={event => setSource(event.target.value)}
           placeholder="Medien-URL oder lokalen Dateipfad einfügen"
           className="w-full bg-surface-2 border border-border-base rounded-lg px-3 py-2 text-[12px] text-text-primary placeholder:text-text-secondary select-text focus:outline-accent-main" />
+        {importMode === 'print' && <label className="block text-[12px] text-text-secondary">Zielformat
+          <select aria-label="Print-Importformat" value={printFormat} onChange={event => setPrintFormat(event.target.value as PrintFormat)} className="block mt-2 w-full bg-surface-2 border border-border-base rounded-lg px-3 py-2 text-[13px] text-text-primary focus:outline-accent-main">
+            {getPrintFormatOptions(printFormat).map(format => <option key={format.id} value={format.id}>{format.name}{format.widthMm ? ` · ${format.widthMm} × ${format.heightMm} mm` : ''}</option>)}
+          </select>
+          <span className="block mt-2 leading-relaxed">Das Zielformat ordnet dein Design ein. Die Originalpixel werden unverändert übernommen.</span>
+        </label>}
         <p className="text-[12px] text-text-secondary leading-relaxed">Verwende einen direkten Medienlink oder einen absoluten Dateipfad. Das Original wird in deine Mediathek kopiert und ist auch für verbundene KI-Werkzeuge verfügbar.</p>
         {error && <p role="alert" className="text-[12px] text-danger break-words">{error}</p>}
         <button type="submit" disabled={busy || !source.trim()}
           className="w-full rounded-lg bg-accent-main text-surface-0 hover:bg-accent-bright px-3 py-2 text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-accent-main">
-          {busy ? 'Importiert…' : 'Zur Mediathek hinzufügen'}
+          {busy ? 'Importiert…' : importMode === 'print' ? 'Zu Print hinzufügen' : 'Zur Mediathek hinzufügen'}
         </button>
       </form></div>, document.body)}
     </div>

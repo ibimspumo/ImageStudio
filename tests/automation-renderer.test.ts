@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createAutomationTools } from '../src/renderer/src/automation/tools'
+import { createAutomationTools, imageSummary } from '../src/renderer/src/automation/tools'
 import { useSettingsStore } from '../src/renderer/src/stores/settings-store'
 import { useGalleryStore } from '../src/renderer/src/stores/gallery-store'
 import { useQueueStore } from '../src/renderer/src/stores/queue-store'
@@ -166,4 +166,63 @@ test('GPT 2.5 discovery, exact pixels, formats and queue retain shared options',
   const format = await call('preview_generation', { ...base, outputFormat: 'jpeg', background: 'opaque', quality: 'max', outputCompression: 0 })
   assert.equal(format.error, false, format.text)
   assert.equal(format.data.request.outputCompression, 0)
+})
+
+test('print discovery, shared composition, model defaults and gallery separation', async () => {
+  useSettingsStore.setState({ defaultModel: DEFAULT_LOGO_MODEL, defaultImageCount: 1, printPrompt: 'Use our restrained green brand palette.' })
+  const capabilities = await call('get_capabilities')
+  assert.ok(capabilities.data.modes.includes('print'))
+  assert.equal(capabilities.data.defaults.print, DEFAULT_LOGO_MODEL)
+  assert.ok(capabilities.data.print.formats.some(format => format.id === 'business-card'))
+  assert.ok(capabilities.data.print.styles.some(style => style.id === 'swiss'))
+  assert.equal((await call('navigate', { target: 'print' })).error, false)
+  const args = { mode: 'print', prompt: 'Weihnachtsmarkt. 14. Dezember. Use [Image 1] as the logo.', printFormat: 'a4-portrait', printStyle: 'swiss', references: [fixture], presetId: '' }
+  const preview = await call('preview_generation', args)
+  assert.equal(preview.error, false, preview.text)
+  assert.equal(preview.data.request.isPrint, true)
+  assert.equal(preview.data.request.printFormat, 'a4-portrait')
+  assert.deepEqual(preview.data.request.models, [DEFAULT_LOGO_MODEL])
+  assert.deepEqual(preview.data.request.imageSize, { width: 2240, height: 3168 })
+  assert.equal(preview.data.request.quality, 'high')
+  assert.match(preview.data.request.systemPrompt, /green brand palette/)
+  assert.equal(preview.data.referenceMentions[0].mentionedInPrompt, true)
+  assert.equal(preview.data.estimateOnly, true)
+  const explicit = await call('preview_generation', { ...args, customMetaPrompt: '' })
+  assert.doesNotMatch(explicit.data.request.systemPrompt, /green brand palette/)
+  const generation = await call('generate', args)
+  assert.equal(generation.error, false, generation.text)
+  assert.deepEqual(generated?.imageSize, preview.data.request.imageSize)
+  assert.equal(generated?.systemPrompt, preview.data.request.systemPrompt)
+  assert.equal(generated?.isPrint, true)
+  for (const patch of [{ printFormat: 'unknown' }, { printStyle: 'wordmark' }, { style: 'minimal' }, { imageCount: 100 }, { outputFormat: 'png', outputCompression: 60 }]) {
+    assert.equal((await call('preview_generation', { ...args, ...patch })).error, true, JSON.stringify(patch))
+  }
+  assert.equal((await call('preview_generation', { prompt: 'x', printFormat: 'a4-portrait' })).error, true)
+  const custom = await call('preview_generation', { ...args, printFormat: 'custom', imageSize: { width: 1401, height: 1001 } })
+  assert.equal(custom.error, false, custom.text)
+  assert.deepEqual(custom.data.request.imageSize, { width: 1408, height: 1008 })
+  const mixed = await call('preview_generation', { ...args, models: [DEFAULT_LOGO_MODEL, 'fal-ai/nano-banana-2'] })
+  assert.equal(mixed.error, false, mixed.text)
+  assert.equal(mixed.data.models.length, 2)
+  assert.equal((await call('update_settings', { defaultPrintFormat: 'square', defaultPrintStyle: 'editorial', printPrompt: 'Saved print rules' })).error, false)
+  const saved = await call('preview_generation', { mode: 'print', prompt: 'Saved defaults', presetId: '' })
+  assert.equal(saved.data.request.printFormat, 'square')
+  assert.equal(saved.data.request.printStyle, 'editorial')
+  assert.match(saved.data.request.systemPrompt, /Saved print rules/)
+  const original = useGalleryStore.getState().images
+  useGalleryStore.setState({ images: [
+    { id: 'print-test', model: DEFAULT_LOGO_MODEL, prompt: 'Print', timestamp: 1, filePath: '/print.png', isPrint: true, printFormat: 'a4-portrait', printStyle: 'swiss' },
+    { id: 'image-test', model: DEFAULT_LOGO_MODEL, prompt: 'Image', timestamp: 1, filePath: '/image.png' },
+  ] as never })
+  assert.deepEqual((await call('list_images', { mode: 'print' })).data.images.map(image => image.id), ['print-test'])
+  assert.deepEqual((await call('list_images', { mode: 'image' })).data.images.map(image => image.id), ['image-test'])
+  useGalleryStore.setState({ images: original })
+})
+
+
+test('print summaries expose the same observed raster density as the UI', () => {
+  const source = { id: 'print-ppi', prompt: 'Print', model: DEFAULT_LOGO_MODEL, timestamp: 0, filePath: '/print.png', isPrint: true, printFormat: 'a4-portrait' as const, width: 2240, height: 3168 }
+  assert.deepEqual(imageSummary(source).printResolution, { widthMm: 210, heightMm: 297, effectivePpi: 271, rasterWidth: 2240, rasterHeight: 3168 })
+  assert.equal(imageSummary({ ...source, printFormat: 'custom' }).printResolution, null)
+  assert.equal(imageSummary({ ...source, width: undefined }).printResolution, null)
 })

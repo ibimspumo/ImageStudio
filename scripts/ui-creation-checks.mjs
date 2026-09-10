@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 /** Runs inside the disposable Electron smoke, never clicks a generation/export button. */
 export async function runCreationUiChecks(page, { call, imageId }) {
-  for (const mode of ['image', 'thumbnail', 'logo', 'video']) {
+  for (const mode of ['image', 'thumbnail', 'logo', 'print', 'video']) {
     await call('navigate', { target: mode })
     const model = page.getByRole('button', { name: mode === 'video' ? 'Videomodell auswählen' : 'Bildmodell auswählen', exact: true })
     await model.click()
@@ -54,5 +54,5 @@ export async function runCreationUiChecks(page, { call, imageId }) {
   assert.ok(!(await call('list_images', { limit: 100 })).images.some(item => item.id === disposableId), 'UI deletion removes live MCP media')
   if (await viewer.isVisible()) await viewer.getByRole('button', { name: 'Schließen', exact: true }).click()
   await call('navigate', { target: 'image' })
-  console.log('Creation UI: four model/options menus, Escape, viewer export options, crop cancellation, thumbnail preview controls passed')
+  console.log('Creation UI: five model/options menus, Escape, viewer export options, crop cancellation, thumbnail preview controls passed')
 }

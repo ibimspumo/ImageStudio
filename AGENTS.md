@@ -47,3 +47,9 @@ Retire GPT Image 2/1.5 generation choices and migrate saved defaults/aliases wit
 
 ## Sunburst default migration (v1.3.3)
 GPT Image 2.5 Sunburst is the default for images, logos and thumbnails, including UI and MCP. On first launch after this update, every existing profile switches its saved image default to Sunburst, even if it previously selected Nano Banana or Flare. `shared/settings-migrations.ts` and the persisted internal `imageDefaultsRevision` marker make this a one-time migration; later explicit user selections survive restarts. Quality stays High; video defaults and existing media remain unchanged.
+
+
+## Print design mode
+Print shares the ordinary image model registry, saved image default and generation pipeline. Keep formats, styles, meta-prompt composition and pixel preparation canonical in `src/shared/print-prompt.ts`; both UI and MCP discover and use them. Persist `defaultPrintFormat`, `defaultPrintStyle` and `printPrompt` through shared settings, and retain Print metadata through variants, crop and dedicated processing. Print artwork bypasses destructive JPEG/resampling post-processing. Format millimeters describe intended trim size; disclose effective pixels/ppi and model ratio approximation. Do not imply raster output is editable vector/InDesign, CMYK or press-ready PDF with bleed. Include shared Print tests and disposable UI/MCP checks for affected behavior. Paid acceptance scripts require explicit generation authorization.
+
+Print format selection in the composer header and pixel settings uses the same canonical catalog and live draft. DIN A uses A4 as the representative ratio; DIN lang 99/105 mm and business cards offer both orientations, with a 105 mm square. Preserve legacy format IDs for saved media and settings. MCP discovery exposes dimensions, normalized pixels and legacy status from the same registry.

@@ -33,7 +33,7 @@ import { prepareImageVariant } from './lib/studio-actions'
 import { logger } from './lib/logger'
 
 interface ViewerState { images: GalleryImage[]; index: number }
-const isMode = (target: string): target is AppMode => ['image','video','thumbnail','logo'].includes(target)
+const isMode = (target: string): target is AppMode => ['image','video','thumbnail','logo','print'].includes(target)
 export default function App() {
   const [ready,setReady]=useState(false)
   const [pendingCollection,setPendingCollection]=useState<string|null>(null)
@@ -99,9 +99,9 @@ export default function App() {
     setPendingCollection(null)
   },[pendingCollection,mode])
   const showImage=(images:GalleryImage[],index:number)=>setViewer({images,index})
-  const createVariant=(id:string)=>{prepareImageVariant(id);setMode('image');setSection('image');setViewer(null);setThumbnailPreview(null)}
+  const createVariant=(id:string)=>{prepareImageVariant(id);setMode(useGalleryStore.getState().images.find(i=>i.id===id)?.isPrint?'print':'image');setSection(useGalleryStore.getState().images.find(i=>i.id===id)?.isPrint?'print':'image');setViewer(null);setThumbnailPreview(null)}
   const safeVariant=(id:string)=>{try{createVariant(id)}catch(err){setError(err instanceof Error?err.message:'Variante konnte nicht vorbereitet werden.')}}
-  const reusePrompt=(image:GalleryImage)=>{useCropStore.getState().setPendingReuse(image.prompt,image.attachments,image.negativePrompt,image.seed,{model:image.model,aspectRatio:image.aspectRatio,resolution:image.resolution,background:image.hasAlpha?'transparent':(image.generationOptions && 'background' in image.generationOptions ? image.generationOptions.background : undefined),imageSize:(image.generationOptions && 'imageSize' in image.generationOptions ? image.generationOptions.imageSize : undefined),quality:(image.generationOptions && 'quality' in image.generationOptions ? image.generationOptions.quality : undefined),outputFormat:(image.generationOptions && 'outputFormat' in image.generationOptions ? image.generationOptions.outputFormat : undefined),outputCompression:(image.generationOptions && 'outputCompression' in image.generationOptions ? image.generationOptions.outputCompression : undefined)});setViewer(null);navigateSection(image.isLogo?'logo':image.projectId?'thumbnail':'image')}
+  const reusePrompt=(image:GalleryImage)=>{useCropStore.getState().setPendingReuse(image.prompt,image.attachments,image.negativePrompt,image.seed,{isPrint:image.isPrint,printFormat:image.printFormat,printStyle:image.printStyle,printMetaPrompt:image.printMetaPrompt,model:image.model,aspectRatio:image.aspectRatio,resolution:image.resolution,background:image.hasAlpha?'transparent':(image.generationOptions && 'background' in image.generationOptions ? image.generationOptions.background : undefined),imageSize:(image.generationOptions && 'imageSize' in image.generationOptions ? image.generationOptions.imageSize : undefined),quality:(image.generationOptions && 'quality' in image.generationOptions ? image.generationOptions.quality : undefined),outputFormat:(image.generationOptions && 'outputFormat' in image.generationOptions ? image.generationOptions.outputFormat : undefined),outputCompression:(image.generationOptions && 'outputCompression' in image.generationOptions ? image.generationOptions.outputCompression : undefined)});setViewer(null);navigateSection(image.isPrint?'print':image.isLogo?'logo':image.projectId?'thumbnail':'image')}
   const openCrop=(imageId:string,filePath:string)=>{setCrop({imageId,filePath});setViewer(null)}
   const openCompare=(image:GalleryImage)=>{
     const images=useGalleryStore.getState().images

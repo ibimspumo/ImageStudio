@@ -9,6 +9,10 @@ interface PendingCropRef {
 }
 
 export interface ReuseOptions {
+  isPrint?: boolean
+  printFormat?: import('../../../shared/print-prompt').PrintFormat
+  printStyle?: import('../../../shared/print-prompt').PrintStyle
+  printMetaPrompt?: string
   background?: FalBackground
   model?: string
   aspectRatio?: string

@@ -1,3 +1,5 @@
+import { PrintFormatSelect } from '../print/PrintFormatSelect'
+import type { PrintFormat } from '../../../../shared/print-prompt'
 import { PixelSizeControls, type PixelSizeProps } from './PixelSizeControls'
 import { OutputControls, type OutputControlProps } from './OutputControls'
 import { Send, XCircle, Settings, Brush, ListOrdered, Dices } from 'lucide-react'
@@ -19,6 +21,8 @@ import type {
 import { cn } from '../../lib/utils'
 
 interface ControlsRowProps extends PixelSizeProps, OutputControlProps {
+  printFormat?: PrintFormat
+  onPrintFormatChange?: (format: PrintFormat) => void
   selectedModels: string[]
   onModelsChange: (models: string[]) => void
   aspectRatio: AspectRatio
@@ -57,7 +61,7 @@ const BACKGROUND_OPTIONS: { id: FalBackground; label: string; hint: string }[] =
 ]
 
 export function ControlsRow({
-  imageSize, onImageSizeChange, onSizeErrorChange,
+  imageSize, onImageSizeChange, onSizeErrorChange, printFormat, onPrintFormatChange,
   outputFormat, onOutputFormatChange, outputCompression, onOutputCompressionChange,
   selectedModels,
   onModelsChange,
@@ -108,7 +112,7 @@ export function ControlsRow({
   ].filter(Boolean).length
 
   const sizePresets = <>
-            <TuneGroup label="Format">
+            {(!printFormat || printFormat === 'custom') && <TuneGroup label="Format">
               <TuneRatioOptions
                 ratios={caps.aspectRatios}
                 value={aspectRatio}
@@ -116,7 +120,7 @@ export function ControlsRow({
                 customRatio={customRatio}
                 onCustomRatioChange={onCustomRatioChange}
               />
-            </TuneGroup>
+            </TuneGroup>}
 
             <TuneGroup label="Auflösung">
               {caps.resolutions.length === 0 ? (
@@ -150,8 +154,9 @@ export function ControlsRow({
       <TuneMenu badge={tuneBadge} width={360} summary={imageSize ? `${imageSize.width} × ${imageSize.height}` : `${aspectRatio === 'custom' ? customRatio : aspectRatio} · ${caps.resolutions.length ? resolution : '1K'}`}>
         {(close) => (
           <>
+            {printFormat && onPrintFormatChange && <TuneGroup label="Printformat"><PrintFormatSelect label="Printformat in Bildeinstellungen" format={printFormat} onChange={onPrintFormatChange} /></TuneGroup>}
             {caps.supportsCustomImageSize && onImageSizeChange ? (
-              <PixelSizeControls imageSize={imageSize} onImageSizeChange={onImageSizeChange} onSizeErrorChange={onSizeErrorChange} ratio={aspectRatio === 'custom' ? customRatio : aspectRatio} resolution={resolution}>
+              <PixelSizeControls key={printFormat} printMode={!!printFormat} imageSize={imageSize} onImageSizeChange={onImageSizeChange} onSizeErrorChange={onSizeErrorChange} ratio={aspectRatio === 'custom' ? customRatio : aspectRatio} resolution={resolution}>
                 {sizePresets}
               </PixelSizeControls>
             ) : sizePresets}

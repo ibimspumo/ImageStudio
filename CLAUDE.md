@@ -30,6 +30,7 @@ npm run test:automation:app  # Real Electron/MCP parity smoke, no paid requests
   - `image-models.ts` — the fal.ai image model registry: endpoints, aspect ratios, resolutions, reference limits, per-model capability flags, **list prices**, plus `resolveAspectRatio`/`resolveResolution`/`toGptImageSize`/`toFixedImageSize`/`getCombinedCapabilities`/`normalizeModelId`/`estimateImageCost`/`formatCost`
   - `image-processing.ts` — canonical Topaz Precision/Transparent and BRIA registry, exact options/defaults, validation, PNG/JPEG output, provider limits, provider input mapping and list-price estimates
   - `thumbnail-prompt.ts` — the YouTube thumbnail system prompt (base rules, style blocks, face-fidelity block) plus the mode's locked constants and `buildThumbnailSystemPrompt()`
+  - `print-prompt.ts` — canonical Print formats, styles, shared pixel preparation, design prompt and effective ppi calculation
   - `logo-prompt.ts` — the logo system prompt (base rules, style blocks, transparency block, reference block) plus the mode's locked constants and `buildLogoSystemPrompt()`
   - `version.ts` — semver comparison for the updater
 - `src/main/` — Electron main process (IPC, API, files)
@@ -46,7 +47,7 @@ npm run test:automation:app  # Real Electron/MCP parity smoke, no paid requests
   - `components/shared/ImageProcessingPanel.tsx` — original dimensions, registry-driven Topaz options/estimates and BRIA action in ImageViewer
   - `lib/image-editing.ts`, `lib/image-export.ts` — shared UI/MCP image transformation and export behavior
   - `components/shared/AutomationSection.tsx`, `MediaImport.tsx` — local connection controls and media URL/path import
-  - `App.tsx`, `components/layout/StudioSidebar.tsx`, `TitleBar.tsx`, `MainContent.tsx` — route shell with a permanent sidebar, one context header, gallery and stable bottom composer. `StudioSection` includes image/video/thumbnail/logo, library, references, styles, projects, activity and settings; `AppMode` retains the last creation mode for support routes. Sidebar buttons expose `data-studio-section` and `aria-current="page"` for parity checks.
+  - `App.tsx`, `components/layout/StudioSidebar.tsx`, `TitleBar.tsx`, `MainContent.tsx` — route shell with a permanent sidebar, one context header, gallery and stable bottom composer. `StudioSection` includes image/video/thumbnail/logo/print, library, references, styles, projects, activity and settings; `AppMode` retains the last creation mode for support routes. Sidebar buttons expose `data-studio-section` and `aria-current="page"` for parity checks.
   - `app.css` — anthracite surfaces, lime accent and responsive studio shell; the sidebar becomes a drawer on narrow windows.
   - `stores/` — Zustand: gallery, collections, settings, workspace, crop, presets, queue, canvas, gallery-filter, thumbnail-projects, thumbnail-meta-prompts and ui-recents, backed by local histories.
   - `hooks/` — useImageGeneration, useVideoGeneration, useMentionEditor (contenteditable prompt and real inline reference chips), useImageRefs and useJustifiedLayout.
@@ -256,3 +257,18 @@ Sidebar folder and project entries offer a labelled trash button with inline con
 
 ## Sunburst default migration (v1.3.3)
 GPT Image 2.5 Sunburst is the default for images, logos and thumbnails, including UI and MCP. On first launch after this update, every existing profile switches its saved image default to Sunburst, even if it previously selected Nano Banana or Flare. `shared/settings-migrations.ts` and the persisted internal `imageDefaultsRevision` marker make this a one-time migration; later explicit user selections survive restarts. Quality stays High; video defaults and existing media remain unchanged.
+
+
+## Print mode
+
+Print is an ordinary image generation mode using all `AVAILABLE_MODELS` and the saved image `defaultModel`, initially Sunburst/High. `shared/print-prompt.ts` defines physical format presets, normalized GPT pixels, styles, `preparePrintFormat`, `buildPrintSystemPrompt`, `buildPrintArtworkPrompt` and `getPrintResolutionInfo`. The UI's PrintControls and MCP use these same definitions; preset model batches may combine explicit-pixel GPT models and nearest-supported-ratio models. Custom pixel sizes require pixel-capable models. Preset physical sizes are intent; actual result dimensions determine ppi, and no CMYK, bleed or press-ready PDF is implied.
+
+Persist `defaultPrintFormat`, `defaultPrintStyle` and `printPrompt` through ordinary settings. Print generation stores `isPrint`, `printFormat`, `printStyle` and `printMetaPrompt` in gallery metadata and immutable generation options; variants and dedicated processing preserve classification. The shared generation hook composes Print rules itself so UI, direct MCP and queued requests cannot diverge. Print results bypass optional anti-detection JPEG/resampling to preserve typography and flat color edges. Default output is PNG; normal supported output/model controls remain available.
+
+Automation exposes mode `print`, `printFormat`, `printStyle` and `customMetaPrompt`; explicit custom text replaces the saved Print text, including empty string. The corresponding live draft field is `printMetaPrompt`. Read capabilities and drafts for actual composed rules, effective sizes, defaults and reference instructions. Ordinary image and Print overviews filter consistently in UI/MCP, while library remains global.
+
+`tests/print-design.test.mjs` tests shared print behavior; `scripts/ui-print-checks.mjs` extends disposable Electron/MCP checks. `scripts/validate-print-live.mjs` is an opt-in paid acceptance matrix and requires `IMAGESTUDIO_RUN_PAID_PRINT=1` plus explicit user authorization. It isolates its profile, reads an existing local provider key privately, exports evidence, then removes its temporary credential/profile. Never run it as an ordinary build/test prerequisite.
+
+Print production constraints are also included next to the user brief via `buildPrintArtworkPrompt`, retained as `apiPrompt` in previews, live drafts and generation details. This reinforces contrast and flat-artwork delivery on providers with separate system instructions. Import uses shared `importMediaToGallery` with `importMode: "print"`/optional `printFormat`; UI stays in Print and video classification is rejected. Shared settings writes are serialized in renderer invocation order; failed disk writes do not publish new settings.
+
+Print format selection in the composer header and pixel settings uses the same canonical catalog and live draft. DIN A uses A4 as the representative ratio; DIN lang 99/105 mm and business cards offer both orientations, with a 105 mm square. Preserve legacy format IDs for saved media and settings. MCP discovery exposes dimensions, normalized pixels and legacy status from the same registry.

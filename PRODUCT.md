@@ -6,7 +6,7 @@ product
 
 ## Users
 
-Timo and creators generating, comparing and exporting images, AgentZ thumbnails, logos and short video assets on a desktop.
+Timo and creators generating, comparing and exporting images, AgentZ thumbnails, logos, print layouts and short video assets on a desktop.
 
 ## Product Purpose
 

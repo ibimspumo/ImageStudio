@@ -1,3 +1,4 @@
+import { PRINT_FORMATS, PRINT_STYLES, DEFAULT_PRINT_FORMAT, DEFAULT_PRINT_STYLE, type PrintFormat, type PrintStyle } from '../../shared/print-prompt'
 import { fetchBillingCosts } from '../services/fal-billing'
 import { ipcMain, app } from 'electron'
 import { join } from 'path'
@@ -17,6 +18,9 @@ const VALID_SETTINGS_KEYS = new Set([
   'falApiKey',
   'falBillingApiKey',
   'defaultModel',
+  'printPrompt',
+  'defaultPrintFormat',
+  'defaultPrintStyle',
   'defaultAspectRatio',
   'defaultResolution',
   'defaultImageCount',
@@ -29,6 +33,9 @@ interface AppSettings {
   imageDefaultsRevision: number
   falApiKey: string
   falBillingApiKey: string
+  printPrompt: string
+  defaultPrintFormat: PrintFormat
+  defaultPrintStyle: PrintStyle
   defaultModel: string
   defaultAspectRatio: string
   defaultResolution: string
@@ -43,6 +50,9 @@ const DEFAULTS: AppSettings = {
   falApiKey: '',
   falBillingApiKey: '',
   defaultModel: DEFAULT_MODEL,
+  printPrompt: '',
+  defaultPrintFormat: DEFAULT_PRINT_FORMAT,
+  defaultPrintStyle: DEFAULT_PRINT_STYLE,
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
   defaultImageCount: 1,
@@ -63,6 +73,9 @@ function loadSettings(): AppSettings {
     const raw = JSON.parse(readFileSync(path, 'utf-8'))
     const settings: AppSettings = {
       ...migrateImageDefaults(raw),
+      printPrompt: typeof raw.printPrompt === 'string' ? raw.printPrompt : '',
+      defaultPrintFormat: PRINT_FORMATS.some(item => item.id === raw.defaultPrintFormat) ? raw.defaultPrintFormat : DEFAULT_PRINT_FORMAT,
+      defaultPrintStyle: PRINT_STYLES.some(item => item.id === raw.defaultPrintStyle) ? raw.defaultPrintStyle : DEFAULT_PRINT_STYLE,
       falBillingApiKey: typeof raw.falBillingApiKey === 'string' ? raw.falBillingApiKey : '',
       falApiKey: typeof raw.falApiKey === 'string' ? raw.falApiKey : DEFAULTS.falApiKey,
       defaultAspectRatio: typeof raw.defaultAspectRatio === 'string' ? raw.defaultAspectRatio : DEFAULTS.defaultAspectRatio,
@@ -99,10 +112,17 @@ export function registerAllHandlers(): void {
     if (!VALID_SETTINGS_KEYS.has(key)) {
       return { success: false, error: `Unknown setting: ${key}` }
     }
+    if (key === 'defaultPrintFormat' && !PRINT_FORMATS.some(item => item.id === value)) return { success: false, error: 'Unknown print format.' }
+    if (key === 'defaultPrintStyle' && !PRINT_STYLES.some(item => item.id === value)) return { success: false, error: 'Unknown print style.' }
+    if (key === 'printPrompt' && typeof value !== 'string') return { success: false, error: 'Print meta prompt must be text.' }
+    // This handler is synchronous: read-modify-persist completes before another
+    // IPC mutation can run. Publish only after disk succeeds, so a failed write
+    // cannot leak into the next unrelated setting update.
+    const nextSettings = { ...settings, [key]: value } as AppSettings
+    persistSettings(nextSettings)
     // Uploaded references live under the old key's account — drop them.
     if (key === 'falApiKey' && value !== settings.falApiKey) clearUploadCache()
-    settings = { ...settings, [key]: value } as AppSettings
-    persistSettings(settings)
+    settings = nextSettings
     return { success: true }
   })
 

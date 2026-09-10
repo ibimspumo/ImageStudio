@@ -1,3 +1,4 @@
+import { PRINT_FORMATS, PRINT_STYLES } from '../../../shared/print-prompt'
 import { flushSync } from 'react-dom'
 import { getLiveDraft, mountedDraftModes, type DraftMode, type DraftPatch } from './live-drafts'
 import { object, str, array, choice, integer, bool } from './schema'
@@ -7,7 +8,7 @@ import { AVAILABLE_MODELS, AVAILABLE_VIDEO_MODELS, LOGO_STYLES, THUMBNAIL_STYLES
 import { useGalleryStore } from '../stores/gallery-store'
 import { REFERENCE_PROMPT_DESCRIPTION, REFERENCE_PROMPT_GUIDANCE } from '../../../shared/reference-mentions'
 
-const modeSchema = choice(['image', 'thumbnail', 'logo', 'video', 'canvas'])
+const modeSchema = choice(['image', 'thumbnail', 'logo', 'print', 'video', 'canvas'])
 const referenceSchema = { ...str('Existing gallery image ID or image data URL. Import file/URL sources with import_media first. In references, entries become [Image 1], [Image 2], etc.; mention them inline where you describe their role. The video startFrame is a dedicated input instead.'), maxLength: 30000000 }
 export const draftPatchSchema = object({
   prompt: str(`Replaces editor text. For image editors, recognized inline mentions become real UI chips at that text position. When collectionIds is omitted, exact unambiguous [@Collection name] markers automatically attach matching live collections, like human paste. Explicit collectionIds replaces that list; unknown or ambiguous names remain text. Image markers resolve only against attached references. ${REFERENCE_PROMPT_DESCRIPTION} ${REFERENCE_PROMPT_GUIDANCE.video}`),
@@ -18,6 +19,8 @@ export const draftPatchSchema = object({
   outputFormat: choice(['png', 'jpeg', 'webp']), outputCompression: integer(0, 100), clearOutputCompression: bool,
   seed: integer(0, 2147483647), clearSeed: bool,
   thumbnailStyle: choice(THUMBNAIL_STYLES.map(s => s.id)), logoStyle: choice(LOGO_STYLES.map(s => s.id)),
+  printFormat: choice(PRINT_FORMATS.map(format => format.id)), printStyle: choice(PRINT_STYLES.map(style => style.id)),
+  printMetaPrompt: str('Custom Print design rules, persisted in the shared printPrompt setting.'),
   background: choice(['auto', 'opaque', 'transparent']),
   references: array(referenceSchema, 32), collectionIds: array(str('Collection ID to attach. Place its exact promptReference from collections list, e.g. [@Timo], inside patch.prompt at the relevant sentence; otherwise the editor appends the collection chip at the end.'), 32),
   model: choice(AVAILABLE_VIDEO_MODELS.map(m => m.id)), duration: integer(1, 120),
@@ -42,7 +45,7 @@ export function registerDraftTools(add: RegisterTool): void {
     flushSync(() => {})
     return getLiveDraft(args.mode).read()
   })
-  add<{ mode: DraftMode }>('generate_draft', 'PAID: submit the current live app draft using the exact UI Generate action, including references, presets, thumbnail meta prompts and open canvas context. Returns new gallery job IDs immediately after local preparation; poll get_status. Configure with update_draft first.', object({ mode: modeSchema }, ['mode']), async args => {
+  add<{ mode: DraftMode }>('generate_draft', 'PAID: submit the current live app draft using the exact UI Generate action, including references, presets, thumbnail/print meta prompts and open canvas context. Returns new gallery job IDs immediately after local preparation; poll get_status. Configure with update_draft first.', object({ mode: modeSchema }, ['mode']), async args => {
     const draft = getLiveDraft(args.mode)
     const result = await draft.submit()
     const jobIds = typeof result === 'string' ? [result] : Array.isArray(result) && result.every(id => typeof id === 'string') ? result as string[] : []

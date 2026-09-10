@@ -1,7 +1,9 @@
 import { useLayoutEffect, useRef } from 'react'
 import type { GptImageQuality, ThumbnailStyle, LogoStyle, FalBackground, FalInputFidelity } from '../types/api'
 
-export type DraftMode = 'image' | 'thumbnail' | 'logo' | 'video' | 'canvas'
+import type { PrintFormat, PrintStyle } from '../../../shared/print-prompt'
+
+export type DraftMode = 'image' | 'thumbnail' | 'logo' | 'print' | 'video' | 'canvas'
 export interface DraftPatch {
   prompt?: string
   models?: string[]
@@ -12,6 +14,9 @@ export interface DraftPatch {
   seed?: number
   clearSeed?: boolean
   thumbnailStyle?: ThumbnailStyle
+  printFormat?: PrintFormat
+  printStyle?: PrintStyle
+  printMetaPrompt?: string
   logoStyle?: LogoStyle
   background?: FalBackground
   inputFidelity?: FalInputFidelity

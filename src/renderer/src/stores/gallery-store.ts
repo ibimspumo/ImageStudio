@@ -37,6 +37,10 @@ export interface GalleryImage {
   projectId?: string            // thumbnail mode: the video this belongs to
   thumbnailStyle?: string       // thumbnail mode: 'clean' | 'balanced' | 'bold'
   faceFidelity?: boolean        // thumbnail mode: identity-preservation was on
+  isPrint?: boolean
+  printFormat?: import('../../../shared/print-prompt').PrintFormat
+  printStyle?: import('../../../shared/print-prompt').PrintStyle
+  printMetaPrompt?: string
   isLogo?: boolean              // logo mode: produced there, filters the logo gallery
   logoStyle?: string            // logo mode: 'minimal' | 'wordmark' | 'emblem' | 'mascot'
   /**
@@ -78,6 +82,10 @@ export function isThumbnailImage(image: GalleryImage): boolean {
  * A logo is what logo mode produced. Unlike thumbnails there is no second axis
  * to infer it from, so the flag is the only signal — set at placeholder time.
  */
+export function isPrintImage(image: GalleryImage): boolean {
+  return image.isPrint === true
+}
+
 export function isLogoImage(image: GalleryImage): boolean {
   return image.isLogo === true
 }

@@ -12,6 +12,7 @@ ImageStudio runs locally on macOS and Windows. The interface uses an anthracite 
 | **Thumbnail** | Generate 16:9 thumbnails with project context, styles, face fidelity and saved meta-prompts; preview on YouTube layouts and export at 1920 × 1080. |
 | **Video** | Animate a start image with a motion prompt, model, duration and supported audio/camera options. |
 | **Logo** | Generate transparent PNG logos with models that support alpha output. |
+| **Print** | Design flat posters, flyers and business cards with print formats, typography-focused art direction and saved custom rules, using all image models. |
 | **Mediathek** | Browse images and videos, search prompts, filter, favorite, tag, import and organize media. |
 | **Referenzen** | Manage named image collections and use their exact @-mentions in prompts. |
 | **Stile & Vorlagen** | Manage reusable prompt presets. Thumbnail meta-prompts remain available in thumbnail controls. |
@@ -79,7 +80,7 @@ The app registry defines capabilities, defaults and list-price estimates. Prices
 | **Nano Banana 2 Lite** | Google | 15, incl. 4:1 and 8:1 | fixed 1K | up to 14 | yes | ~$0.048 per image |
 | **Nano Banana Pro** | Google | 11 standard ratios | 1K–4K | up to 14 | yes | $0.15, ×2 at 4K |
 
-Flare favors fast everyday generation; Sunburst favors intricate detail and precise editing with longer generation times. Both currently have the same published fal pricing, so Sunburst is not presented as a confirmed more expensive tier. High quality is the default in all three image creation modes. The available quality settings are `auto`, `low`, `medium`, `high`, `xhigh` and `max`; higher settings increase detail, latency and token consumption. Both accept up to 16 references, 10 outputs per request and 32,000 prompt characters.
+Flare favors fast everyday generation; Sunburst favors intricate detail and precise editing with longer generation times. Both currently have the same published fal pricing, so Sunburst is not presented as a confirmed more expensive tier. High quality is the default in all image creation modes. The available quality settings are `auto`, `low`, `medium`, `high`, `xhigh` and `max`; higher settings increase detail, latency and token consumption. Both accept up to 16 references, 10 outputs per request and 32,000 prompt characters.
 
 Both support `background: auto | transparent | opaque` and PNG, JPEG or WebP output. Logo mode defaults to Sunburst and defaults to transparency and pins PNG while offering ratios, resolutions and custom dimensions. Normal image mode also exposes background and output options. `outputCompression` accepts 0–100 only for JPEG/WebP. Neither model supports seed or input fidelity controls. Enabled JPEG post-processing can change the provider's format/compression for opaque images; transparency is preserved and stored MIME types describe the actual file.
 
@@ -104,7 +105,7 @@ Open a gallery image to view its prompt, model, dimensions, timing, tags and ref
 - Compare related results with their source, including retained legacy source links.
 - Export images as PNG, JPEG or WebP with quality, size and metadata controls. Videos retain their original format through direct file export.
 
-Thumbnail export produces an exact 1920 × 1080 JPEG and targets YouTube's 2 MB limit. Transparent images retain their alpha channel through PNG storage. Optional JPEG post-processing is configured under **Einstellungen → Generierung & Export** and does not apply to transparent images, dedicated processing results or videos. Processing retains provider bytes without an additional JPEG/resampling pass; PNG is default, and transparent output always remains PNG.
+Thumbnail export produces an exact 1920 × 1080 JPEG and targets YouTube's 2 MB limit. Transparent images retain their alpha channel through PNG storage. Optional JPEG post-processing is configured under **Einstellungen → Generierung & Export** and does not apply to Print artwork, transparent images, dedicated processing results or videos. Processing retains provider bytes without an additional JPEG/resampling pass; PNG is default, and transparent output always remains PNG.
 
 Canvas remains available as a sketch-based creation workflow with drawing tools, layers and simple/expert modes. Favorites, tags, search, filters and organization remain available. Deleting a folder or thumbnail project detaches its media; it does not delete those files.
 
@@ -130,6 +131,16 @@ MCP uses `image_edit_options` for source information, models and constraints; `p
 After generation, the app can reconcile saved request IDs with [fal.ai Billing Events](https://fal.ai/docs/platform-apis/v1/models/billing-events). These report request totals after discounts and require an **Admin API key**. Under **Einstellungen → Anbieter**, optionally enter a separate billing Admin key; otherwise the existing key is tried. Activity offers **Kosten mit fal.ai abgleichen**. Matching also runs after completed jobs and on startup.
 
 Confirmed amounts replace the displayed estimate while retaining the original estimate and provenance. Missing events, unavailable permissions and older results without a request ID remain labeled as estimated/unknown. Before generation, prices remain estimates. Activity separates confirmed and unconfirmed subtotals for the retained gallery; this is not your full fal.ai account statement. MCP uses the same `refresh_costs` action and state.
+
+## Print design
+
+Choose **Print** for posters, flyers and business cards. It uses the ordinary image model catalog and your saved image default (Sunburst by default), with High quality. Presets cover A3, A4 and A5 in both orientations, 85 × 55 mm business cards in both orientations, DIN lang and square flyers; **Freies Format** exposes the usual ratio and pixel controls.
+
+The shared design prompt emphasizes reading order, deliberate typography, invisible alignment grids, flat color areas, whitespace and one visual idea. A short production contract is also composed next to the brief so contrast, flat artwork and copy limits reach every provider. It produces a single flat layout instead of a paper mockup or a collage. Choose automatic art direction, graphic/Swiss, editorial, bold or elegant styling. **Gestaltungsregeln** shows the composed rules and lets you save your own brand direction. Format, style and custom rules persist and are shared with MCP. Attach logos, products and layout references using the same inline mentions as other image modes.
+
+Millimeter values describe the intended trim size. The composer shows requested pixels and approximate effective ppi; the viewer uses measured result pixels. GPT models use canonical normalized preset pixels; ratio-based models use their nearest supported ratio, so dimensions can differ. A4 uses 2240 × 3168 pixels (about 271 ppi at A4), while A3 has fewer ppi at its larger physical size. These are raster artworks, not editable InDesign/vector documents or automatically prepared CMYK/PDF/X files with bleed. Verify generated text and the printer's production requirements. Print storage preserves provider bytes without the optional JPEG/resampling pass, keeping type and flat edges intact.
+
+MCP discovers formats/styles/defaults in `get_capabilities.print`. Use `preview_generation` / `generate` with `mode: "print"`, `printFormat`, `printStyle` and optional `customMetaPrompt`; omit custom rules to use saved `printPrompt`, or send an empty string to disable them. Set `printFormat: "custom"` for explicit `imageSize` or `aspectRatio`/`resolution`. `navigate`, live draft tools, `list_images`, variants, processing and exports retain Print classification through the same app state. Import existing designs with `import_media` using `importMode: "print"` and optional `printFormat`, or use Import while in Print; original pixels remain unchanged. [Design research and example briefs](docs/print-design-research.md).
 
 ## Connect an AI tool
 
@@ -160,7 +171,7 @@ For a settings screenshot from that disposable test, set `IMAGESTUDIO_TEST_SCREE
 
 ## Architecture
 
-- `src/shared/`: canonical generation and dedicated-processing model capabilities, validation, pricing, reference markers and logo/thumbnail prompt composition.
+- `src/shared/`: canonical generation and dedicated-processing model capabilities, validation, pricing, reference markers and logo/thumbnail/print prompt composition.
 - `src/main/`: Electron IPC, fal.ai clients, uploads, media storage/export, updates and authenticated local automation.
 - `src/preload/`: typed `window.api` bridge.
 - `src/renderer/src/App.tsx` and `components/layout/`: sidebar routes, context header, gallery and persistent composer shell.
@@ -185,3 +196,5 @@ Sidebar folder and project entries offer a labelled trash button with inline con
 
 ## Sunburst default migration (v1.3.3)
 GPT Image 2.5 Sunburst is the default for images, logos and thumbnails, including UI and MCP. On first launch after this update, every existing profile switches its saved image default to Sunburst, even if it previously selected Nano Banana or Flare. `shared/settings-migrations.ts` and the persisted internal `imageDefaultsRevision` marker make this a one-time migration; later explicit user selections survive restarts. Quality stays High; video defaults and existing media remain unchanged.
+
+Print format selection in the composer header and pixel settings uses the same canonical catalog and live draft. DIN A uses A4 as the representative ratio; DIN lang 99/105 mm and business cards offer both orientations, with a 105 mm square. Preserve legacy format IDs for saved media and settings. MCP discovery exposes dimensions, normalized pixels and legacy status from the same registry.

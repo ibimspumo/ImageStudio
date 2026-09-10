@@ -1,3 +1,4 @@
+import { getPrintFormat, getPrintResolutionInfo } from '../../../../shared/print-prompt'
 import { PromptText } from './PromptText'
 import { ImageProcessingPanel } from './ImageProcessingPanel'
 import { useState, useEffect, useCallback, useMemo } from 'react'
@@ -482,6 +483,14 @@ export function ImageViewer({
                 {imageDims && <span className="px-2 py-0.5 rounded-md bg-surface-3 text-[11px] font-medium text-text-secondary">{imageDims.w} × {imageDims.h}</span>}
               </div>
             </div>
+            {image.isPrint && image.printFormat && <div className="rounded-lg bg-surface-3 p-3 text-[12px] text-text-secondary leading-relaxed">
+              <p className="font-medium text-text-primary">{getPrintFormat(image.printFormat).name}</p>
+              {(() => {
+                const info = imageDims ? getPrintResolutionInfo(image.printFormat, imageDims.w, imageDims.h) : null
+                return info ? <p className="mt-1">{info.widthMm} × {info.heightMm} mm Zielformat · ca. {info.effectivePpi} ppi aus den tatsächlichen Pixeln</p> : null
+              })()}
+              <p className="mt-1">Rastergrafik. Texte, Beschnitt und Farbprofil vor dem Druck prüfen.</p>
+            </div>}
             {image.durationMs != null && (
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-text-muted w-20 shrink-0">Dauer</span>
