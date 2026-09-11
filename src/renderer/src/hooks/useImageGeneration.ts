@@ -48,6 +48,7 @@ export interface GenerateOptions {
   imageSize?: { width: number; height: number }
   /** Thumbnail mode metadata, stored on the image so it survives a reuse. */
   projectId?: string
+  thumbnailCompositing?: boolean
   thumbnailStyle?: string
   faceFidelity?: boolean
   /**
@@ -191,7 +192,7 @@ export function useImageGeneration() {
         const hasAlpha =
           processing ? processing.hasAlpha : options.background === 'transparent' && getModel(model).supportsBackground
         for (let i = 0; i < options.imageCount; i++) {
-          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments ?? options.labeledAttachments?.flatMap((group) => group.images), activeWorkspaceId, { parentImageId: options.parentImageId, ...(processing ? { width: processing.width, height: processing.height, mimeType: `image/${processing.outputFormat}`, estimatedCost: processing.estimatedCost } : {}), seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, isPrint: options.isPrint, printFormat: options.printFormat, printStyle: options.printStyle, printMetaPrompt: options.printMetaPrompt, hasAlpha, requestId, generationOptions: structuredClone(options), costCurrency: 'USD', costSource: 'list-price-estimate' })
+          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments ?? options.labeledAttachments?.flatMap((group) => group.images), activeWorkspaceId, { parentImageId: options.parentImageId, ...(processing ? { width: processing.width, height: processing.height, mimeType: `image/${processing.outputFormat}`, estimatedCost: processing.estimatedCost } : {}), seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, thumbnailCompositing: options.thumbnailCompositing, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, isPrint: options.isPrint, printFormat: options.printFormat, printStyle: options.printStyle, printMetaPrompt: options.printMetaPrompt, hasAlpha, requestId, generationOptions: structuredClone(options), costCurrency: 'USD', costSource: 'list-price-estimate' })
           ids.push(id)
         }
         modelPlaceholders.push({ model, ids, requestId })

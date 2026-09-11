@@ -35,6 +35,7 @@ export interface GalleryImage {
   inpaintSourceId?: string      // D12: inpainting source
   canvasSketchPath?: string     // file path of the canvas sketch used to generate this image
   projectId?: string            // thumbnail mode: the video this belongs to
+  thumbnailCompositing?: boolean
   thumbnailStyle?: string       // thumbnail mode: 'clean' | 'balanced' | 'bold'
   faceFidelity?: boolean        // thumbnail mode: identity-preservation was on
   isPrint?: boolean

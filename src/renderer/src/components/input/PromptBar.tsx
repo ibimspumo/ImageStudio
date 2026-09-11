@@ -110,6 +110,17 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     }
     return requested
   })
+  const thumbnailCompositing = useSettingsStore(s => s.thumbnailCompositing)
+  const [thumbnailSaveError, setThumbnailSaveError] = useState<string>()
+  const saveThumbnailCompositing = async (value: boolean) => {
+    try {
+      await useSettingsStore.getState().setSetting('thumbnailCompositing', value)
+      setThumbnailSaveError(undefined)
+    } catch (error) {
+      setThumbnailSaveError(error instanceof Error ? error.message : 'Photoshop-Look konnte nicht gespeichert werden.')
+      throw error
+    }
+  }
   const [thumbnailStyle, setThumbnailStyle] = useState<ThumbnailStyle>('auto')
   const [printFormat, setPrintFormat] = useState<PrintFormat>(useSettingsStore.getState().defaultPrintFormat ?? DEFAULT_PRINT_FORMAT)
   const [printStyle, setPrintStyle] = useState<PrintStyle>(useSettingsStore.getState().defaultPrintStyle ?? DEFAULT_PRINT_STYLE)
@@ -254,6 +265,9 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     const reuse = consumePendingReuse()
     if (!reuse) return
     lastReuseRef.current = reuse
+    if (thumbnailMode) {
+      if (reuse.thumbnailStyle) setThumbnailStyle(reuse.thumbnailStyle)
+    }
     if (printMode && reuse.isPrint) {
       setPrintFormat(reuse.printFormat ?? DEFAULT_PRINT_FORMAT); setPrintStyle(reuse.printStyle ?? DEFAULT_PRINT_STYLE); setPrintMetaPrompt(reuse.printMetaPrompt ?? '')
     }
@@ -295,6 +309,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     const references = getReuseImageReferences({ prompt: reuse.prompt, attachments: reuse.attachmentFilePaths, labeledAttachments: reuse.labeledAttachments })
     void (async () => {
       try {
+        if (thumbnailMode && reuse.thumbnailCompositing !== undefined) await saveThumbnailCompositing(reuse.thumbnailCompositing)
         const images = await Promise.all(references.map(async ({ source: path, name }) => {
           // Live generations retain embedded reference snapshots; older histories
           // are migrated to internal files at startup. Both are valid sources.
@@ -366,7 +381,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
     const hasRefs = imageRefs.length > 0 || collectionRefs.length > 0
     const thumbnailSystemPrompt = thumbnailMode
       ? buildThumbnailSystemPrompt({
-          style: thumbnailStyle,
+          style: thumbnailStyle, thumbnailCompositing,
           // Rides along automatically — identity preservation whenever references exist.
           faceFidelity: hasRefs,
           videoTitle: project?.title,
@@ -400,7 +415,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       systemPrompt: printMode ? buildPrintSystemPrompt({ format: printFormat, style: printStyle, hasReferences: hasRefs, customMetaPrompt: printMetaPrompt }) : thumbnailSystemPrompt ?? logoSystemPrompt,
       imageSize: printOutput ? printOutput.imageSize : thumbnailMode ? { ...THUMBNAIL_GPT_IMAGE_SIZE } : imageSize,
       projectId: thumbnailMode ? (project?.id ?? undefined) : undefined,
-      thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined,
+      thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined, thumbnailCompositing: thumbnailMode ? thumbnailCompositing : undefined,
       faceFidelity: thumbnailMode ? hasRefs : undefined,
       background,
       // Transparency only survives in a format that has an alpha channel.
@@ -420,7 +435,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       canvasContext.onClose()
     }
     return jobIds
-  }, [getPromptText, falApiKey, referenceLoading, referenceError, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, canvasContext, thumbnailMode, thumbnailStyle, logoMode, logoStyle, background, inputFidelity, imageSize, sizeError, outputFormat, outputCompression, printMode, printFormat, printStyle, printMetaPrompt, printOutput])
+  }, [getPromptText, falApiKey, referenceLoading, referenceError, buildAttachments, imageRefs, collectionRefs, generate, aspectRatio, customRatio, resolution, imageCount, selectedModels, quality, seed, activePresetId, presets, canvasContext, thumbnailMode, thumbnailStyle, thumbnailCompositing, logoMode, logoStyle, background, inputFidelity, imageSize, sizeError, outputFormat, outputCompression, printMode, printFormat, printStyle, printMetaPrompt, printOutput])
 
   useLiveDraft({
     mode: canvasContext ? 'canvas' : thumbnailMode ? 'thumbnail' : logoMode ? 'logo' : printMode ? 'print' : 'image',
@@ -437,13 +452,13 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
         printFormat: printMode ? printFormat : undefined, printStyle: printMode ? printStyle : undefined, printMetaPrompt: printMode ? printMetaPrompt : undefined,
         resolvedImageSize: printOutput?.imageSize ?? (selectedModels.every(id => getModel(id).imageSizeMode === 'pixels') ? thumbnailMode ? THUMBNAIL_GPT_IMAGE_SIZE : imageSize ?? toGptImageSize(aspectRatio === 'custom' ? customRatio : aspectRatio, resolution) : null),
         outputFormat: logoMode ? 'png' : outputFormat, outputCompression: outputCompression ?? null, sizeError: sizeError ?? null,
-        background, thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined, logoStyle: logoMode ? logoStyle : undefined,
+        background, thumbnailStyle: thumbnailMode ? thumbnailStyle : undefined, thumbnailCompositing: thumbnailMode ? thumbnailCompositing : undefined, logoStyle: logoMode ? logoStyle : undefined,
         references: imageRefs.map(ref => ({ id: ref.id, name: ref.name, promptReference: imageMention(ref.name), mimeType: /^data:([^;]+)/.exec(ref.base64)?.[1] })),
         collections: collectionRefs.map(ref => ({ id: ref.id, collectionId: ref.collectionId, name: ref.name, promptReference: collectionMention(ref.name), imageCount: ref.images.length })),
         activePresetId: usePresetsStore.getState().activePresetId, finalPrompt: preset ? `${text}, ${preset.suffix}` : text,
         apiPrompt: printMode ? buildPrintArtworkPrompt(preset ? `${text}, ${preset.suffix}` : text) : undefined,
         project, activeMetaPromptId: thumbnailMode ? useThumbnailMetaPromptsStore.getState().activeId : undefined,
-        systemPrompt: thumbnailMode ? buildThumbnailSystemPrompt({ style: thumbnailStyle, faceFidelity: hasRefs, videoTitle: project?.title, videoAngle: project?.angle, customMetaPrompt: useThumbnailMetaPromptsStore.getState().getActiveText() })
+        systemPrompt: thumbnailMode ? buildThumbnailSystemPrompt({ style: thumbnailStyle, thumbnailCompositing, faceFidelity: hasRefs, videoTitle: project?.title, videoAngle: project?.angle, customMetaPrompt: useThumbnailMetaPromptsStore.getState().getActiveText() })
           : logoMode ? buildLogoSystemPrompt({ style: logoStyle, transparent: background === 'transparent', hasReferences: hasRefs }) : printMode ? buildPrintSystemPrompt({ format: printFormat, style: printStyle, hasReferences: hasRefs, customMetaPrompt: printMetaPrompt }) : undefined,
         capabilities: getCombinedCapabilities(selectedModels),
         ready: !!text && !!useSettingsStore.getState().falApiKey && !referenceLoading && !referenceError && !sizeError,
@@ -456,7 +471,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       const common = ['prompt', 'models', 'imageCount', 'references', 'collectionIds'] as const
       const formatFields = ['outputFormat', 'outputCompression', 'clearOutputCompression'] as const
       const sizeFields = ['imageSize', 'clearImageSize', 'aspectRatio', 'resolution'] as const
-      rejectDraftFields(patch, thumbnailMode ? [...common, 'thumbnailStyle', 'quality', ...formatFields] : logoMode ? [...common, 'logoStyle', 'background', 'quality', ...sizeFields] : [...common, 'quality', 'seed', 'clearSeed', 'background', ...sizeFields, ...formatFields, ...(printMode ? ['printFormat', 'printStyle', 'printMetaPrompt'] as const : [])])
+      rejectDraftFields(patch, thumbnailMode ? [...common, 'thumbnailStyle', 'thumbnailCompositing', 'quality', ...formatFields] : logoMode ? [...common, 'logoStyle', 'background', 'quality', ...sizeFields] : [...common, 'quality', 'seed', 'clearSeed', 'background', ...sizeFields, ...formatFields, ...(printMode ? ['printFormat', 'printStyle', 'printMetaPrompt'] as const : [])])
       if (patch.printFormat !== undefined && !PRINT_FORMATS.some(f => f.id === patch.printFormat)) throw new Error('Unknown print format')
       if (patch.printStyle !== undefined && !PRINT_STYLES.some(f => f.id === patch.printStyle)) throw new Error('Unknown print style')
       const models = patch.models ?? selectedModels
@@ -504,6 +519,7 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
       if (patch.imageCount !== undefined) setImageCount(patch.imageCount)
       if (patch.quality !== undefined) setQuality(patch.quality)
       if (patch.seed !== undefined || patch.clearSeed) setSeed(patch.clearSeed ? undefined : patch.seed)
+      if (patch.thumbnailCompositing !== undefined) await saveThumbnailCompositing(patch.thumbnailCompositing)
       if (patch.thumbnailStyle !== undefined) setThumbnailStyle(patch.thumbnailStyle)
       if (patch.printFormat !== undefined) { setPrintFormat(patch.printFormat); await useSettingsStore.getState().setSetting('defaultPrintFormat', patch.printFormat) }
       if (patch.printStyle !== undefined) { setPrintStyle(patch.printStyle); await useSettingsStore.getState().setSetting('defaultPrintStyle', patch.printStyle) }
@@ -763,6 +779,9 @@ export function PromptBar({ onSettingsClick, onCollectionsClick, onPresetsManage
               onOutputFormatChange={changeFormat}
               outputCompression={outputCompression}
               onOutputCompressionChange={setOutputCompression}
+              thumbnailCompositing={thumbnailCompositing}
+              onThumbnailCompositingChange={value => { void saveThumbnailCompositing(value).catch(() => undefined) }}
+              saveError={thumbnailSaveError}
               style={thumbnailStyle}
               onStyleChange={setThumbnailStyle}
               imageCount={imageCount}

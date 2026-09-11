@@ -13,6 +13,7 @@ export interface DraftPatch {
   quality?: GptImageQuality
   seed?: number
   clearSeed?: boolean
+  thumbnailCompositing?: boolean
   thumbnailStyle?: ThumbnailStyle
   printFormat?: PrintFormat
   printStyle?: PrintStyle

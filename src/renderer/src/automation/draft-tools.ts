@@ -18,6 +18,7 @@ export const draftPatchSchema = object({
   imageSize: { ...object({ width: integer(1, GPT_IMAGE_SIZE_CONSTRAINTS.maxEdge), height: integer(1, GPT_IMAGE_SIZE_CONSTRAINTS.maxEdge) }, ['width', 'height']), description: 'Custom pixels; edges round upward to multiples of 16 and shared GPT limits apply. Overrides ratio/resolution. Unavailable in thumbnail mode.' }, clearImageSize: bool,
   outputFormat: choice(['png', 'jpeg', 'webp']), outputCompression: integer(0, 100), clearOutputCompression: bool,
   seed: integer(0, 2147483647), clearSeed: bool,
+  thumbnailCompositing: { ...bool, description: 'Thumbnail Photoshop-Look switch. Persists in the shared thumbnailCompositing setting; default true. Read systemPrompt to inspect the treatment. No generation until generate_draft.' },
   thumbnailStyle: choice(THUMBNAIL_STYLES.map(s => s.id)), logoStyle: choice(LOGO_STYLES.map(s => s.id)),
   printFormat: choice(PRINT_FORMATS.map(format => format.id)), printStyle: choice(PRINT_STYLES.map(style => style.id)),
   printMetaPrompt: str('Custom Print design rules, persisted in the shared printPrompt setting.'),

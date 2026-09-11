@@ -7,6 +7,7 @@ export interface AppSettings {
   falBillingApiKey: string
   printPrompt: string
   defaultPrintFormat: PrintFormat
+  thumbnailCompositing: boolean
   defaultPrintStyle: PrintStyle
   defaultModel: string
   defaultAspectRatio: string

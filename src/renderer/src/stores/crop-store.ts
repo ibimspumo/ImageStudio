@@ -10,6 +10,8 @@ interface PendingCropRef {
 
 export interface ReuseOptions {
   labeledAttachments?: { label: string; images: string[] }[]
+  thumbnailStyle?: import("../../../shared/thumbnail-prompt").ThumbnailStyle
+  thumbnailCompositing?: boolean
   isPrint?: boolean
   printFormat?: import('../../../shared/print-prompt').PrintFormat
   printStyle?: import('../../../shared/print-prompt').PrintStyle

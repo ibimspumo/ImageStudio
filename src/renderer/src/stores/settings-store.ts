@@ -27,6 +27,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   printPrompt: '',
   defaultPrintFormat: 'a4-portrait',
   defaultPrintStyle: 'auto',
+  thumbnailCompositing: true,
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
   defaultImageCount: 1,

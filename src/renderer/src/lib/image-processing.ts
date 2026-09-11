@@ -60,7 +60,7 @@ export async function prepareImageProcessing(image: GalleryImage, edit: ImagePro
     resolution: getResolutionLabel(normalized.width, normalized.height),
     attachments: [image.filePath], parentImageId: image.id,
     workspaceId: image.workspaceId ?? null,
-    projectId: image.projectId, thumbnailStyle: image.thumbnailStyle,
+    projectId: image.projectId, thumbnailStyle: image.thumbnailStyle, thumbnailCompositing: image.thumbnailCompositing,
     isPrint: image.isPrint, printFormat: image.printFormat, printStyle: image.printStyle, printMetaPrompt: image.printMetaPrompt,
     faceFidelity: image.faceFidelity, isLogo: image.isLogo, logoStyle: image.logoStyle,
     outputFormat: normalized.outputFormat,

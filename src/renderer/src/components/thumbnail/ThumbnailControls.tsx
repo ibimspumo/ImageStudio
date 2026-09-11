@@ -16,6 +16,9 @@ interface ThumbnailControlsProps extends OutputControlProps {
   onQualityChange?: (quality: GptImageQuality) => void
   selectedModels: string[]
   onModelsChange: (models: string[]) => void
+  thumbnailCompositing: boolean
+  onThumbnailCompositingChange: (value: boolean) => void
+  saveError?: string
   style: ThumbnailStyle
   onStyleChange: (style: ThumbnailStyle) => void
   imageCount: number
@@ -33,6 +36,7 @@ export function ThumbnailControls({
   quality = 'high', onQualityChange, outputFormat, onOutputFormatChange, outputCompression, onOutputCompressionChange,
   selectedModels,
   onModelsChange,
+  thumbnailCompositing, onThumbnailCompositingChange, saveError,
   style,
   onStyleChange,
   imageCount,
@@ -71,6 +75,17 @@ export function ThumbnailControls({
         onChange={onImageCountChange}
         max={caps.maxImagesPerRequest}
       />
+
+      <button
+        type="button" role="switch" aria-checked={thumbnailCompositing} aria-label="Photoshop-Look"
+        onClick={() => onThumbnailCompositingChange(!thumbnailCompositing)}
+        title="Freigestellte Motive, klare Schrift und getrennte Bildebenen. Passt sich dem Stil an; eigene Formatregeln haben Vorrang."
+        className={cn('no-drag flex items-center gap-2 h-8 px-2.5 rounded-lg border text-[12px] transition-colors', thumbnailCompositing ? 'border-accent-main/40 text-text-primary bg-accent-main/10' : 'border-border-base text-text-muted bg-surface-3')}
+      >
+        <span aria-hidden="true" className={cn('relative w-6 h-3.5 rounded-full transition-colors', thumbnailCompositing ? 'bg-accent-main' : 'bg-surface-4')}><span className={cn('absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all', thumbnailCompositing ? 'left-3' : 'left-0.5')} /></span>
+        Photoshop-Look
+      </button>
+      {saveError && <span role="alert" className="text-[12px] text-red-400">{saveError}</span>}
 
       <TuneMenu badge={tuneBadge} width={330} summary="16:9 · Stil">
         {(close) => (

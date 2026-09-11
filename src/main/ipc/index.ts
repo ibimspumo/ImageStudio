@@ -21,6 +21,7 @@ const VALID_SETTINGS_KEYS = new Set([
   'printPrompt',
   'defaultPrintFormat',
   'defaultPrintStyle',
+  'thumbnailCompositing',
   'defaultAspectRatio',
   'defaultResolution',
   'defaultImageCount',
@@ -35,6 +36,7 @@ interface AppSettings {
   falBillingApiKey: string
   printPrompt: string
   defaultPrintFormat: PrintFormat
+  thumbnailCompositing: boolean
   defaultPrintStyle: PrintStyle
   defaultModel: string
   defaultAspectRatio: string
@@ -53,6 +55,7 @@ const DEFAULTS: AppSettings = {
   printPrompt: '',
   defaultPrintFormat: DEFAULT_PRINT_FORMAT,
   defaultPrintStyle: DEFAULT_PRINT_STYLE,
+  thumbnailCompositing: true,
   defaultAspectRatio: '1:1',
   defaultResolution: '2K',
   defaultImageCount: 1,
@@ -73,6 +76,7 @@ function loadSettings(): AppSettings {
     const raw = JSON.parse(readFileSync(path, 'utf-8'))
     const settings: AppSettings = {
       ...migrateImageDefaults(raw),
+      thumbnailCompositing: typeof raw.thumbnailCompositing === 'boolean' ? raw.thumbnailCompositing : true,
       printPrompt: typeof raw.printPrompt === 'string' ? raw.printPrompt : '',
       defaultPrintFormat: PRINT_FORMATS.some(item => item.id === raw.defaultPrintFormat) ? raw.defaultPrintFormat : DEFAULT_PRINT_FORMAT,
       defaultPrintStyle: PRINT_STYLES.some(item => item.id === raw.defaultPrintStyle) ? raw.defaultPrintStyle : DEFAULT_PRINT_STYLE,
@@ -114,6 +118,7 @@ export function registerAllHandlers(): void {
     }
     if (key === 'defaultPrintFormat' && !PRINT_FORMATS.some(item => item.id === value)) return { success: false, error: 'Unknown print format.' }
     if (key === 'defaultPrintStyle' && !PRINT_STYLES.some(item => item.id === value)) return { success: false, error: 'Unknown print style.' }
+    if (key === 'thumbnailCompositing' && typeof value !== 'boolean') return { success: false, error: 'thumbnailCompositing must be true or false.' }
     if (key === 'printPrompt' && typeof value !== 'string') return { success: false, error: 'Print meta prompt must be text.' }
     // This handler is synchronous: read-modify-persist completes before another
     // IPC mutation can run. Publish only after disk succeeds, so a failed write
