@@ -5,13 +5,9 @@
  *
  * - **Windows** uses electron-updater end to end: check → download with
  *   progress → install on quit. NSIS accepts unsigned installers.
- * - **macOS** cannot self-install. Squirrel.Mac validates the downloaded bundle
- *   against the *running* app's designated requirement, and for an app without
- *   a Developer ID that requirement is the binary's own cdhash — which every
- *   new build necessarily changes. So the update is downloaded to the user's
- *   Downloads folder and the disk image is opened for them to drop in place.
- *   If the app is ever signed with a real Developer ID, `macCanSelfInstall()`
- *   detects it and the native electron-updater path takes over.
+ * - **macOS** uses Squirrel for Developer ID builds. Ad-hoc builds use a
+ *   verified ZIP and a same-user staged replacement helper for writable apps.
+ *   Read-only/translocated installations keep the manual DMG fallback.
  *
  * An unpackaged (dev) build can check but never install.
  */
@@ -20,11 +16,12 @@ import { app, BrowserWindow, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { execFile } from 'child_process'
 import { createWriteStream } from 'fs'
-import { mkdir, stat, unlink } from 'fs/promises'
+import { mkdir, stat, unlink, readFile } from 'fs/promises'
 import { join } from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { IPC_CHANNELS } from '../lib/constants'
+import { writableMacBundle, prepareMacUpdate, launchMacInstaller, type PreparedMacUpdate } from './mac-update'
 import { isNewerVersion } from '../../shared/version'
 
 declare const __APP_VERSION__: string
@@ -44,12 +41,14 @@ export type UpdateState =
   | 'not-available'
   | 'downloading'
   | 'downloaded'
+  | 'installing'
   | 'error'
 
 /** How the downloaded update gets applied on this platform. */
 export type InstallMode =
   /** electron-updater restarts the app and installs it */
   | 'restart'
+  | 'replace-app'
   /** the disk image is opened and the user drags the app across */
   | 'open-installer'
   /** dev build — nothing can be installed */
@@ -73,6 +72,7 @@ export interface UpdateStatus {
   installMode: InstallMode
   /** Where the downloaded installer landed (macOS). */
   downloadPath?: string
+  installReason?: string
 }
 
 /**
@@ -113,6 +113,9 @@ let wired = false
 /** GitHub asset chosen for this platform, kept between check and download. */
 let pendingAssetUrl: string | undefined
 let pendingAssetName: string | undefined
+let pendingAssetDigest: string | undefined
+let replacementBundle: string | undefined
+let preparedMacUpdate: PreparedMacUpdate | undefined
 
 function broadcast(patch: Partial<UpdateStatus>): void {
   status = { ...status, ...patch }
@@ -173,15 +176,20 @@ interface GitHubAsset {
   name: string
   browser_download_url: string
   size: number
+  digest?: string
 }
 
 /** Pick the installer for this platform and architecture. */
 function pickAsset(assets: GitHubAsset[]): GitHubAsset | undefined {
   if (IS_MAC) {
     const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+    if (replacementBundle) {
+      const zip = assets.find((a) => a.name.endsWith('.zip') && !/win/i.test(a.name) && a.name.includes(arch) && /^sha256:[a-f0-9]{64}$/i.test(a.digest ?? ''))
+      if (zip) return zip
+    }
     return (
       assets.find((a) => a.name.endsWith('.dmg') && a.name.includes(arch)) ??
-      assets.find((a) => a.name.endsWith('.dmg'))
+      assets.find((a) => a.name.endsWith('.dmg') && !/(arm64|x64)/.test(a.name))
     )
   }
   return (
@@ -231,6 +239,10 @@ async function checkViaGitHub(): Promise<UpdateStatus> {
   const asset = pickAsset(release.assets ?? [])
   pendingAssetUrl = asset?.browser_download_url
   pendingAssetName = asset?.name
+  pendingAssetDigest = asset?.digest
+  if (IS_MAC && replacementBundle) {
+    broadcast({ installMode: asset?.name.endsWith('.zip') ? 'replace-app' : 'open-installer', installReason: asset?.name.endsWith('.zip') ? undefined : 'Dieses Release enthält kein passendes ZIP mit SHA-256-Prüfsumme. Bitte verwende den manuellen Installer.' })
+  }
 
   broadcast({
     state: 'available',
@@ -247,7 +259,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
   // A download in flight — or one already finished and waiting to be installed —
   // outranks a re-check. Without this the startup check would wipe the
   // "Restart & install" state a few seconds after the download completed.
-  if (status.state === 'downloading' || status.state === 'downloaded') {
+  if (status.state === 'downloading' || status.state === 'downloaded' || status.state === 'installing') {
     return status
   }
 
@@ -279,7 +291,8 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
         await checkViaGitHub()
       }
     } else {
-      broadcast({ installMode: 'open-installer' })
+      replacementBundle = app.isPackaged && IS_MAC ? await writableMacBundle(process.execPath) : undefined
+      broadcast({ installMode: app.isPackaged ? 'open-installer' : 'none', installReason: app.isPackaged && IS_MAC && !replacementBundle ? 'Die App liegt auf einem schreibgeschützten Volume oder der Installationsordner ist nicht beschreibbar. Bitte verwende den manuellen Installer.' : undefined })
       await checkViaGitHub()
     }
   } catch (err) {
@@ -296,6 +309,7 @@ async function downloadAssetToDisk(): Promise<string> {
   }
 
   const targetDir = join(app.getPath('downloads'), 'ImageStudio Updates')
+  if (pendingAssetName.includes('/') || pendingAssetName.includes('\\') || pendingAssetName === '..') throw new Error('Invalid release filename.')
   await mkdir(targetDir, { recursive: true })
   const targetPath = join(targetDir, pendingAssetName)
 
@@ -347,7 +361,7 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
     return status
   }
 
-  if (status.state === 'downloading') return status
+  if (status.state === 'downloading' || status.state === 'downloaded' || status.state === 'installing') return status
 
   try {
     broadcast({ state: 'downloading', progress: 0, error: undefined })
@@ -357,6 +371,10 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
       await autoUpdater.downloadUpdate()
     } else {
       const path = await downloadAssetToDisk()
+      if (status.installMode === 'replace-app') {
+        if (!replacementBundle || !pendingAssetDigest || !status.version) throw new Error('Check for updates again before downloading.')
+        preparedMacUpdate = await prepareMacUpdate(path, pendingAssetDigest, replacementBundle, status.version)
+      }
       broadcast({ state: 'downloaded', progress: 100, downloadPath: path })
     }
   } catch (err) {
@@ -372,6 +390,24 @@ export async function installUpdate(): Promise<{ success: boolean; error?: strin
   }
   if (status.state !== 'downloaded') {
     return { success: false, error: 'No downloaded update to install.' }
+  }
+
+  if (status.installMode === 'replace-app') {
+    broadcast({ state: 'installing', error: undefined })
+    try {
+      if (!preparedMacUpdate) throw new Error('Prepared update missing. Download it again.')
+      await launchMacInstaller(preparedMacUpdate, join(app.getPath('userData'), 'update-result.txt'))
+      broadcast({ state: 'installing', error: undefined })
+      setTimeout(() => app.quit(), 250)
+      // If a future quit handler cancels shutdown, surface the helper timeout
+      // in the still-running app as well as on the next launch.
+      setTimeout(() => { void recoverUpdateResult() }, 123_000).unref()
+      return { success: true }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Update installation failed.'
+      broadcast({ state: 'error', error })
+      return { success: false, error }
+    }
   }
 
   if (status.installMode === 'restart') {
@@ -400,6 +436,17 @@ export function revealUpdate(): { success: boolean; error?: string } {
   if (!status.downloadPath) return { success: false, error: 'Nothing has been downloaded yet.' }
   shell.showItemInFolder(status.downloadPath)
   return { success: true }
+}
+
+/** Recover helper failures even when automatic network update checks are disabled. */
+export async function recoverUpdateResult(): Promise<boolean> {
+  const resultPath = join(app.getPath('userData'), 'update-result.txt')
+  const result = await readFile(resultPath, 'utf8').catch(() => '')
+  if (!result) return false
+  await unlink(resultPath).catch(() => {})
+  if (result === 'success') return false
+  broadcast({ state: 'error', error: result })
+  return true
 }
 
 /** Silent check shortly after launch, so the settings dialog opens pre-populated. */

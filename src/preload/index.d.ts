@@ -23,9 +23,10 @@ export type UpdateState =
   | 'not-available'
   | 'downloading'
   | 'downloaded'
+  | 'installing'
   | 'error'
 
-export type InstallMode = 'restart' | 'open-installer' | 'none'
+export type InstallMode = 'restart' | 'replace-app' | 'open-installer' | 'none'
 
 export interface UpdateStatus {
   state: UpdateState
@@ -41,6 +42,7 @@ export interface UpdateStatus {
   canInstall: boolean
   installMode: InstallMode
   downloadPath?: string
+  installReason?: string
 }
 
 export interface ElectronAPI {

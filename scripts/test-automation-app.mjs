@@ -57,6 +57,8 @@ try {
     const text = result.content.find(item => item.type === 'text')?.text
     return text ? JSON.parse(text) : result
   }
+  // Inspect the real updater through both interfaces without network or installation.
+  assert.deepEqual(await call('app_updates', { action: 'status' }), await page.evaluate(() => window.api.getUpdateStatus()))
   // Both directions observe one route state: agent navigation highlights the UI,
   // and human sidebar clicks are immediately visible in MCP status.
   for (const section of ['library', 'references', 'styles', 'projects', 'activity', 'settings']) {
@@ -71,6 +73,21 @@ try {
     await page.locator(`[data-studio-section="${section}"][aria-current="page"]`).waitFor()
     assert.equal((await call('get_status')).view.section, section)
   }
+  await call('navigate', { target: 'projects' })
+  assert.equal((await call('get_status')).view.projectsLayout, 'grid')
+  assert.equal((await call('get_status')).view.projectsSort, 'created-desc')
+  await call('navigate', { target: 'projects', projectsLayout: 'list', projectsSort: 'name-asc' })
+  await page.getByRole('button', { name: 'Kompakt', exact: true }).and(page.locator('[aria-pressed="true"]')).waitFor()
+  await page.getByRole('button', { name: 'Sortieren: Name A–Z', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Raster', exact: true }).click()
+  await page.getByRole('button', { name: 'Sortieren: Name A–Z', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: /Älteste zuerst/ }).click()
+  assert.equal((await call('get_status')).view.projectsLayout, 'grid')
+  assert.equal((await call('get_status')).view.projectsSort, 'created-asc')
+  await call('navigate', { target: 'image' })
+  await call('navigate', { target: 'projects' })
+  await page.getByRole('button', { name: 'Sortieren: Älteste zuerst', exact: true }).waitFor()
+  await call('navigate', { target: 'projects', projectsSort: 'created-desc' })
   await call('navigate', { target: 'image' })
   const settings = await call('get_settings')
   assert.equal(settings.apiKeyConfigured, false)

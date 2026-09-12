@@ -1,9 +1,12 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { ArrowUpRight, Archive, FolderOpen, Image, Pencil, Plus, Search, Trash2, Video, X } from 'lucide-react'
+import { ArrowUpRight, Archive, LayoutGrid, List, FolderOpen, Image, Pencil, Plus, Search, Trash2, Video, X } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useThumbnailProjectsStore } from '../../stores/thumbnail-projects-store'
 import { useGalleryStore, toDisplayUrl, type GalleryImage } from '../../stores/gallery-store'
 import { useUiRecentsStore } from '../../stores/ui-recents-store'
+import { useProjectsViewStore } from '../../stores/projects-view-store'
+import { sortOrganizations } from '../../../../shared/organization'
+import { ProjectsSortMenu } from './ProjectsSortMenu'
 import { deleteProjectRetainingMedia, deleteWorkspaceRetainingMedia } from '../../lib/organization-actions'
 
 export interface ProjectsPageProps {
@@ -15,14 +18,14 @@ type Editor = { kind: 'workspace' | 'project'; id?: string; name: string; angle:
 const control = 'w-full rounded-xl border border-border-base bg-surface-0 px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent-main focus:ring-1 focus:ring-accent-main'
 const secondary = 'inline-flex items-center justify-center gap-2 rounded-xl border border-border-base px-3 py-2 text-sm text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-main'
 
-function Preview({ images, heroId }: { images: GalleryImage[]; heroId?: string }) {
+function Preview({ images, heroId, compact = false }: { images: GalleryImage[]; heroId?: string; compact?: boolean }) {
   const hero = useGalleryStore((s) => heroId ? s.images.find((i) => i.id === heroId) : undefined)
   const cover = hero && !hero.isLoading && !hero.error && hero.filePath ? hero : images[0]
   const path = cover?.type === 'video' ? cover.videoThumbnailPath : cover?.previewPath ?? cover?.filePath
-  return <div className="relative aspect-[16/9] overflow-hidden bg-surface-0">
-    {path ? <img src={toDisplayUrl(path)} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]" /> : <div className="flex h-full items-center justify-center text-text-muted/30"><Image size={36} strokeWidth={1} /></div>}
-    <div className="absolute inset-0 bg-gradient-to-t from-black/35 to-transparent" />
-    <span className="absolute bottom-3 right-3 rounded-md bg-black/60 px-2 py-1 text-xs text-white">{images.length} Medien</span>
+  return <div className={compact ? "relative h-14 w-24 shrink-0 overflow-hidden rounded-lg bg-surface-0" : "relative aspect-[16/9] overflow-hidden bg-surface-0"}>
+    {path ? <img src={toDisplayUrl(path)} alt="" loading="lazy" className={compact ? "h-full w-full object-contain" : "h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"} /> : <div className="flex h-full items-center justify-center text-text-muted/30"><Image size={36} strokeWidth={1} /></div>}
+    {!compact && <div className="absolute inset-0 bg-gradient-to-t from-black/35 to-transparent" />}
+    {!compact && <span className="absolute bottom-3 right-3 rounded-md bg-black/60 px-2 py-1 text-xs text-white">{images.length} Medien</span>}
   </div>
 }
 
@@ -30,6 +33,8 @@ export function ProjectsPage({ onSelectWorkspace, onSelectProject, onOpenLibrary
   const workspaces = useWorkspaceStore((s) => s.workspaces)
   const projects = useThumbnailProjectsStore((s) => s.projects)
   const images = useGalleryStore((s) => s.images)
+  const { layout, setLayout, sort, setSort } = useProjectsViewStore()
+  const compact = layout === 'list'
   const [query, setQuery] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
@@ -37,9 +42,18 @@ export function ProjectsPage({ onSelectWorkspace, onSelectProject, onOpenLibrary
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const complete = useMemo(() => images.filter((i) => i.filePath && !i.isLoading && !i.error), [images])
+  const mediaByOrganization = useMemo(() => {
+    const folders = new Map<string, GalleryImage[]>()
+    const projects = new Map<string, GalleryImage[]>()
+    for (const image of complete) {
+      if (image.workspaceId) { const list = folders.get(image.workspaceId) ?? []; list.push(image); folders.set(image.workspaceId, list) }
+      if (image.projectId) { const list = projects.get(image.projectId) ?? []; list.push(image); projects.set(image.projectId, list) }
+    }
+    return { folders, projects }
+  }, [complete])
   const search = query.trim().toLocaleLowerCase('de')
-  const folders = workspaces.filter((w) => w.name.toLocaleLowerCase('de').includes(search))
-  const videos = projects.filter((p) => (showArchived || !p.archived) && `${p.title} ${p.angle ?? ''}`.toLocaleLowerCase('de').includes(search))
+  const folders = sortOrganizations(workspaces.filter((w) => w.name.toLocaleLowerCase('de').includes(search)), sort, complete, 'workspaceId')
+  const videos = sortOrganizations(projects.filter((p) => (showArchived || !p.archived) && `${p.title} ${p.angle ?? ''}`.toLocaleLowerCase('de').includes(search)), sort, complete, 'projectId')
   const start = (kind: Editor['kind']) => { setError(''); setDeleting(null); setEditor({ kind, name: '', angle: '', color: '#c7f36b', heroImageId: '', archived: false }) }
   const selectWorkspace = (id: string | null) => { useWorkspaceStore.getState().setActiveWorkspace(id); if (id) useUiRecentsStore.getState().bumpWorkspace(id); onSelectWorkspace(id) }
   const selectProject = (id: string | null) => { useThumbnailProjectsStore.getState().setActiveProject(id); if (id) useUiRecentsStore.getState().bumpProject(id); onSelectProject(id) }
@@ -81,6 +95,12 @@ export function ProjectsPage({ onSelectWorkspace, onSelectProject, onOpenLibrary
         <div><p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-accent-main">Dein Studio</p><h1 className="text-3xl font-semibold tracking-tight">Projekte</h1><p className="mt-2 text-sm text-text-muted">Gib deinen Ideen einen Platz. Vom ersten Entwurf bis zum finalen Bild.</p></div>
         <label className="relative block w-64"><Search size={16} className="absolute left-3 top-3 text-text-muted" /><span className="sr-only">Projekte und Arbeitsordner durchsuchen</span><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Projekte durchsuchen …" className={`${control} pl-9`} /></label>
       </header>
+      <div className="flex items-center justify-between gap-3">
+        <ProjectsSortMenu value={sort} onChange={setSort} />
+        <div role="group" aria-label="Projekte-Ansicht" className="inline-flex gap-1 rounded-xl border border-border-base bg-surface-1 p-1">
+          {([{ value: 'grid', label: 'Raster', icon: LayoutGrid }, { value: 'list', label: 'Kompakt', icon: List }] as const).map(({ value, label, icon: Icon }) => <button key={value} aria-pressed={layout === value} onClick={() => setLayout(value)} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-main ${layout === value ? 'bg-surface-3 text-text-primary' : 'text-text-muted hover:bg-surface-hover'}`}><Icon size={16} />{label}</button>)}
+        </div>
+      </div>
       {error && <p role="alert" className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-300">{error}</p>}
       {editor && <form onSubmit={save} className="rounded-2xl border border-accent-main/40 bg-surface-1 p-5 space-y-4" aria-label={editor.id ? 'Projekt bearbeiten' : 'Projekt erstellen'}>
         <div className="flex items-center justify-between"><h2 className="font-semibold">{editor.id ? 'Bearbeiten' : editor.kind === 'workspace' ? 'Neuer Arbeitsordner' : 'Neues Videoprojekt'}</h2><button type="button" aria-label="Bearbeitung schließen" disabled={busy} onClick={() => setEditor(null)} className={secondary}><X size={16} /></button></div>
@@ -98,17 +118,17 @@ export function ProjectsPage({ onSelectWorkspace, onSelectProject, onOpenLibrary
       {deleting && <section role="alertdialog" aria-label="Entfernen bestätigen" aria-describedby="organization-delete-description" className="rounded-2xl border border-red-400/30 bg-surface-1 p-5"><h2 className="font-semibold">„{deleting.name}“ entfernen?</h2><p id="organization-delete-description" className="mt-2 text-sm text-text-muted">Alle Bilder und Videos bleiben in deiner Mediathek. Nur die Zuordnung wird entfernt.</p><div className="mt-4 flex gap-2"><button className={secondary} disabled={busy} onClick={() => setDeleting(null)}>Abbrechen</button><button className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-40" disabled={busy} onClick={remove}>{busy ? 'Entfernt …' : 'Entfernen'}</button></div></section>}
       <section aria-labelledby="folders-heading">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 id="folders-heading" className="text-lg font-semibold">Arbeitsordner <span className="ml-2 text-sm font-normal text-text-muted">{workspaces.length}</span></h2><p className="mt-1 text-sm text-text-muted">Bilder, Logos und Videos gemeinsam organisieren.</p></div><div className="flex gap-2"><button className={secondary} onClick={() => onOpenLibrary ? onOpenLibrary() : selectWorkspace(null)}>Alle Medien <ArrowUpRight size={14} /></button><button className={secondary} onClick={() => start('workspace')}><Plus size={15} />Arbeitsordner</button></div></div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{folders.map((w) => <article key={w.id} className="group overflow-hidden rounded-2xl border border-border-base bg-surface-1 transition-colors hover:border-accent-main/40">
-          <button className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-main" onClick={() => selectWorkspace(w.id)}><Preview images={complete.filter((i) => i.workspaceId === w.id)} /><div className="flex items-center gap-2 px-4 pt-4"><FolderOpen size={16} style={{ color: w.color }} /><h3 className="truncate font-medium">{w.name}</h3><ArrowUpRight size={15} className="ml-auto shrink-0 text-text-muted" /></div></button>
-          <div className="flex items-center justify-between px-4 pb-3 pt-2"><span className="text-xs text-text-muted">{new Date(w.createdAt).toLocaleDateString('de-DE')}</span><div className="flex gap-1"><button className="rounded-lg p-2 text-text-muted hover:bg-surface-hover hover:text-text-primary" aria-label={`${w.name} umbenennen`} onClick={() => { setError(''); setDeleting(null); setEditor({ kind: 'workspace', id: w.id, name: w.name, angle: '', color: w.color, heroImageId: '', archived: false }) }}><Pencil size={14} /></button><button className="rounded-lg p-2 text-text-muted hover:bg-red-500/10 hover:text-red-400" aria-label={`${w.name} entfernen`} onClick={() => { setEditor(null); setError(''); setDeleting({ kind: 'workspace', id: w.id, name: w.name }) }}><Trash2 size={14} /></button></div></div>
+        <div className={compact ? "space-y-2" : "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"}>{folders.map((w) => <article key={w.id} className={`group overflow-hidden border border-border-base bg-surface-1 transition-colors hover:border-accent-main/40 ${compact ? "flex items-center gap-3 rounded-xl p-2 pr-3" : "rounded-2xl"}`}>
+          <button className={`${compact ? "flex min-w-0 flex-1 items-center gap-3" : "block w-full"} text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-main`} onClick={() => selectWorkspace(w.id)}><Preview compact={compact} images={(mediaByOrganization.folders.get(w.id) ?? [])} /><div className={compact ? "min-w-0 flex-1" : "flex items-center gap-2 px-4 pt-4"}>{!compact && <FolderOpen size={16} style={{ color: w.color }} />}<h3 className="truncate font-medium">{w.name}</h3>{compact ? <p className="mt-1 text-xs text-text-muted">{(mediaByOrganization.folders.get(w.id) ?? []).length} Medien</p> : <ArrowUpRight size={15} className="ml-auto shrink-0 text-text-muted" />}</div></button>
+          <div className={compact ? "flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-6" : "flex items-center justify-between px-4 pb-3 pt-2"}><span title="Erstellungsdatum" className="text-xs text-text-muted">{new Date(w.createdAt).toLocaleDateString('de-DE')}</span><div className="flex gap-1"><button className="rounded-lg p-2 text-text-muted hover:bg-surface-hover hover:text-text-primary" aria-label={`${w.name} umbenennen`} onClick={() => { setError(''); setDeleting(null); setEditor({ kind: 'workspace', id: w.id, name: w.name, angle: '', color: w.color, heroImageId: '', archived: false }) }}><Pencil size={14} /></button><button className="rounded-lg p-2 text-text-muted hover:bg-red-500/10 hover:text-red-400" aria-label={`${w.name} entfernen`} onClick={() => { setEditor(null); setError(''); setDeleting({ kind: 'workspace', id: w.id, name: w.name }) }}><Trash2 size={14} /></button></div></div>
         </article>)}</div>
         {!folders.length && <div className="rounded-2xl border border-dashed border-border-base py-10 text-center"><FolderOpen className="mx-auto mb-3 text-text-muted" /><p className="text-sm text-text-muted">{search ? 'Keine passenden Arbeitsordner.' : 'Dein erster Arbeitsordner wartet auf eine Idee.'}</p>{!search && <button onClick={() => start('workspace')} className={`${secondary} mt-4`}>Arbeitsordner erstellen</button>}</div>}
       </section>
       <section aria-labelledby="videos-heading">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 id="videos-heading" className="text-lg font-semibold">Videoprojekte <span className="ml-2 text-sm font-normal text-text-muted">{projects.length}</span></h2><p className="mt-1 text-sm text-text-muted">Ein Video. Alle Thumbnail-Ideen. Ein gemeinsamer Kontext.</p></div><div className="flex flex-wrap items-center gap-2"><label className="mr-2 flex items-center gap-2 text-xs text-text-muted"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="accent-accent-main" />Archivierte zeigen</label><button className={secondary} onClick={() => selectProject(null)}>Alle Thumbnails <ArrowUpRight size={14} /></button><button className={secondary} onClick={() => start('project')}><Plus size={15} />Videoprojekt</button></div></div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{videos.map((p) => <article key={p.id} className="group overflow-hidden rounded-2xl border border-border-base bg-surface-1 transition-colors hover:border-accent-main/40">
-          <button className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-main" onClick={() => selectProject(p.id)}><Preview images={complete.filter((i) => i.projectId === p.id)} heroId={p.heroImageId} /><div className="px-4 pt-4"><div className="flex items-center gap-2"><Video size={16} style={{ color: p.color }} /><h3 className="truncate font-medium">{p.title}</h3>{p.archived && <Archive size={14} aria-label="Archiviert" className="shrink-0 text-text-muted" />}</div><p className="mt-2 line-clamp-2 min-h-8 text-xs text-text-muted">{p.angle || 'Blickwinkel ergänzen und Ideen entwickeln.'}</p></div></button>
-          <div className="flex items-center justify-between px-4 pb-3 pt-1"><span className="text-xs text-text-muted">{new Date(p.createdAt).toLocaleDateString('de-DE')}</span><div className="flex gap-1"><button className="rounded-lg p-2 text-text-muted hover:bg-surface-hover hover:text-text-primary" aria-label={`${p.title} bearbeiten`} onClick={() => { setError(''); setDeleting(null); setEditor({ kind: 'project', id: p.id, name: p.title, angle: p.angle ?? '', color: p.color, heroImageId: p.heroImageId ?? '', archived: !!p.archived }) }}><Pencil size={14} /></button><button className="rounded-lg p-2 text-text-muted hover:bg-red-500/10 hover:text-red-400" aria-label={`${p.title} entfernen`} onClick={() => { setEditor(null); setError(''); setDeleting({ kind: 'project', id: p.id, name: p.title }) }}><Trash2 size={14} /></button></div></div>
+        <div className={compact ? "space-y-2" : "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"}>{videos.map((p) => <article key={p.id} className={`group overflow-hidden border border-border-base bg-surface-1 transition-colors hover:border-accent-main/40 ${compact ? "flex items-center gap-3 rounded-xl p-2 pr-3" : "rounded-2xl"}`}>
+          <button className={`${compact ? "flex min-w-0 flex-1 items-center gap-3" : "block w-full"} text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-main`} onClick={() => selectProject(p.id)}><Preview compact={compact} images={(mediaByOrganization.projects.get(p.id) ?? [])} heroId={p.heroImageId} /><div className={compact ? "min-w-0 flex-1" : "px-4 pt-4"}><div className="flex items-center gap-2">{!compact && <Video size={16} style={{ color: p.color }} />}<h3 className="truncate font-medium">{p.title}</h3>{p.archived && <Archive size={14} aria-label="Archiviert" className="shrink-0 text-text-muted" />}</div><p className={compact ? "mt-1 truncate text-xs text-text-muted" : "mt-2 line-clamp-2 min-h-8 text-xs text-text-muted"}>{compact ? `${(mediaByOrganization.projects.get(p.id) ?? []).length} Medien${p.angle ? ` · ${p.angle}` : ''}` : p.angle || 'Blickwinkel ergänzen und Ideen entwickeln.'}</p></div></button>
+          <div className={compact ? "flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-6" : "flex items-center justify-between px-4 pb-3 pt-1"}><span title="Erstellungsdatum" className="text-xs text-text-muted">{new Date(p.createdAt).toLocaleDateString('de-DE')}</span><div className="flex gap-1"><button className="rounded-lg p-2 text-text-muted hover:bg-surface-hover hover:text-text-primary" aria-label={`${p.title} bearbeiten`} onClick={() => { setError(''); setDeleting(null); setEditor({ kind: 'project', id: p.id, name: p.title, angle: p.angle ?? '', color: p.color, heroImageId: p.heroImageId ?? '', archived: !!p.archived }) }}><Pencil size={14} /></button><button className="rounded-lg p-2 text-text-muted hover:bg-red-500/10 hover:text-red-400" aria-label={`${p.title} entfernen`} onClick={() => { setEditor(null); setError(''); setDeleting({ kind: 'project', id: p.id, name: p.title }) }}><Trash2 size={14} /></button></div></div>
         </article>)}</div>
         {!videos.length && <div className="rounded-2xl border border-dashed border-border-base py-10 text-center"><Video className="mx-auto mb-3 text-text-muted" /><p className="text-sm text-text-muted">{search ? 'Keine passenden Videoprojekte.' : projects.length ? 'Keine aktiven Videoprojekte. Blende archivierte Projekte ein.' : 'Starte ein Videoprojekt für deine Thumbnail-Varianten.'}</p>{!search && <button onClick={() => start('project')} className={`${secondary} mt-4`}>Videoprojekt erstellen</button>}</div>}
       </section>

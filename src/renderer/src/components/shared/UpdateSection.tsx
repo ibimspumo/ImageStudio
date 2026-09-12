@@ -19,7 +19,7 @@ export function UpdateSection() {
   }, [])
 
   const state = status?.state ?? 'idle'
-  const busy = state === 'checking' || state === 'downloading'
+  const busy = state === 'checking' || state === 'downloading' || state === 'installing'
 
   const handleCheck = async () => {
     setStatus(await window.api.checkForUpdates())
@@ -56,6 +56,8 @@ export function UpdateSection() {
           {state === 'checking' ? 'Prüft…' : 'Jetzt prüfen'}
         </button>
       </div>
+
+      {state === 'installing' && <p className="text-[12px] text-text-muted">Update vorbereitet. ImageStudio wird neu gestartet…</p>}
 
       {state === 'not-available' && (
         <p className="text-[12px] text-text-muted flex items-center gap-1.5">
@@ -135,7 +137,7 @@ export function UpdateSection() {
                 onClick={handleInstall}
                 className="btn-interactive w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium bg-accent-main text-surface-0 hover:bg-accent-bright transition-colors"
               >
-                {status?.installMode === 'restart' ? (
+                {(status?.installMode === 'restart' || status?.installMode === 'replace-app') ? (
                   <>
                     <RotateCw className="w-3.5 h-3.5" />
                     Neu starten und installieren
@@ -148,12 +150,11 @@ export function UpdateSection() {
                 )}
               </button>
 
-              {/* macOS builds are unsigned, so the update cannot replace the app
-                  by itself — say so instead of pretending it restarts. */}
               {status?.installMode === 'open-installer' && (
                 <div className="space-y-1">
                   <p className="text-[12px] text-text-muted leading-relaxed">
-                    Öffnet das Disk-Image. Ziehe ImageStudio in Programme, ersetze die bestehende Version und öffne die App erneut.
+                    {status?.installReason && <>{status.installReason} </>}
+                    Öffnet die Installationsdatei. Auf macOS: Ziehe ImageStudio in Programme, ersetze die bestehende Version und öffne die App erneut.
                   </p>
                   <button
                     onClick={() => window.api.revealUpdate()}

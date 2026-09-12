@@ -1,3 +1,4 @@
+import { logger } from '../lib/logger'
 import { PRINT_FORMATS, type PrintFormat } from '../../../shared/print-prompt'
 import { useGalleryFilterStore } from '../stores/gallery-filter-store'
 import { useGalleryStore } from '../stores/gallery-store'
@@ -24,12 +25,18 @@ export function registerExtraTools(add: RegisterTool, context: AutomationContext
     if (args.smartAlbum !== undefined && useGalleryFilterStore.getState().activeSmartAlbum !== (args.smartAlbum || null)) s.setActiveSmartAlbum(args.smartAlbum || null)
     return Object.fromEntries(Object.entries(useGalleryFilterStore.getState()).filter(([, value]) => typeof value !== 'function'))
   })
-  add<{ action: string }>('app_updates', 'Inspect/check/download/install/reveal app updates using the same updater as Settings. Installing may close/restart ImageStudio and disconnect MCP; reconnect after relaunch. Only install when the user has requested it.', object({ action: choice(['status', 'check', 'download', 'install', 'reveal']) }, ['action']), ({ action }) => {
+  add<{ action: string }>('app_updates', 'Inspect/check/download/install/reveal app updates using the same updater and live status as Settings. status is read-only; check contacts the release service; download starts transferring the available update without provider charges and returns immediately; poll action=status for downloading, downloaded or error. Only one updater operation runs at a time. Status includes state, versions, progress (percent), transferred/total bytes, bytesPerSecond, errors, downloadPath, canInstall, installMode and optional installReason (manual fallback explanation). replace-app stages and replaces a writable macOS app; installing means the helper is waiting for the app to quit. Check first, download when available, then inspect status; install requires a downloaded update with canInstall=true. install may quit/restart ImageStudio and disconnect MCP, or open an installer depending on installMode; reconnect after relaunch. Only install when the user has requested installation. reveal opens the downloaded artifact in the file manager. Failed install/reveal returns an actionable tool error.', object({ action: choice(['status', 'check', 'download', 'install', 'reveal']) }, ['action']), async ({ action }) => {
     if (action === 'status') return window.api.getUpdateStatus()
     if (action === 'check') return window.api.checkForUpdates()
-    if (action === 'download') return window.api.downloadUpdate()
-    if (action === 'install') return window.api.installUpdate()
-    return window.api.revealUpdate()
+    if (action === 'download') {
+      // The shared main-process updater catches provider/network failures into
+      // its live status. Do not hold the MCP transport open for the transfer.
+      void window.api.downloadUpdate().catch(error => logger.error('Updater', 'Download IPC failed; inspect updater status or reconnect', error))
+      return { ...await window.api.getUpdateStatus(), operation: 'download', poll: 'app_updates action=status' }
+    }
+    const result = action === 'install' ? await window.api.installUpdate() : await window.api.revealUpdate()
+    if (!result.success) throw new Error(result.error || `Update ${action} failed. Inspect app_updates action=status and retry when ready.`)
+    return result
   })
   add<{ source: string; name?: string; workspaceId?: string; projectId?: string; importMode?: 'print'; printFormat?: PrintFormat }>('import_media', 'Import an image or video from an absolute local file path or HTTP(S) URL into the live gallery. Returns a stable gallery ID usable as generate references or generate_video startImageId. Media is copied into app storage. Explicit importMode=print classifies an image as Print artwork; printFormat optionally sets its intended trim format, otherwise the saved Print format applies. Videos cannot be Print artwork. Actual dimensions and MIME are inspected; this does not resize media or invent generated design metadata.', object({ source: { ...str(), maxLength: 30000000 }, name: str(), workspaceId: str(), projectId: str(), importMode: choice(['print']), printFormat: choice(PRINT_FORMATS.map(format => format.id)) }, ['source']), async args => importMediaToGallery(args))
   add<{ id: string; destination: string; overwrite?: boolean }>('export_media', 'Copy an existing gallery image/video to an explicit absolute destination path without opening a dialog. Preserves original bytes. Use image_export for resized/formatted image exports.', object({ id: str(), destination: str(), overwrite: bool }, ['id', 'destination']), async args => {

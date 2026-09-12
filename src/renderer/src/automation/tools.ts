@@ -1,3 +1,5 @@
+import { sortOrganizations, PROJECTS_SORT_OPTIONS, type ProjectsSort } from '../../../shared/organization'
+import { useProjectsViewStore, type ProjectsLayout } from '../stores/projects-view-store'
 import { THUMBNAIL_COMPOSITING_DESCRIPTION } from '../../../shared/thumbnail-prompt'
 import { PRINT_FORMATS, PRINT_STYLES, DEFAULT_PRINT_FORMAT, DEFAULT_PRINT_STYLE, PRINT_OUTPUT_NOTICE, getPrintResolutionInfo, buildPrintSystemPrompt, buildPrintArtworkPrompt, preparePrintFormat, type PrintFormat, type PrintStyle } from '../../../shared/print-prompt'
 import { normalizeGptImageSize, GPT_IMAGE_SIZE_CONSTRAINTS, toGptImageSize } from '../../../shared/image-models'
@@ -265,7 +267,7 @@ export function createAutomationTools(context: AutomationContext) {
       const sorted = [...samples].sort((a, b) => a - b)
       return { model: model.id, sampleCount: samples.length, medianDurationMs: sorted.length ? sorted[Math.floor(sorted.length / 2)] : null }
     })
-    return { ready: true, now: Date.now(), view: context.getView(), activeWorkspaceId: useWorkspaceStore.getState().activeWorkspaceId, activeProjectId: useThumbnailProjectsStore.getState().activeProjectId,
+    return { ready: true, now: Date.now(), view: { ...context.getView(), projectsLayout: useProjectsViewStore.getState().layout, projectsSort: useProjectsViewStore.getState().sort }, activeWorkspaceId: useWorkspaceStore.getState().activeWorkspaceId, activeProjectId: useThumbnailProjectsStore.getState().activeProjectId,
       totalImages: all.length, runningCount: all.filter(i => i.isLoading).length, jobs: images.map(imageSummary), timing,
       costs: getGalleryCosts(all), billingSync: useBillingSyncStore.getState(),
       queue: { processing: useQueueStore.getState().isProcessing, pending: useQueueStore.getState().items.filter(i => i.status === 'pending').length } }
@@ -341,9 +343,9 @@ export function createAutomationTools(context: AutomationContext) {
     const jobIds = context.generate(options)
     return { jobIds, status: 'running', ...estimateGeneration(options) }
   })
-  add<{ action: 'list' | 'create' | 'rename' | 'delete' | 'select'; id?: string; name?: string }>('workspaces', 'List/create/rename/delete/select app folders (workspaces). Delete requires id and returns media to the all-media overview without deleting images/videos or files; independent project assignments remain. Selecting opens the same cross-mode folder view as the sidebar, clears gallery filters and includes images, thumbnails, logos, print and videos. Empty select ID returns to the image overview.', object({ action: choice(['list', 'create', 'rename', 'delete', 'select']), id: str(), name: nameSchema }, ['action']), async args => {
+  add<{ action: 'list' | 'create' | 'rename' | 'delete' | 'select'; id?: string; name?: string }>('workspaces', 'List/create/rename/delete/select app folders (workspaces). Lists follow the shared projects overview sort (default newest-created first); change it with navigate target=projects and projectsSort. Delete requires id and returns media to the all-media overview without deleting images/videos or files; independent project assignments remain. Selecting opens the same cross-mode folder view as the sidebar, clears gallery filters and includes images, thumbnails, logos, print and videos. Empty select ID returns to the image overview.', object({ action: choice(['list', 'create', 'rename', 'delete', 'select']), id: str(), name: nameSchema }, ['action']), async args => {
     const store = useWorkspaceStore.getState()
-    if (args.action === 'list') return { workspaces: store.workspaces, activeId: store.activeWorkspaceId }
+    if (args.action === 'list') return { workspaces: sortOrganizations(store.workspaces, useProjectsViewStore.getState().sort, useGalleryStore.getState().images.filter(i => i.filePath && !i.isLoading && !i.error), 'workspaceId'), activeId: store.activeWorkspaceId }
     if (args.action === 'create') { if (!args.name?.trim()) throw new Error('name is required'); const id = store.createWorkspace(args.name); await store.persistToDisk(); return { id } }
     if (args.action === 'select' && !args.id) { await context.navigate('workspace'); return { activeId: null } }
     const item = requireItem(store.workspaces, args.id, 'Workspace')
@@ -353,9 +355,9 @@ export function createAutomationTools(context: AutomationContext) {
     else await store.persistToDisk()
     return { action: args.action, id: item.id }
   })
-  add<{ action: string; id?: string; title?: string; angle?: string; color?: string; archived?: boolean; heroImageId?: string }>('projects', 'Manage thumbnail video projects: list/create/update/delete/select. Delete requires id and returns retained media to the all-thumbnails overview without deleting files; independent workspace assignments remain. Selecting opens the same thumbnail-project view as the sidebar and clears gallery filters. Empty select ID opens all thumbnails.', object({ action: choice(['list', 'create', 'update', 'delete', 'select']), id: str(), title: nameSchema, angle: str(), color: str(), archived: bool, heroImageId: str() }, ['action']), async args => {
+  add<{ action: string; id?: string; title?: string; angle?: string; color?: string; archived?: boolean; heroImageId?: string }>('projects', 'Manage thumbnail video projects: list/create/update/delete/select. Lists follow the shared projects overview sort (default newest-created first); change it with navigate target=projects and projectsSort. Delete requires id and returns retained media to the all-thumbnails overview without deleting files; independent workspace assignments remain. Selecting opens the same thumbnail-project view as the sidebar and clears gallery filters. Empty select ID opens all thumbnails.', object({ action: choice(['list', 'create', 'update', 'delete', 'select']), id: str(), title: nameSchema, angle: str(), color: str(), archived: bool, heroImageId: str() }, ['action']), async args => {
     const store = useThumbnailProjectsStore.getState()
-    if (args.action === 'list') return { projects: store.projects, activeId: store.activeProjectId }
+    if (args.action === 'list') return { projects: sortOrganizations(store.projects, useProjectsViewStore.getState().sort, useGalleryStore.getState().images.filter(i => i.filePath && !i.isLoading && !i.error), 'projectId'), activeId: store.activeProjectId }
     if (args.action === 'create') { if (!args.title?.trim()) throw new Error('title is required'); const id = store.createProject(args.title, args.angle); await store.persistToDisk(); return { id } }
     if (args.action === 'select' && !args.id) { await context.navigate('project'); return { activeId: null } }
     const item = requireItem(store.projects, args.id, 'Project')
@@ -448,14 +450,17 @@ export function createAutomationTools(context: AutomationContext) {
     if (!id) throw new Error('No video job was started')
     return { jobIds: [id], status: 'running', estimateOnly: true, currency: 'USD', estimatedCostUsd: estimateVideoCost(model.id, duration, args.generateAudio ?? false) }
   })
-  add<{ target: string; id?: string }>('navigate', 'Show a creation mode, library, references, styles, activity, settings, image viewer, thumbnail preview or canvas in the actual app window. Creation-mode targets open their overview, clearing the matching project/folder selection and gallery filters just like the sidebar. library opens all media without folder scope. To open a specific project/folder, navigate to the creation mode first, then select it with projects/workspaces. collections/presets/queue remain aliases for references/styles/activity. reuse_prompt restores the saved prompt and reference snapshots into the shared UI editor; poll get_draft.referenceLoadStatus until ready before generating. Embedded references do not depend on desktop originals. create_variant requires a completed image ID and prepares the shared image editor with that source as reference and its model/format; it does not generate or charge.', object({ target: choice(['image', 'logo', 'thumbnail', 'print', 'video', 'library', 'references', 'styles', 'activity', 'projects', 'settings', 'collections', 'presets', 'queue', 'viewer', 'thumbnail_preview', 'canvas', 'crop', 'compare', 'reuse_prompt', 'create_variant', 'close_panels']), id: str() }, ['target']), async ({ target, id }) => {
+  add<{ target: string; id?: string; projectsLayout?: ProjectsLayout; projectsSort?: ProjectsSort }>('navigate', 'Show a creation mode, library, references, styles, activity, projects, settings, image viewer, thumbnail preview or canvas in the actual app window. With target=projects, projectsLayout selects grid (the default) or compact list; omitted preserves the current session selection. projectsSort selects created-desc (default), created-asc, updated-desc (latest completed assigned media creation timestamp or organization creation, not reassignment/rename time), or name-asc. Both preferences persist across navigation this session. get_status.view.projectsLayout and projectsSort report the shared UI selection. Creation-mode targets open their overview, clearing the matching project/folder selection and gallery filters just like the sidebar. library opens all media without folder scope. To open a specific project/folder, navigate to the creation mode first, then select it with projects/workspaces. collections/presets/queue remain aliases for references/styles/activity. reuse_prompt restores the saved prompt and reference snapshots into the shared UI editor; poll get_draft.referenceLoadStatus until ready before generating. Embedded references do not depend on desktop originals. create_variant requires a completed image ID and prepares the shared image editor with that source as reference and its model/format; it does not generate or charge.', object({ target: choice(['image', 'logo', 'thumbnail', 'print', 'video', 'library', 'references', 'styles', 'activity', 'projects', 'settings', 'collections', 'presets', 'queue', 'viewer', 'thumbnail_preview', 'canvas', 'crop', 'compare', 'reuse_prompt', 'create_variant', 'close_panels']), id: str(), projectsLayout: choice(['grid', 'list']), projectsSort: choice([...PROJECTS_SORT_OPTIONS]) }, ['target']), async ({ target, id, projectsLayout, projectsSort }) => {
+    if ((projectsLayout !== undefined || projectsSort !== undefined) && target !== 'projects') throw new Error('projectsLayout and projectsSort are only supported with target=projects')
     if (['viewer', 'thumbnail_preview', 'crop', 'compare', 'reuse_prompt'].includes(target)) requireItem(useGalleryStore.getState().images, id, 'Image')
     if (target === 'create_variant') {
       const image = requireItem(useGalleryStore.getState().images, id, 'Image')
       if (image.type === 'video' || image.isLoading || image.error || !image.filePath) throw new Error('Create variant requires a completed image. Use list_images to choose one.')
     }
     await context.navigate(target, id)
-    return { target, id }
+    if (projectsLayout !== undefined) useProjectsViewStore.getState().setLayout(projectsLayout)
+    if (projectsSort !== undefined) useProjectsViewStore.getState().setSort(projectsSort)
+    return { target, id, ...(target === 'projects' ? { projectsLayout: useProjectsViewStore.getState().layout, projectsSort: useProjectsViewStore.getState().sort } : {}) }
   })
 
   registerDraftTools(add)

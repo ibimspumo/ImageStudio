@@ -2,7 +2,7 @@ import { app, BrowserWindow, shell, nativeImage } from 'electron'
 import { join } from 'path'
 import { registerAllHandlers, shouldAutoCheckUpdates } from './ipc'
 import { ensureDirectories } from './services/image-store'
-import { checkForUpdatesOnStartup } from './services/updater'
+import { checkForUpdatesOnStartup, recoverUpdateResult } from './services/updater'
 import { initializeAutomation, type AutomationService } from './automation'
 import { pathToFileURL } from 'node:url'
 
@@ -69,7 +69,8 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  if (shouldAutoCheckUpdates()) {
+  const updateRecoveryError = await recoverUpdateResult()
+  if (shouldAutoCheckUpdates() && !updateRecoveryError) {
     checkForUpdatesOnStartup()
   }
 

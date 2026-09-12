@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import { createAutomationTools, imageSummary } from '../src/renderer/src/automation/tools'
 import { useSettingsStore } from '../src/renderer/src/stores/settings-store'
 import { useGalleryStore } from '../src/renderer/src/stores/gallery-store'
+import { useProjectsViewStore } from '../src/renderer/src/stores/projects-view-store'
+import { useWorkspaceStore } from '../src/renderer/src/stores/workspace-store'
+import { sortOrganizations } from '../src/shared/organization'
 import { useQueueStore } from '../src/renderer/src/stores/queue-store'
 import { useCollectionsStore } from '../src/renderer/src/stores/collections-store'
 import { useThumbnailProjectsStore } from '../src/renderer/src/stores/thumbnail-projects-store'
@@ -225,4 +228,83 @@ test('print summaries expose the same observed raster density as the UI', () => 
   assert.deepEqual(imageSummary(source).printResolution, { widthMm: 210, heightMm: 297, effectivePpi: 271, rasterWidth: 2240, rasterHeight: 3168 })
   assert.equal(imageSummary({ ...source, printFormat: 'custom' }).printResolution, null)
   assert.equal(imageSummary({ ...source, width: undefined }).printResolution, null)
+})
+
+
+test('projects overview shares newest-first ordering and session layout through MCP', async () => {
+  const workspaces = [
+    { id: 'old-folder', name: 'Old', color: '#fff', createdAt: 1 },
+    { id: 'new-folder', name: 'New', color: '#fff', createdAt: 3 },
+    { id: 'middle-folder', name: 'Middle', color: '#fff', createdAt: 2 },
+  ]
+  const previousWorkspaces = useWorkspaceStore.getState().workspaces
+  const previousProjects = useThumbnailProjectsStore.getState().projects
+  try {
+    useWorkspaceStore.setState({ workspaces })
+    useThumbnailProjectsStore.setState({ projects: workspaces.map(w => ({ ...w, title: w.name, angle: '' })) })
+    assert.equal(workspaces[0].id, 'old-folder', 'sorting must preserve the persisted source array')
+    assert.deepEqual((await call('workspaces', { action: 'list' })).data.workspaces.map((w: { id: string }) => w.id), ['new-folder', 'middle-folder', 'old-folder'])
+    assert.deepEqual((await call('projects', { action: 'list' })).data.projects.map((p: { id: string }) => p.id), ['new-folder', 'middle-folder', 'old-folder'])
+    assert.equal(useProjectsViewStore.getState().sort, 'created-desc')
+    assert.equal((await call('navigate', { target: 'projects', projectsSort: 'created-asc' })).data.projectsSort, 'created-asc')
+    assert.deepEqual((await call('workspaces', { action: 'list' })).data.workspaces.map((w: { id: string }) => w.id), ['old-folder', 'middle-folder', 'new-folder'])
+    assert.equal((await call('get_status')).data.view.projectsSort, 'created-asc')
+    assert.deepEqual(sortOrganizations(workspaces, 'name-asc', [], 'workspaceId').map(w => w.id), ['middle-folder', 'new-folder', 'old-folder'])
+    assert.deepEqual(sortOrganizations(workspaces, 'updated-desc', [{ timestamp: 10, workspaceId: 'old-folder', projectId: 'middle-folder' }], 'workspaceId').map(w => w.id), ['old-folder', 'new-folder', 'middle-folder'])
+    assert.deepEqual(sortOrganizations(workspaces, 'updated-desc', [{ timestamp: 10, workspaceId: 'old-folder', projectId: 'middle-folder' }], 'projectId').map(w => w.id), ['middle-folder', 'new-folder', 'old-folder'])
+    assert.equal((await call('navigate', { target: 'projects', projectsSort: 'unknown' })).error, true)
+    assert.equal((await call('navigate', { target: 'image', projectsSort: 'name-asc' })).error, true)
+    useProjectsViewStore.getState().setSort('created-desc')
+    assert.equal(useProjectsViewStore.getState().layout, 'grid')
+    assert.equal((await call('get_status')).data.view.projectsLayout, 'grid')
+    assert.equal((await call('navigate', { target: 'projects', projectsLayout: 'list' })).data.projectsLayout, 'list')
+    assert.equal(useProjectsViewStore.getState().layout, 'list')
+    await call('navigate', { target: 'image' })
+    assert.equal((await call('navigate', { target: 'projects' })).data.projectsLayout, 'list')
+    useProjectsViewStore.getState().setLayout('grid')
+    assert.equal((await call('get_status')).data.view.projectsLayout, 'grid', 'UI changes are immediately observable')
+    assert.equal((await call('navigate', { target: 'image', projectsLayout: 'list' })).error, true)
+    assert.equal((await call('navigate', { target: 'projects', projectsLayout: 'table' })).error, true)
+    assert.equal(useProjectsViewStore.getState().layout, 'grid', 'invalid requests must not mutate layout')
+  } finally {
+    useWorkspaceStore.setState({ workspaces: previousWorkspaces })
+    useThumbnailProjectsStore.setState({ projects: previousProjects })
+    useProjectsViewStore.getState().setLayout('grid')
+    useProjectsViewStore.getState().setSort('created-desc')
+  }
+})
+
+
+test('app_updates shares updater operations and exposes actionable failures without real installation', async () => {
+  const api = window.api
+  const calls: string[] = []
+  const methods = ['getUpdateStatus', 'checkForUpdates', 'downloadUpdate', 'installUpdate', 'revealUpdate'] as const
+  const previous = Object.fromEntries(methods.map(method => [method, api[method]]))
+  const status = { state: 'downloaded' as const, currentVersion: '1.0.0', version: '1.1.0', canInstall: true, installMode: 'restart' as const, progress: 100 }
+  try {
+    api.getUpdateStatus = async () => { calls.push('status'); return status }
+    api.checkForUpdates = async () => { calls.push('check'); return status }
+    api.downloadUpdate = async () => { calls.push('download'); return status }
+    api.installUpdate = async () => { calls.push('install'); return { success: true } }
+    api.revealUpdate = async () => { calls.push('reveal'); return { success: true } }
+    for (const action of ['status', 'check']) assert.deepEqual((await call('app_updates', { action })).data, status)
+    const download = await call('app_updates', { action: 'download' })
+    assert.deepEqual(download.data, { ...status, operation: 'download', poll: 'app_updates action=status' })
+    for (const action of ['install', 'reveal']) assert.equal((await call('app_updates', { action })).data.success, true)
+    assert.deepEqual(calls, ['status', 'check', 'download', 'status', 'install', 'reveal'])
+    let finishDownload!: (value: typeof status) => void
+    api.downloadUpdate = () => new Promise(resolve => { finishDownload = resolve })
+    const pending = await call('app_updates', { action: 'download' })
+    assert.equal(pending.data.operation, 'download', 'MCP returns while the updater transfer is pending')
+    finishDownload(status)
+    assert.equal((await call('app_updates', { action: 'force-install' })).error, true)
+    api.installUpdate = async () => ({ success: false, error: 'No downloaded update to install.' })
+    const failure = await call('app_updates', { action: 'install' })
+    assert.equal(failure.error, true)
+    assert.match(failure.text, /No downloaded update/)
+    api.revealUpdate = async () => ({ success: false, error: 'Nothing has been downloaded yet.' })
+    assert.equal((await call('app_updates', { action: 'reveal' })).error, true)
+  } finally {
+    Object.assign(api, previous)
+  }
 })

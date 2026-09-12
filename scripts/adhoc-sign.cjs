@@ -8,7 +8,9 @@
  * must be present", and in-app updates can never install.
  *
  * An ad-hoc signature (`codesign --sign -`) needs no certificate, seals the
- * resources, and is enough for Squirrel to validate the update. It does not
+ * resources for integrity checks. It is NOT sufficient for Squirrel updates,
+ * whose designated requirement changes between ad-hoc builds. Our custom ZIP
+ * replacement path handles writable unsigned installations. It does not
  * make the app notarized — users still clear the quarantine flag on first run.
  */
 const { execFileSync } = require('child_process')
