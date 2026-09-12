@@ -122,7 +122,9 @@ export default function App() {
     getView:()=>({mode,section,viewerImageId:viewer?.images[viewer.index]?.id,settingsOpen:section==='settings',collectionsOpen:section==='references',presetsOpen:section==='styles',queueOpen:section==='activity',canvasOpen,cropImageId:crop?.imageId,thumbnailPreviewImageId:thumbnailPreview?.images[thumbnailPreview.index]?.id}),
     navigate:async(target,id)=>{
       const aliases:Record<string,StudioSection>={collections:'references',presets:'styles',queue:'activity'}
-      if(isMode(target))navigateOverview(target)
+      if(target==='workspace')selectWorkspace(id||null)
+      else if(target==='project')selectProject(id||null)
+      else if(isMode(target))navigateOverview(target)
       else if(aliases[target])navigateSection(aliases[target])
       else if(['library','references','styles','projects','activity','settings'].includes(target))navigateOverview(target as StudioSection)
       else if(target==='canvas')useCanvasStore.getState().open()

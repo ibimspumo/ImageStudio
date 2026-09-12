@@ -289,7 +289,7 @@ export function createAutomationTools(context: AutomationContext) {
     if (!data) throw new Error('Reference file cannot be read')
     return mcpImage(await compressImage(data, maxWidth ?? 1600, 0.85, /^data:image\/(png|webp);/.test(data) ? 'png' : 'jpeg'), { id, index })
   }, true)
-  add<{ mode?: string; workspaceId?: string; projectId?: string; query?: string; favorite?: boolean; tag?: string; status?: string; offset?: number; limit?: number }>('list_images', 'Search and paginate gallery images/videos with generation metadata, file paths, cost and timing; excludes large reference image payloads.', object({
+  add<{ mode?: string; workspaceId?: string; projectId?: string; query?: string; favorite?: boolean; tag?: string; status?: string; offset?: number; limit?: number }>('list_images', 'Search and paginate gallery images/videos with generation metadata, file paths, cost and timing; excludes large reference image payloads. workspaceId alone includes every media mode in that folder; mode is an optional explicit narrowing filter.', object({
     mode: choice(['all', 'image', 'logo', 'thumbnail', 'print', 'video']), workspaceId: str(), projectId: str(), query: str(), favorite: bool, tag: str(), status: choice(['running', 'failed', 'completed', 'cancelled']), offset: integer(0, 1000000), limit: integer(1, 200),
   }), args => {
     const images = useGalleryStore.getState().images.filter(i =>
@@ -341,25 +341,25 @@ export function createAutomationTools(context: AutomationContext) {
     const jobIds = context.generate(options)
     return { jobIds, status: 'running', ...estimateGeneration(options) }
   })
-  add<{ action: 'list' | 'create' | 'rename' | 'delete' | 'select'; id?: string; name?: string }>('workspaces', 'List/create/rename/delete/select app folders (workspaces). Delete requires id and returns media to the all-media overview without deleting images/videos or files; independent project assignments remain. Empty select ID shows all folders.', object({ action: choice(['list', 'create', 'rename', 'delete', 'select']), id: str(), name: nameSchema }, ['action']), async args => {
+  add<{ action: 'list' | 'create' | 'rename' | 'delete' | 'select'; id?: string; name?: string }>('workspaces', 'List/create/rename/delete/select app folders (workspaces). Delete requires id and returns media to the all-media overview without deleting images/videos or files; independent project assignments remain. Selecting opens the same cross-mode folder view as the sidebar, clears gallery filters and includes images, thumbnails, logos, print and videos. Empty select ID returns to the image overview.', object({ action: choice(['list', 'create', 'rename', 'delete', 'select']), id: str(), name: nameSchema }, ['action']), async args => {
     const store = useWorkspaceStore.getState()
     if (args.action === 'list') return { workspaces: store.workspaces, activeId: store.activeWorkspaceId }
     if (args.action === 'create') { if (!args.name?.trim()) throw new Error('name is required'); const id = store.createWorkspace(args.name); await store.persistToDisk(); return { id } }
-    if (args.action === 'select' && !args.id) { store.setActiveWorkspace(null); return { activeId: null } }
+    if (args.action === 'select' && !args.id) { await context.navigate('workspace'); return { activeId: null } }
     const item = requireItem(store.workspaces, args.id, 'Workspace')
     if (args.action === 'rename') { if (!args.name?.trim()) throw new Error('name is required'); store.renameWorkspace(item.id, args.name) }
-    if (args.action === 'select') store.setActiveWorkspace(item.id)
+    if (args.action === 'select') await context.navigate('workspace', item.id)
     if (args.action === 'delete') await deleteWorkspaceRetainingMedia(item.id)
     else await store.persistToDisk()
     return { action: args.action, id: item.id }
   })
-  add<{ action: string; id?: string; title?: string; angle?: string; color?: string; archived?: boolean; heroImageId?: string }>('projects', 'Manage thumbnail video projects: list/create/update/delete/select. Delete requires id and returns retained media to the all-thumbnails overview without deleting files; independent workspace assignments remain. Empty select ID shows all projects.', object({ action: choice(['list', 'create', 'update', 'delete', 'select']), id: str(), title: nameSchema, angle: str(), color: str(), archived: bool, heroImageId: str() }, ['action']), async args => {
+  add<{ action: string; id?: string; title?: string; angle?: string; color?: string; archived?: boolean; heroImageId?: string }>('projects', 'Manage thumbnail video projects: list/create/update/delete/select. Delete requires id and returns retained media to the all-thumbnails overview without deleting files; independent workspace assignments remain. Selecting opens the same thumbnail-project view as the sidebar and clears gallery filters. Empty select ID opens all thumbnails.', object({ action: choice(['list', 'create', 'update', 'delete', 'select']), id: str(), title: nameSchema, angle: str(), color: str(), archived: bool, heroImageId: str() }, ['action']), async args => {
     const store = useThumbnailProjectsStore.getState()
     if (args.action === 'list') return { projects: store.projects, activeId: store.activeProjectId }
     if (args.action === 'create') { if (!args.title?.trim()) throw new Error('title is required'); const id = store.createProject(args.title, args.angle); await store.persistToDisk(); return { id } }
-    if (args.action === 'select' && !args.id) { store.setActiveProject(null); return { activeId: null } }
+    if (args.action === 'select' && !args.id) { await context.navigate('project'); return { activeId: null } }
     const item = requireItem(store.projects, args.id, 'Project')
-    if (args.action === 'select') store.setActiveProject(item.id)
+    if (args.action === 'select') await context.navigate('project', item.id)
     if (args.action === 'update') {
       if (args.heroImageId) requireItem(useGalleryStore.getState().images, args.heroImageId, 'Hero image')
       const { action, id, ...patch } = args

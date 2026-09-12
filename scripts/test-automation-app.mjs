@@ -1,5 +1,6 @@
 // Real Electron + MCP smoke test. Uses a disposable profile; never calls fal.ai.
 import assert from 'node:assert/strict'
+import { runFolderUiChecks } from './ui-folder-checks.mjs'
 import { runGpt25UiChecks } from './ui-gpt25-checks.mjs'
 import { runThumbnailCompositingUiChecks } from './ui-thumbnail-compositing-checks.mjs'
 import { runPrintUiChecks } from './ui-print-checks.mjs'
@@ -294,6 +295,7 @@ try {
   await runGpt25UiChecks(page, { app, call, client })
   await runPrintUiChecks(page, { app, call, client, imageId })
   await runThumbnailCompositingUiChecks(page, { app, call, client, temp, imageId })
+  await runFolderUiChecks(page, { call })
   await runProcessingUiChecks(page, { app, call, client, temp, projectId: project.id, workspaceId: folder.id })
   await call('update_settings', { falApiKey: '', falBillingApiKey: '' })
   await runCreationUiChecks(page, { call, imageId })

@@ -36,7 +36,9 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   const filter=useGalleryFilterStore()
   const images=useMemo(()=>{
     let list=allImages
-    if(!library){
+    // A folder is a cross-mode collection; only unscoped overviews filter by creation mode.
+    const folderView=!library&&mode!=='thumbnail'&&!!activeWorkspaceId
+    if(!library&&!folderView){
       if(mode==='image')list=list.filter(i=>i.type!=='video'&&!isThumbnailImage(i)&&!isLogoImage(i)&&!i.isPrint)
       else if(mode==='thumbnail')list=list.filter(isThumbnailImage)
       else if(mode==='print')list=list.filter(i=>i.isPrint)
@@ -67,7 +69,7 @@ export function MainContent({ onImageClick, onSettingsClick, onCollectionsClick,
   useEffect(()=>{const bar=promptRef.current,main=mainRef.current;if(!bar||!main)return;const update=()=>main.style.setProperty('--prompt-bar-h',library?'0px':`${bar.getBoundingClientRect().height}px`);const observer=new ResizeObserver(update);observer.observe(bar);update();return()=>observer.disconnect()},[mode,library])
   const activeName=library?undefined:mode==='thumbnail'?projects.find(p=>p.id===activeProjectId)?.title:workspaces.find(w=>w.id===activeWorkspaceId)?.name
   const title=activeName||(library?'Deine Mediathek':{image:'Deine Bilder',video:'Deine Videos',thumbnail:'Deine Thumbnails',logo:'Deine Logos',print:'Deine Print-Designs'}[mode])
-  const hint=library?'Bilder, Videos und fertige Ergebnisse an einem Ort.':{image:'Deine Ideen, Varianten und fertigen Ergebnisse.',video:'Ein Startbild. Deine Bewegung. Ein neuer Clip.',thumbnail:'Eine klare Bildidee für dein nächstes Video.',logo:'Form, Charakter und Wiedererkennung.',print:'Plakate, Flyer und Visitenkarten mit klarer Gestaltung.'}[mode]
+  const hint=library?'Bilder, Videos und fertige Ergebnisse an einem Ort.':activeName&&mode!=='thumbnail'?'Alle Bilder, Thumbnails, Logos, Print-Designs und Videos in diesem Ordner.':{image:'Deine Ideen, Varianten und fertigen Ergebnisse.',video:'Ein Startbild. Deine Bewegung. Ein neuer Clip.',thumbnail:'Eine klare Bildidee für dein nächstes Video.',logo:'Form, Charakter und Wiedererkennung.',print:'Plakate, Flyer und Visitenkarten mit klarer Gestaltung.'}[mode]
   return <main ref={mainRef} className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative" aria-label={library?'Mediathek':'Erstellungsbereich'}>
     <div className="studio-heading"><div className="min-w-0"><h1 className="truncate">{title}</h1><p>{hint}</p></div><div className="shrink-0"><MediaImport importMode={!library&&mode==='print'?'print':undefined} onImported={kind=>{filter.clearFilters();onModeChange(kind)}}/></div></div>
     <GalleryToolbar allTags={allTags} totalCount={allImages.length} filteredCount={images.length}/>
