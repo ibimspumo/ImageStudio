@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { writeFile, mkdir, readdir, readFile, unlink } from 'fs/promises'
 import { existsSync } from 'fs'
+import { externalizeGalleryReferences, replaceMigratedGallery } from './generation-references'
 
 function getBasePath(): string {
   const base = join(app.getPath('userData'), 'ImageStudio')
@@ -100,7 +101,15 @@ export async function readImageAsBase64(filePath: string): Promise<string> {
     jpeg: 'image/jpeg',
     png: 'image/png',
     webp: 'image/webp',
-    gif: 'image/gif'
+    gif: 'image/gif',
+    avif: 'image/avif',
+    svg: 'image/svg+xml',
+    bmp: 'image/bmp',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+    heic: 'image/heic',
+    heif: 'image/heif',
+    ico: 'image/x-icon'
   }
   const mime = mimeMap[ext] || 'image/png'
   return `data:${mime};base64,${buffer.toString('base64')}`
@@ -134,25 +143,11 @@ export async function migrateGalleryHistory(): Promise<void> {
       changed = true
     }
 
-    // Migrate base64 attachments → file paths
-    if (Array.isArray(img.attachments)) {
-      for (let i = 0; i < img.attachments.length; i++) {
-        const att = img.attachments[i]
-        if (typeof att === 'string' && att.startsWith('data:')) {
-          const match = att.match(/^data:image\/(\w+);base64,(.+)$/)
-          if (!match) continue
-          const ext = match[1] === 'jpeg' ? 'jpg' : match[1]
-          const filename = `att-${img.id}-${i}.${ext}`
-          const filePath = await saveImage(att, filename)
-          img.attachments[i] = filePath
-          changed = true
-        }
-      }
-    }
   }
 
+  changed = (await externalizeGalleryReferences(images, getImagesPath())) || changed
   if (changed) {
-    await writeFile(galleryPath, JSON.stringify(images), 'utf-8')
+    await replaceMigratedGallery(galleryPath, images)
   }
 }
 

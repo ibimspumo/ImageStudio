@@ -30,7 +30,7 @@ export const useCollectionsStore = create<CollectionsStore>((set, get) => ({
 
   loadFromDisk: async () => {
     try {
-      const result = await window.api.listHistory()
+      const result = await window.api.listHistory('collections')
       if (result.success && result.sessions) {
         const session = result.sessions.find((s) => s.id === 'collections')
         if (session) {

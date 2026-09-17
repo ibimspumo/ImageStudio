@@ -104,6 +104,7 @@ export interface ElectronAPI {
     error?: string
   }) => void): () => void
 
+  retainGenerationReferences(input: { attachments?: string[]; labeledAttachments?: { label: string; images: string[] }[] }): Promise<{ success: boolean; attachments?: string[]; labeledAttachments?: { label: string; images: string[] }[]; error?: string }>
   saveImage(base64DataUrl: string, filename: string): Promise<{ success: boolean; filePath?: string; error?: string }>
   exportImage(base64DataUrl: string, defaultName: string): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>
   startDrag(filePath: string): void
@@ -112,7 +113,7 @@ export interface ElectronAPI {
   getSettings(): Promise<Record<string, unknown>>
   setSetting(key: string, value: unknown): Promise<{ success: boolean }>
 
-  listHistory(): Promise<{ success: boolean; sessions?: Array<{ id: string; data: string }>; error?: string }>
+  listHistory(id?: string): Promise<{ success: boolean; sessions?: Array<{ id: string; data: string }>; error?: string }>
   saveHistory(id: string, data: string): Promise<{ success: boolean; error?: string }>
   deleteHistory(id: string): Promise<{ success: boolean; error?: string }>
 

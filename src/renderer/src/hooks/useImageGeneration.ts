@@ -145,7 +145,16 @@ export function useImageGeneration() {
 
   const generate = useCallback(
     (inputOptions: GenerateOptions) => {
-      const options = structuredClone(inputOptions)
+      // Strings are immutable; copy only mutable containers, never every reference
+      // bitmap once per output. A batch keeps one snapshot until files are retained.
+      const options: GenerateOptions = {
+        ...inputOptions,
+        models: [...inputOptions.models],
+        attachments: inputOptions.attachments?.slice(),
+        labeledAttachments: inputOptions.labeledAttachments?.map(group => ({ ...group, images: [...group.images] })),
+        imageSize: inputOptions.imageSize ? { ...inputOptions.imageSize } : undefined,
+        imageProcessing: inputOptions.imageProcessing ? structuredClone(inputOptions.imageProcessing) : undefined,
+      }
       const { falApiKey, antiDetection } = useSettingsStore.getState()
       if (!falApiKey) return []
 
@@ -192,7 +201,7 @@ export function useImageGeneration() {
         const hasAlpha =
           processing ? processing.hasAlpha : options.background === 'transparent' && getModel(model).supportsBackground
         for (let i = 0; i < options.imageCount; i++) {
-          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, options.attachments ?? options.labeledAttachments?.flatMap((group) => group.images), activeWorkspaceId, { parentImageId: options.parentImageId, ...(processing ? { width: processing.width, height: processing.height, mimeType: `image/${processing.outputFormat}`, estimatedCost: processing.estimatedCost } : {}), seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, thumbnailCompositing: options.thumbnailCompositing, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, isPrint: options.isPrint, printFormat: options.printFormat, printStyle: options.printStyle, printMetaPrompt: options.printMetaPrompt, hasAlpha, requestId, generationOptions: structuredClone(options), costCurrency: 'USD', costSource: 'list-price-estimate' })
+          const id = addPlaceholder(options.prompt, options.aspectRatio, options.resolution, model, undefined, activeWorkspaceId, { parentImageId: options.parentImageId, ...(processing ? { width: processing.width, height: processing.height, mimeType: `image/${processing.outputFormat}`, estimatedCost: processing.estimatedCost } : {}), seed: options.seed, inpaintSourceId: options.inpaintSourceId, canvasSketchPath: options.canvasSketchPath, projectId: options.projectId, thumbnailStyle: options.thumbnailStyle, thumbnailCompositing: options.thumbnailCompositing, faceFidelity: options.faceFidelity, isLogo: options.isLogo, logoStyle: options.logoStyle, isPrint: options.isPrint, printFormat: options.printFormat, printStyle: options.printStyle, printMetaPrompt: options.printMetaPrompt, hasAlpha, requestId, generationOptions: { ...options, attachments: undefined, labeledAttachments: undefined }, costCurrency: 'USD', costSource: 'list-price-estimate' })
           ids.push(id)
         }
         modelPlaceholders.push({ model, ids, requestId })
@@ -202,12 +211,35 @@ export function useImageGeneration() {
         for (const id of ids) updateStatus(id, text)
       }
 
-      // Labelled groups are the canonical form; a flat attachment list becomes
-      // one single-image group each so it can be packed and labelled the same way.
-      const baseGroups: LabeledAttachment[] =
-        options.labeledAttachments && options.labeledAttachments.length > 0
+      // Retain the batch once before submission; gallery metadata always contains
+      // file references, including while other completed jobs are being saved.
+      const retained = (async () => {
+        const result = await window.api.retainGenerationReferences({
+          attachments: options.attachments,
+          labeledAttachments: options.labeledAttachments,
+        })
+        if (!result.success) throw new Error(result.error || 'Failed to retain reference images')
+        options.attachments = result.attachments
+        options.labeledAttachments = result.labeledAttachments
+        const generationOptions = { ...options }
+        const attachments = options.attachments ?? options.labeledAttachments?.flatMap(group => group.images)
+        for (const { ids } of modelPlaceholders) {
+          for (const id of ids) updateMetadata(id, { attachments, generationOptions })
+        }
+        const groups = options.labeledAttachments?.length
           ? options.labeledAttachments
-          : (options.attachments ?? []).map((img, i) => ({ label: `Image ${i + 1}`, images: [img] }))
+          : (options.attachments ?? []).map((image, index) => ({ label: `Image ${index + 1}`, images: [image] }))
+        if (processing) return []
+        // Hydrate only this active batch, once, for packing/uploading. Paths from
+        // restored history are intentionally not sent to the remote provider.
+        const hydrated = new Map<string, string>()
+        for (const group of groups) {
+          for (const source of group.images) {
+            if (!hydrated.has(source)) hydrated.set(source, /^(data:|https?:)/.test(source) ? source : await readEditingImage(source))
+          }
+        }
+        return groups.map(group => ({ ...group, images: group.images.map(source => hydrated.get(source)!) }))
+      })()
 
       // Each model runs independently — a slow or failing one must not hold up
       // the others.
@@ -230,7 +262,8 @@ export function useImageGeneration() {
           })
 
           try {
-            let groups = processing ? [] : baseGroups
+            let groups = await retained
+            if (active.cancelled) return
             let imageProcessing: ImageProcessingRequest | undefined
             if (processing && options.imageProcessing) {
               batchUpdateStatus(placeholderIds, 'Originalbild wird geladen…')

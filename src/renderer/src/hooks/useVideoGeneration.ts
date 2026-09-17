@@ -4,6 +4,7 @@ import { useSettingsStore } from '../stores/settings-store'
 import { useWorkspaceStore } from '../stores/workspace-store'
 import { AVAILABLE_VIDEO_MODELS, estimateVideoCost } from '../types/api'
 import { logger } from '../lib/logger'
+import { readEditingImage } from '../lib/image-editing'
 
 export interface VideoGenerateOptions {
   prompt: string
@@ -11,7 +12,7 @@ export interface VideoGenerateOptions {
   duration: number
   aspectRatio: string
   resolution?: string
-  startFrameBase64: string   // base64 data URL of start frame image
+  startFrameBase64: string   // active data URL or retained start-frame file path
   negativePrompt?: string
   generateAudio?: boolean
   cameraFixed?: boolean
@@ -26,7 +27,8 @@ export function useVideoGeneration() {
   const { addVideoPlaceholder, completeVideo, failImage, updateStatus, updateMetadata } = useGalleryStore()
 
   const generateVideo = useCallback(
-    (options: VideoGenerateOptions) => {
+    (inputOptions: VideoGenerateOptions) => {
+      const options = { ...inputOptions }
       const { falApiKey } = useSettingsStore.getState()
       if (!falApiKey) {
         logger.error('useVideoGeneration', 'No fal.ai API key set')
@@ -43,11 +45,11 @@ export function useVideoGeneration() {
         options.prompt,
         options.aspectRatio,
         options.model,
-        [options.startFrameBase64],
+        undefined,
         activeWorkspaceId,
         {
           resolution, seed: options.seed, negativePrompt: options.negativePrompt,
-          generationOptions: structuredClone({ ...options, resolution, generateAudio }),
+          generationOptions: { ...options, startFrameBase64: '', resolution, generateAudio },
           videoDuration: options.duration, costCurrency: 'USD', costSource: 'list-price-estimate',
         }
       )
@@ -67,13 +69,20 @@ export function useVideoGeneration() {
       // Async flow: upload image, then generate
       ;(async () => {
         try {
-          // Send base64 directly — fal-client.ts uploads to fal.ai storage
+          const retained = await window.api.retainGenerationReferences({ attachments: [options.startFrameBase64] })
+          if (!retained.success || !retained.attachments?.[0]) throw new Error(retained.error || 'Failed to retain video start frame')
+          options.startFrameBase64 = retained.attachments[0]
+          updateMetadata(id, {
+            attachments: retained.attachments,
+            generationOptions: { ...options, resolution, generateAudio },
+          })
+          // Only the active request hydrates bytes; saved history keeps the path.
           updateStatus(id, 'Uploading image...')
 
           const response = await window.api.generateVideo({
             model: options.model,
             prompt: options.prompt,
-            imageUrl: options.startFrameBase64,
+            imageUrl: /^(data:|https?:)/.test(options.startFrameBase64) ? options.startFrameBase64 : await readEditingImage(options.startFrameBase64),
             duration: options.duration,
             aspectRatio: options.aspectRatio,
             resolution,

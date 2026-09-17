@@ -50,6 +50,7 @@ beforeEach(() => {
     cancelImageGeneration: async () => ({ success: true, cancelled: 1 }),
     saveImage: async (_, name) => ({ success: true, filePath: `/gallery/${name}` }),
     saveHistory: async () => ({ success: true }),
+    retainGenerationReferences: async input => ({ success: true, ...input }),
   } }
 })
 
@@ -63,6 +64,7 @@ test('image jobs stream only their own progress; completion wins a late batch ca
   assert.equal(app.useGalleryStore.getState().images.find(i => i.id === ids[0]).generationOptions.prompt, 'visible prompt')
   progress({ requestId: 'another-batch', index: 0, status: 'progress', message: 'wrong status' })
   assert.equal(app.useGalleryStore.getState().images.find(i => i.id === ids[0]).statusText, undefined)
+  await tick()
   progress({ requestId: sentImage.requestId, index: 0, status: 'progress', message: 'Queued…' })
   assert.equal(app.useGalleryStore.getState().images.find(i => i.id === ids[0]).statusText, 'Queued…')
   const cancelled = await app.cancelImageJob(ids[0])
@@ -96,6 +98,7 @@ test('video returns immediate ID, stores effective options and returned seed, an
   assert.equal(image.workspaceId, undefined)
   assert.equal(image.generationOptions.generateAudio, false)
   assert.equal(image.generationOptions.cameraFixed, true)
+  await tick()
   assert.equal(sentVideo.generateAudio, false)
   videoProgress({ requestId: id, status: 'Generating…', progress: 50 })
   assert.equal(app.useGalleryStore.getState().images[0].progressPercent, 50)
@@ -141,6 +144,7 @@ test('dedicated processing returns immediate IDs and accepts native large-image 
   }
   const ids = app.useImageGeneration().generate(options)
   assert.equal(ids.length, 1)
+  await tick()
   assert.equal(sentImage.prompt, '')
   assert.equal(sentImage.imageProcessing.sourceFilePath, '/gallery/original.png')
   assert.equal(sentImage.imageProcessing.sourceImage, undefined)
@@ -163,4 +167,44 @@ test('dedicated processing returns immediate IDs and accepts native large-image 
   assert.equal(result.estimatedCost, 1.28)
   assert.equal(result.costSource, 'list-price-estimate')
   assert.equal(saves, 0)
+})
+
+
+test('a multi-output batch retains references once and never stores inline bytes in gallery jobs', async () => {
+  let releaseRetention
+  let retentionCalls = 0
+  let retentionInput
+  const bytes = 'data:image/png;base64,AAAA'
+  window.api.retainGenerationReferences = input => {
+    retentionCalls++
+    retentionInput = input
+    return new Promise(resolve => { releaseRetention = resolve })
+  }
+  window.api.readImage = async path => {
+    assert.equal(path, '/references/snapshot.png')
+    return { success: true, base64DataUrl: bytes }
+  }
+  window.api.uploadToUrls = async images => {
+    assert.deepEqual(images, [bytes])
+    return { success: true, urls: ['https://provider.invalid/reference.png'] }
+  }
+  const options = { ...imageOptions(), attachments: [bytes], labeledAttachments: [{ label: 'My original', images: [bytes] }] }
+  const ids = app.useImageGeneration().generate(options)
+  assert.equal(ids.length, 2)
+  assert.equal(retentionCalls, 1)
+  assert.equal(sentImage, undefined)
+  assert.equal(JSON.stringify(app.useGalleryStore.getState().images).includes(bytes), false)
+  options.labeledAttachments[0].label = 'later draft label'
+  options.attachments[0] = 'later draft image'
+  assert.equal(retentionInput.labeledAttachments[0].label, 'My original')
+  releaseRetention({ success: true, attachments: ['/references/snapshot.png'], labeledAttachments: [{ label: 'My original', images: ['/references/snapshot.png'] }] })
+  await tick()
+  for (const image of app.useGalleryStore.getState().images) {
+    assert.deepEqual(image.attachments, ['/references/snapshot.png'])
+    assert.equal(image.generationOptions.labeledAttachments[0].label, 'My original')
+  }
+  assert.equal(JSON.stringify(app.useGalleryStore.getState().images).includes(bytes), false)
+  assert.equal(sentImage.labeledAttachments[0].images[0], 'https://provider.invalid/reference.png')
+  resolveImage({ success: false, error: 'End mock request' })
+  await tick()
 })

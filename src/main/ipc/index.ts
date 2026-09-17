@@ -3,11 +3,12 @@ import { fetchBillingCosts } from '../services/fal-billing'
 import { ipcMain, app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { createHistoryTransport } from '../services/history-transport'
 import { IPC_CHANNELS } from '../lib/constants'
 import { registerImageGenerationHandlers } from './image-generation'
 import { registerVideoGenerationHandlers } from './video-generation'
 import { registerFileOperationHandlers } from './file-operations'
-import { loadHistory, saveSession, deleteSession } from '../services/image-store'
+import { deleteSession } from '../services/image-store'
 import { uploadImagesToUrls, clearUploadCache } from '../services/image-upload'
 import { checkForUpdates, downloadUpdate, installUpdate, getUpdateStatus, revealUpdate } from '../services/updater'
 import { DEFAULT_MODEL } from '../../shared/image-models'
@@ -133,23 +134,19 @@ export function registerAllHandlers(): void {
 
   ipcMain.handle('billing:refresh', (_event, requests) => fetchBillingCosts(settings.falBillingApiKey || settings.falApiKey, requests))
 
-  // History handlers
-  ipcMain.handle(IPC_CHANNELS.HISTORY_LIST, async () => {
-    try {
-      const sessions = await loadHistory()
-      return { success: true, sessions }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Failed to load history' }
+  // Each request/response carries at most one bounded chunk, never the gallery.
+  const history = createHistoryTransport(() => join(app.getPath('userData'), 'ImageStudio', 'history'))
+  const historyOwners = new Set<number>()
+  ipcMain.handle('history:transfer', (event, request) => {
+    const owner = event.sender.id
+    if (!historyOwners.has(owner)) {
+      historyOwners.add(owner)
+      event.sender.once('destroyed', () => {
+        historyOwners.delete(owner)
+        void history.closeOwner(owner).catch(() => {})
+      })
     }
-  })
-
-  ipcMain.handle(IPC_CHANNELS.HISTORY_SAVE, async (_event, { id, data }: { id: string; data: string }) => {
-    try {
-      await saveSession(id, data)
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Failed to save' }
-    }
+    return history.invoke(owner, request)
   })
 
   // Upload base64 images to fal.ai storage, return CDN URLs (content-hash cached)

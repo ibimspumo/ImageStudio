@@ -70,7 +70,7 @@ export const usePresetsStore = create<PresetsStore>((set, get) => ({
 
   loadFromDisk: async () => {
     try {
-      const result = await window.api.listHistory()
+      const result = await window.api.listHistory('presets')
       if (result.success && result.sessions) {
         const session = result.sessions.find((s) => s.id === 'presets')
         if (session) {

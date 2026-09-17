@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { createHistoryClient } from '../shared/history-transport'
 import type { AutomationRequest, AutomationReply } from '../shared/automation'
 
 const api = {
@@ -55,6 +56,9 @@ const api = {
     }
   },
 
+  retainGenerationReferences: (input: { attachments?: string[]; labeledAttachments?: { label: string; images: string[] }[] }) =>
+    ipcRenderer.invoke('image:retain-generation-references', input),
+
   saveImage: (base64DataUrl: string, filename: string) =>
     ipcRenderer.invoke('image:save', { base64DataUrl, filename }),
 
@@ -67,9 +71,7 @@ const api = {
   setSetting: (key: string, value: unknown) =>
     ipcRenderer.invoke('settings:set', { key, value }),
 
-  listHistory: () => ipcRenderer.invoke('history:list'),
-  saveHistory: (id: string, data: string) =>
-    ipcRenderer.invoke('history:save', { id, data }),
+  ...createHistoryClient(request => ipcRenderer.invoke('history:transfer', request)),
   deleteHistory: (id: string) => ipcRenderer.invoke('history:delete', { id }),
 
   /** Upload base64 images to fal.ai storage; returns CDN URLs (cached by content) */

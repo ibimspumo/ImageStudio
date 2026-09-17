@@ -42,7 +42,7 @@ export const useUiRecentsStore = create<UiRecentsStore>((set, get) => ({
 
   loadFromDisk: async () => {
     try {
-      const result = await window.api.listHistory()
+      const result = await window.api.listHistory('ui-recents')
       if (result.success && result.sessions) {
         const session = result.sessions.find((s) => s.id === 'ui-recents')
         if (session) {

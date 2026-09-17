@@ -106,7 +106,7 @@ export const useThumbnailProjectsStore = create<ThumbnailProjectsStore>((set, ge
 
   loadFromDisk: async () => {
     try {
-      const result = await window.api.listHistory()
+      const result = await window.api.listHistory('thumbnail-projects')
       if (result.success && result.sessions) {
         const session = result.sessions.find((s) => s.id === 'thumbnail-projects')
         if (session) {

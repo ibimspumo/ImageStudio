@@ -36,6 +36,7 @@ interface ViewerState { images: GalleryImage[]; index: number }
 const isMode = (target: string): target is AppMode => ['image','video','thumbnail','logo','print'].includes(target)
 export default function App() {
   const [ready,setReady]=useState(false)
+  const [startupError,setStartupError]=useState<string|null>(null)
   const [pendingCollection,setPendingCollection]=useState<string|null>(null)
   const hydration=useRef<Promise<void>|null>(null)
   const [section,setSection]=useState<StudioSection>('image')
@@ -75,10 +76,11 @@ export default function App() {
 
   useEffect(()=>{
     let cancelled=false
-    hydration.current??=window.api.migrate().catch(err=>logger.error('App','Migration failed',err)).then(async()=>{
+    hydration.current??=window.api.migrate().then(async(result)=>{
+      if(!result.success)throw new Error(result.error||'Der gespeicherte Verlauf konnte nicht vorbereitet werden.')
       await Promise.all([useSettingsStore.getState().hydrate(),useGalleryStore.getState().loadFromDisk(),useCollectionsStore.getState().loadFromDisk(),useWorkspaceStore.getState().loadFromDisk(),usePresetsStore.getState().loadFromDisk(),useQueueStore.getState().loadFromDisk(),useThumbnailProjectsStore.getState().loadFromDisk(),useThumbnailMetaPromptsStore.getState().loadFromDisk(),useUiRecentsStore.getState().loadFromDisk()])
     })
-    void hydration.current.then(()=>{if(!cancelled){setReady(true);if(!useSettingsStore.getState().falApiKey)setSection('settings')}})
+    void hydration.current.then(()=>{if(!cancelled){setReady(true);if(!useSettingsStore.getState().falApiKey)setSection('settings')}}).catch(err=>{logger.error('App','Startup failed',err);if(!cancelled)setStartupError(err instanceof Error?err.message:'Der Verlauf konnte nicht geladen werden.')})
     return()=>{cancelled=true}
   },[])
 
@@ -143,6 +145,7 @@ export default function App() {
   useEffect(()=>{const listener=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();document.getElementById('studio-search')?.focus()}if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='p'){e.preventDefault();setSection('projects')}};document.addEventListener('keydown',listener);return()=>document.removeEventListener('keydown',listener)},[])
   const galleryVisible=isMode(section)||section==='library'
   const context=section==='thumbnail'?projects.find(p=>p.id===projectId)?.title:isMode(section)?workspaces.find(w=>w.id===workspaceId)?.name:undefined
+  if(!ready)return <div className="studio-shell flex items-center justify-center"><div className="max-w-lg p-8 text-text-primary" role={startupError?'alert':'status'}><h1 className="text-lg font-semibold">{startupError?'ImageStudio konnte den Verlauf nicht laden':'ImageStudio wird geladen …'}</h1><p className="mt-3 text-sm text-text-secondary">{startupError||'Gespeicherte Bilder und Referenzen werden vorbereitet.'}</p>{startupError&&<button className="mt-5 rounded-lg bg-accent-main px-4 py-2 text-black" onClick={()=>window.location.reload()}>Erneut versuchen</button>}</div></div>
   return <ErrorBoundary><div className="studio-shell">
     <StudioSidebar section={section} onNavigate={navigateOverview} onSelectWorkspace={selectWorkspace} onSelectProject={selectProject} open={sidebarOpen} onClose={()=>setSidebarOpen(false)}/>
     <TitleBar section={section} context={context} onOverview={()=>navigateOverview(section)} onStudio={()=>navigateOverview('library')} onMenu={()=>setSidebarOpen(v=>!v)} onActivity={()=>navigateSection('activity')} onSearch={()=>{if(!galleryVisible)navigateSection('library')}}/>

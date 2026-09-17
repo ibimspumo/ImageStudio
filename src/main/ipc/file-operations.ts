@@ -12,9 +12,18 @@ import {
   migrateCollectionsHistory
 } from '../services/image-store'
 
+import { retainGenerationReferences, type GenerationReferences } from '../services/generation-references'
+
 import { embedPngTextChunks } from '../services/png-metadata'
 
 export function registerFileOperationHandlers(): void {
+  ipcMain.handle('image:retain-generation-references', async (_event, input: GenerationReferences) => {
+    try {
+      return { success: true, ...await retainGenerationReferences(getImagesDir(), input) }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Could not retain generation references' }
+    }
+  })
   ipcMain.handle(
     IPC_CHANNELS.IMAGE_SAVE,
     async (_event, { base64DataUrl, filename }: { base64DataUrl: string; filename: string }) => {

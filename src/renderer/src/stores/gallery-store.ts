@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import { debounce } from '../lib/debounce'
+import { createCoalescedSave } from '../lib/coalesced-save'
 import { logger } from '../lib/logger'
 import { getResolutionLabel } from '../lib/image-utils'
 import type { GenerateOptions } from '../hooks/useImageGeneration'
@@ -110,7 +111,7 @@ interface GalleryStore {
   images: GalleryImage[]
   addPlaceholder: (prompt: string, aspectRatio: string, resolution: string, model: string, attachments?: string[], workspaceId?: string, extra?: Partial<GalleryImage>) => string
   addVideoPlaceholder: (prompt: string, aspectRatio: string, model: string, attachments?: string[], workspaceId?: string, extra?: Partial<GalleryImage>) => string
-  updateMetadata: (id: string, metadata: Partial<Pick<GalleryImage, 'previewPath' | 'width' | 'height' | 'mimeType' | 'hasAlpha' | 'requestId' | 'falRequestId' | 'cancelRequested' | 'cancelled' | 'generationOptions' | 'generationRequest' | 'seed' | 'progressPercent' | 'costCurrency' | 'costSource' | 'cost' | 'costCheckedAt' | 'estimatedCost'>>) => void
+  updateMetadata: (id: string, metadata: Partial<Pick<GalleryImage, 'attachments' | 'previewPath' | 'width' | 'height' | 'mimeType' | 'hasAlpha' | 'requestId' | 'falRequestId' | 'cancelRequested' | 'cancelled' | 'generationOptions' | 'generationRequest' | 'seed' | 'progressPercent' | 'costCurrency' | 'costSource' | 'cost' | 'costCheckedAt' | 'estimatedCost'>>) => void
   completeImage: (id: string, filePath: string, durationMs?: number, cost?: number) => void
   completeVideo: (id: string, filePath: string, durationMs: number, videoDuration: number, thumbnailPath?: string, cost?: number) => void
   updateStatus: (id: string, statusText: string | undefined) => void
@@ -129,6 +130,14 @@ interface GalleryStore {
 const debouncedPersist = debounce((persist: () => Promise<void>) => {
   persist().catch((err) => logger.error('GalleryStore', 'Persist failed', err))
 }, 500)
+
+// Capture the latest state only when the preceding transfer has finished.
+// Queued callers share one promise instead of retaining huge JSON snapshots.
+const persistGallery = createCoalescedSave(async () => {
+  const images = useGalleryStore.getState().images.filter((img) => img.filePath && !img.isLoading && !img.error)
+  const result = await window.api.saveHistory('gallery', JSON.stringify(images))
+  if (!result.success) throw new Error(result.error || 'Failed to save gallery')
+})
 
 export const useGalleryStore = create<GalleryStore>((set, get) => ({
   images: [],
@@ -299,7 +308,7 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
 
   loadFromDisk: async () => {
     try {
-      const result = await window.api.listHistory()
+      const result = await window.api.listHistory('gallery')
       if (result.success && result.sessions) {
         const gallerySession = result.sessions.find((s) => s.id === 'gallery')
         if (gallerySession) {
@@ -309,23 +318,36 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
 
           // Background migration: fix resolution labels based on actual image dimensions
           setTimeout(() => {
-            const { images, updateResolution } = get()
-            for (const img of images) {
-              if (!img.filePath || img.filePath.startsWith('data:') || img.type === 'video') continue
-              if (img.width && img.height) {
-                const actualRes = getResolutionLabel(img.width, img.height)
-                if (actualRes !== img.resolution) updateResolution(img.id, actualRes)
-                continue
-              }
-              const imgEl = new window.Image()
-              imgEl.onload = () => {
-                const actualRes = getResolutionLabel(imgEl.naturalWidth, imgEl.naturalHeight)
-                if (actualRes !== img.resolution) {
-                  updateResolution(img.id, actualRes)
+            void (async () => {
+              for (const img of get().images) {
+                if (!img.filePath || img.filePath.startsWith('data:') || img.type === 'video') continue
+                let width = img.width
+                let height = img.height
+                if (!width || !height) {
+                  // Decode one original at a time, releasing it before the next.
+                  // Launching hundreds together can exhaust the renderer/GPU.
+                  const dimensions = await new Promise<{ width: number; height: number } | undefined>((resolve) => {
+                    const imgEl = new window.Image()
+                    const finish = (value?: { width: number; height: number }) => {
+                      imgEl.onload = null
+                      imgEl.onerror = null
+                      imgEl.src = ''
+                      resolve(value)
+                    }
+                    imgEl.onload = () => finish({ width: imgEl.naturalWidth, height: imgEl.naturalHeight })
+                    imgEl.onerror = () => finish()
+                    imgEl.src = toDisplayUrl(img.filePath)
+                  })
+                  width = dimensions?.width
+                  height = dimensions?.height
+                  if (width && height) get().updateMetadata(img.id, { width, height })
+                }
+                if (width && height) {
+                  const actualRes = getResolutionLabel(width, height)
+                  if (actualRes !== img.resolution) get().updateResolution(img.id, actualRes)
                 }
               }
-              imgEl.src = toDisplayUrl(img.filePath)
-            }
+            })().catch(err => logger.warn('GalleryStore', 'Dimension migration failed', err))
           }, 2000) // Delay to not block initial render
         }
       }
@@ -334,8 +356,5 @@ export const useGalleryStore = create<GalleryStore>((set, get) => ({
     }
   },
 
-  persistToDisk: async () => {
-    const images = get().images.filter((img) => img.filePath && !img.isLoading && !img.error)
-    await window.api.saveHistory('gallery', JSON.stringify(images))
-  },
+  persistToDisk: persistGallery,
 }))

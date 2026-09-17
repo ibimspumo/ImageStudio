@@ -90,7 +90,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   loadFromDisk: async () => {
     try {
-      const result = await window.api.listHistory()
+      const result = await window.api.listHistory('workspaces')
       if (result.success && result.sessions) {
         const session = result.sessions.find((s) => s.id === 'workspaces')
         if (session) {

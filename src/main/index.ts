@@ -1,10 +1,11 @@
-import { app, BrowserWindow, shell, nativeImage } from 'electron'
+import { app, BrowserWindow, shell, nativeImage, dialog } from 'electron'
 import { join } from 'path'
 import { registerAllHandlers, shouldAutoCheckUpdates } from './ipc'
 import { ensureDirectories } from './services/image-store'
 import { checkForUpdatesOnStartup, recoverUpdateResult } from './services/updater'
 import { initializeAutomation, type AutomationService } from './automation'
 import { pathToFileURL } from 'node:url'
+import { appendFile } from 'node:fs/promises'
 
 declare const __APP_VERSION__: string
 let automation: AutomationService
@@ -35,6 +36,25 @@ function createWindow(): void {
 
   const rendererUrl = process.env['ELECTRON_RENDERER_URL'] || pathToFileURL(join(__dirname, '../renderer/index.html')).href
   automation.attach(mainWindow.webContents, rendererUrl)
+
+  // A dead renderer cannot display React's error boundary. Report from main,
+  // never silently retry potentially paid requests after a process crash.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit' || mainWindow.isDestroyed()) return
+    const diagnostic = { at: new Date().toISOString(), reason: details.reason, exitCode: details.exitCode }
+    void appendFile(join(app.getPath('userData'), 'renderer-crashes.log'), JSON.stringify(diagnostic) + '\n').catch(error => console.error('[Renderer] Could not save crash diagnostic', error))
+    void dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'ImageStudio-Oberfläche unterbrochen',
+      message: 'Die Oberfläche wurde unerwartet beendet.',
+      detail: 'Gespeicherte Bilder bleiben erhalten. Du kannst die Oberfläche neu laden. Laufende Generierungen werden nicht automatisch erneut gestartet; ein bereits übermittelter Auftrag kann beim Anbieter weiterlaufen.',
+      buttons: ['Oberfläche neu laden', 'Später'],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0 && !mainWindow.isDestroyed()) mainWindow.webContents.reload()
+    }).catch(error => console.error('[Renderer] Could not show recovery dialog', error))
+  })
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()

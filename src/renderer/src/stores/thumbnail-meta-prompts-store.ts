@@ -81,7 +81,7 @@ export const useThumbnailMetaPromptsStore = create<ThumbnailMetaPromptsStore>((s
 
   loadFromDisk: async () => {
     try {
-      const result = await window.api.listHistory()
+      const result = await window.api.listHistory('thumbnail-meta-prompts')
       if (result.success && result.sessions) {
         const session = result.sessions.find((s) => s.id === STORAGE_KEY)
         if (session) {
